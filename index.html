@@ -1,0 +1,45 @@
+<meta charset="utf-8">
+<title>HK NEON ARCADE</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#07060f;--card:#141226;--line:#2c2850;--txt:#f2f0ff;--mut:#a7a3c7}
+*{box-sizing:border-box}
+[hidden]{display:none!important}
+body{margin:0;background:radial-gradient(ellipse at top,#1d1240,var(--bg) 60%);color:var(--txt);font-family:system-ui,-apple-system,"Segoe UI",Roboto,"PingFang HK","Noto Sans TC",sans-serif;min-height:100vh;padding:0 16px 40px}
+header{text-align:center;padding:36px 0 18px}
+h1{margin:0;font-size:clamp(38px,10vw,72px);letter-spacing:.05em;background:linear-gradient(180deg,#fff,#ff5fd8 55%,#5ad8ff);-webkit-background-clip:text;background-clip:text;color:transparent;filter:drop-shadow(0 0 18px #c3f)}
+header p{color:var(--mut);margin:8px 0 0}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:18px;max-width:1100px;margin:0 auto}
+a.card{display:block;text-decoration:none;color:inherit;background:var(--card);border:1px solid var(--line);border-radius:18px;overflow:hidden;transition:transform .15s,box-shadow .15s}
+a.card:hover{transform:translateY(-3px);box-shadow:0 10px 30px rgba(195,51,255,.25)}
+a.card img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;background:#000}
+.meta{padding:12px 14px 14px}
+.meta h2{margin:0 0 4px;font-size:20px}
+.meta .tag{color:var(--mut);font-size:13px}
+.meta .play{display:inline-block;margin-top:10px;font-weight:800;font-size:14px;padding:6px 14px;border-radius:20px;background:linear-gradient(90deg,#ff2d95,#7b3dff)}
+#mine{max-width:1100px;margin:28px auto 0;color:var(--mut);font-size:13px;text-align:center}
+</style>
+<header><h1>HK NEON ARCADE</h1><p>Six tiny games. No download, no sign-up. Pick one.</p></header>
+<div class="grid" id="grid"></div>
+<p id="mine" hidden></p>
+<script>
+const GAMES = [
+  ['dodge', 'NEON RUSH', 'Dodge · 1–2 min'],
+  ['breaker', 'STONKS BREAKER', 'Brick breaker · 2–5 min'],
+  ['rooftop', 'ROOFTOP RUN', 'Parkour runner · 1 min'],
+  ['towerdefense', 'CHA CHAAN TENG DEFENSE', 'Tower defense · 5–10 min'],
+  ['dimsum', 'DIM SUM PUSH', 'Puzzle · 10 levels'],
+  ['starbreakout', '星際突圍 STAR BREAKOUT', 'Space shooter · 2–4 min (Chinese UI)'],
+];
+const grid = document.getElementById('grid');
+for (const [slug, name, tag] of GAMES) {
+  grid.insertAdjacentHTML('beforeend', `<a class="card" href="${slug}.html" data-slug="${slug}"><img src="img/${slug}.jpg" alt="${name}"><div class="meta"><h2>${name}</h2><div class="tag">${tag}</div><span class="play">PLAY ▶</span></div></a>`);
+}
+// your own play history on this device (the games write it to localStorage)
+try {
+  const log = JSON.parse(localStorage.getItem('playlog') || '[]');
+  const plays = {}; for (const [, path] of log) { const m = path.match(/^game\/([^/]+)\/start/); if (m) plays[m[1]] = (plays[m[1]] || 0) + 1; }
+  const parts = GAMES.filter(([s]) => plays[s]).map(([s, n]) => `${n.split(' ')[0]} ×${plays[s]}`);
+  if (parts.length) { const el = document.getElementById('mine'); el.textContent = 'Your runs on this device: ' + parts.join(' · '); el.hidden = false; }
+} catch (e) {}
+</script>
