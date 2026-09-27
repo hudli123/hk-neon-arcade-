@@ -92,7 +92,7 @@ window.buildLandmarks = function (LMD) {
 </script>
 <script>// 1B 全城真模型：串流載入地政總署圖幅（hk-city/tile_pack.py 輸出 tiles/<SHEET>.bin + _0.jpg）
 // .bin.gz 解壓後 = 'HKT1' + uint32 頭長度 + JSON 頭 + Int16 位置(×s) + Uint16 UV + Int8 法線 + Uint32 索引
-window.loadTile = async function (base, sheet) {
+window.loadTile = async function (base, sheet, half) {
   const r = await fetch(`${base}${sheet}.bin.gz`); if (!r.ok) throw new Error('tile ' + r.status);
   let buf = await r.arrayBuffer();
   const u8 = new Uint8Array(buf, 0, 2);   // gzip 頭（1f 8b）就自己解；伺服器已經解咗就直接用
@@ -108,7 +108,7 @@ window.loadTile = async function (base, sheet) {
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2, true));
   g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3, true)); g.setIndex(new THREE.BufferAttribute(idx, 1));
-  const small = matchMedia('(pointer:coarse)').matches, url = small ? hdr.atlas.replace('_0.jpg', '_0s.jpg') : hdr.atlas;   // 手機用半解像度圖集
+  const small = half ?? matchMedia('(pointer:coarse)').matches, url = small ? hdr.atlas.replace('_0.jpg', '_0s.jpg') : hdr.atlas;   // 手機（同賽車）用半解像度圖集
   const tex = await new Promise((ok, bad) => new THREE.TextureLoader().load(`${base}${url}`, ok, undefined, bad));
   tex.flipY = false; tex.anisotropy = 4;
   const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, emissive: 0xffdcaa, emissiveMap: tex, emissiveIntensity: 0 });
@@ -435,22 +435,27 @@ window.gotoLM = (i) => { const L = LMK.list[i]; cam.tx = L.x; cam.tz = L.z; cam.
 // ---------- 1B 全城真模型：地政總署圖幅串流（tiles/，網上版先有；file:// 讀唔到就保持方盒）----------
 const TILES = (() => {
   const list = (CITY.tiles || []).map((t, i) => ({ ...t, i, state: 0, mesh: null, mat: null }));   // state 0 未載 1 載緊 2 已載 -1 失敗
-  const on = U.tileOn.value, MAXN = TOUCH ? 3 : 8; let t0 = 0;
+  const on = U.tileOn.value, MAXN = TOUCH ? 3 : 8; let t0 = 0, pin = null;
   async function load(t) {
-    t.state = 1;
-    try { const r = await loadTile('tiles/', t.s); t.mesh = r.mesh; t.mat = r.mat; scene.add(r.mesh); t.state = 2; on[t.i] = 1; roofToggle(t.i, false); }
+    t.state = 1; t.small = !!pin;
+    try { const r = await loadTile('tiles/', t.s, pin ? true : undefined); t.mesh = r.mesh; t.mat = r.mat; scene.add(r.mesh); t.state = 2; on[t.i] = 1; roofToggle(t.i, false); }
     catch (e) { t.state = -1; console.warn('tile', t.s, e.message); }
   }
   function unload(t) { scene.remove(t.mesh); t.mesh.geometry.dispose(); t.mat.map.dispose(); t.mat.dispose(); t.mesh = t.mat = null; t.state = 0; on[t.i] = 0; roofToggle(t.i, true); }
   const dist = (t, x, z) => { const [x0, z0, x1, z1] = t.bb; return Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(z0 - z, 0, z - z1)); };
   function step(dt, x, z, low) {
     if (!list.length || location.protocol === 'file:' || (t0 -= dt) > 0) return; t0 = 0.5;
+    if (pin) {   // 賽車：只載賽道沿線（半解像度圖集），載咗就唔卸（逐圈卸咗又載 = 每圈十幾次卡頓）
+      list.forEach((t) => { if (t.state === 2 && !pin.includes(t)) unload(t); });
+      const n = !list.some((t) => t.state === 1) && pin.find((t) => t.state === 0); if (n) load(n); return;
+    }
     const R = low ? 450 : 900, ranked = list.filter((t) => t.state >= 0).map((t) => [dist(t, x, z), t]).sort((a, b) => a[0] - b[0]);
     ranked.forEach(([d, t], k) => { if (t.state === 2 && (d > R + 300 || k >= MAXN)) unload(t); });
     if (list.some((t) => t.state === 1)) return;   // 一次載一區
     const next = ranked.slice(0, MAXN).find(([d, t]) => d <= R && t.state === 0); if (next) load(next[1]);
   }
-  return { step, list, mats: () => list.filter((t) => t.state === 2).map((t) => t.mat) };
+  const setPin = (ts) => { pin = ts; t0 = 0; if (!ts && !TOUCH) list.forEach((t) => { if (t.state === 2 && t.small) unload(t); }); };   // 出返嚟：半解像度嘅卸咗，之後按正常規則載返全解像度
+  return { step, list, pin: setPin, mats: () => list.filter((t) => t.state === 2).map((t) => t.mat) };
 })();
 window.TILES = TILES;
 // ---------- 地面：車路 / 行人路 / 後巷 / 安全島（路政署）+ 公園 / 樹林 / 球場 / 遊樂場（OpenStreetMap）----------
@@ -563,7 +568,7 @@ function rayWall(x, z, dx, dz, maxD) {   // 由 (x,z) 向 (dx,dz) 射，搵最�
 }
 function inside(ring, x, z) { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; }
 function blocked(x, z) { const list = RINGS.get(gkey(x, z)); if (!list) return false; for (const r of list) if (inside(r, x, z)) return true; return false; }
-// 高度格（4 米一格，記格內最高樓頂）→ 航拍 / 賽車鏡頭唔穿樓
+// 高度格（4 米一格，記格內最高樓頂）→ 賽車 / 開放世界鏡頭唔穿樓
 const HG = (() => {
   let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
   for (const b of BLD) for (const [x, z] of b.rings[0]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
@@ -745,7 +750,7 @@ const TRAFFIC = (() => {
   const PRIV = [['sedan', 30], ['van', 18], ['suv', 12], ['hatchback-sports', 12], ['suv-luxury', 8], ['sedan-sports', 6], ['delivery', 7], ['truck', 7]];
   const GOODS = [['van', 40], ['delivery', 35], ['truck', 25]], COLS = [['white', 34], ['silver', 22], ['black', 22], ['blue', 10], ['red', 12]];
   const wpick = (list, r) => { let t = list.reduce((a, b) => a + b[1], 0) * r; for (const [k, w] of list) if ((t -= w) <= 0) return k; return list[0][0]; };
-  const o = new THREE.Object3D();
+  const o = new THREE.Object3D(), BOXCOL = { white: 0xe8e8e8, silver: 0x9a9ea6, black: 0x1a1a1e, blue: 0x2a4a8a, red: 0x8a1a1a, hkred: 0xc0182a };
   if (CL) {
     const M = HK_CARS.models;
     cars.forEach((c, i) => {
@@ -754,9 +759,11 @@ const TRAFFIC = (() => {
       else if (c.kind === 3) { c.model = wpick(GOODS, rnd(i * 3.7)); c.colour = wpick(COLS, rnd(i * 5.3)); }
       else if (M.minibus && !c.parked && rnd(i * 9.1) < 0.12) { c.model = 'minibus'; c.colour = ''; }
       else { c.model = wpick(PRIV, rnd(i * 3.7)); c.colour = wpick(COLS, rnd(i * 5.3)); }
-      const key = c.model + '|' + c.colour, G = groups.get(key) || groups.set(key, { list: [] }).get(key); c.ii = G.list.length; G.list.push(c); c.grp = G;
+      const key = c.model + '|' + c.colour, G = groups.get(key) || groups.set(key, { list: [] }).get(key); G.list.push(c); c.grp = G;
+      if (BOXCOL[c.colour]) body.setColorAt(i, new THREE.Color(BOXCOL[c.colour]));   // 遠處方盒同 3D 車同色
+      if (c.model === 'minibus') { body.setColorAt(i, new THREE.Color(0xe8e0c8)); cab.setColorAt(i, new THREE.Color(0x1a7a3a)); }
     });
-    for (const [key, G] of groups) { const [m, col] = key.split('|'); G.mesh = new THREE.InstancedMesh(CL.geo(m, col), CL.matFor(m), G.list.length); G.mesh.frustumCulled = false; scene.add(G.mesh); }
+    for (const [key, G] of groups) { const [m, col] = key.split('|'); G.mesh = new THREE.InstancedMesh(CL.geo(m, col), CL.matFor(m), G.list.length); G.mesh.frustumCulled = false; G.who = []; scene.add(G.mesh); }
   }
   const LP = new Float32Array(N * 4 * 3), LC = new Float32Array(N * 4 * 3), lg = new THREE.BufferGeometry();
   lg.setAttribute('position', new THREE.BufferAttribute(LP, 3)); lg.setAttribute('color', new THREE.BufferAttribute(LC, 3));
@@ -810,23 +817,28 @@ const TRAFFIC = (() => {
         }
       }
     }
+    // 3D 車只畫鏡頭附近（全城 2,700 架 3D 車 = 每格 600 萬個三角形）：近嘅逐格排喺每組實例嘅頭幾格、count 截短；遠嘅用方盒
+    const cx = camera.position.x, cz = camera.position.z, R2 = TOUCH ? 250 * 250 : 350 * 350;
+    for (const G of groups.values()) G.k = 0;
     for (let i = 0; i < N; i++) {
       const c = cars[i];
       if (!c.parked) { at(c.L, Math.min(c.s, c.L.len), P); c.x = P.x; c.z = P.z; c.yaw = P.yaw; }
-      const show = c.taken || (api.hide && api.hide(c.x, c.z)) ? 0 : 1;
-      if (c.parked && c.shown === show && c.grp) continue;   // 泊咗嘅車唔使每格更新
-      c.shown = show;
+      const show = c.taken || (api.hide && api.hide(c.x, c.z)) ? 0 : 1, near = show && c.grp && (c.x - cx) ** 2 + (c.z - cz) ** 2 < R2;
+      if (near) { const G = c.grp;   // 泊咗嘅車上一格已經喺同一格位：唔使再寫
+        if (!c.parked || G.who[G.k] !== c) { o.position.set(c.x, 0, c.z); o.rotation.set(0, c.yaw, 0); o.scale.setScalar(1); o.updateMatrix(); G.mesh.setMatrixAt(G.k, o.matrix); G.who[G.k] = c; }
+        G.k++; }
+      const bx = near ? 0 : show;
+      if (c.parked && c.shown === bx) continue;   // 泊咗嘅車：方盒冇變就唔使更新
+      c.shown = bx;
       const [w, h, l, ch, cl] = c.kind === 2 ? [2.5, 2.2, 11.5, 2.0, 11.2] : [1.8, 0.8, 4.4, 0.6, 2.2];
-      const bx = c.grp ? 0 : show;   // 有 3D 車：方盒收埋
       o.position.set(c.x, 0.25 + h / 2, c.z); o.rotation.set(0, c.yaw, 0); o.scale.set(w * bx, h * bx, l * bx); o.updateMatrix(); body.setMatrixAt(i, o.matrix);
       o.position.y = 0.25 + h + ch / 2 - (c.kind === 2 ? 0.05 : 0); o.scale.set((w - (c.kind === 2 ? 0 : .2)) * bx, ch * bx, cl * bx); o.updateMatrix(); cab.setMatrixAt(i, o.matrix);
-      if (c.grp) { o.position.set(c.x, 0, c.z); o.scale.setScalar(show); o.updateMatrix(); c.grp.mesh.setMatrixAt(c.ii, o.matrix); }
       const fx = Math.sin(c.yaw), fz = Math.cos(c.yaw), rx = fz, rz = -fx, hl = l / 2, hw = w * 0.35, y = show && !c.parked ? 0.7 : -50;
       LP.set([c.x + fx * hl + rx * hw, y, c.z + fz * hl + rz * hw, c.x + fx * hl - rx * hw, y, c.z + fz * hl - rz * hw,
               c.x - fx * hl + rx * hw, y, c.z - fz * hl + rz * hw, c.x - fx * hl - rx * hw, y, c.z - fz * hl - rz * hw], i * 12);
     }
     body.instanceMatrix.needsUpdate = cab.instanceMatrix.needsUpdate = true; lg.attributes.position.needsUpdate = true;
-    for (const G of groups.values()) G.mesh.instanceMatrix.needsUpdate = true;
+    for (const G of groups.values()) { G.mesh.count = G.k; G.mesh.instanceMatrix.needsUpdate = true; }
   }
   const api = { step, lights, cars, lanes, signals: SIG, hide: null, block: null, carlib: CL };   // hide(x, z)：賽車封路時收起賽道上嘅街車；block：玩家位置（街車會停）
   return api;
@@ -900,10 +912,12 @@ const PEOPLE = (() => {
       c.p.root.position.set(c.x, 0, c.z); c.p.root.rotation.y = Math.atan2(c.tx, c.tz); c.p.mixer.update(dt * (c.idle ? 1 : c.v / 1.25));
     }
     for (let i = 0; i < N; i++) {
-      const w = walkers[i], nx = w.x + w.tx * w.v * dt, nz = w.z + w.tz * w.v * dt;
+      const w = walkers[i], d2 = (w.x - cx) ** 2 + (w.z - cz) ** 2, far = d2 > 360000 || (K && low && d2 < 25600);   // 600 米外唔畫；3D 人群範圍內都唔畫
+      if (far && w.hid) continue;   // 睇唔到嘅唔使郁（慳 CPU）
+      w.hid = far;
+      const nx = w.x + w.tx * w.v * dt, nz = w.z + w.tz * w.v * dt;
       if (blocked(nx, nz) || rnd(i + Math.floor(GAME.t / 20)) < 0.002) { w.tx = -w.tx; w.tz = -w.tz; } else { w.x = nx; w.z = nz; }
       w.ph += dt * 7;
-      const d2 = (w.x - cx) ** 2 + (w.z - cz) ** 2, far = d2 > 360000 || (K && low && d2 < 25600);   // 600 米外唔畫；3D 人群範圍內都唔畫
       const bob = Math.abs(Math.sin(w.ph)) * 0.05, yaw = Math.atan2(w.tx, w.tz);
       o.rotation.set(0, yaw, 0);
       const sc = far ? 0 : 1;
@@ -996,15 +1010,9 @@ const GAME = {
     else if (cam.mode === 'fly') {
       if (fwdK || sideK) panBy(sideK * 900 * dt, -fwdK * 900 * dt);
       cam.tx = THREE.MathUtils.clamp(cam.tx, EX0, EX1); cam.tz = THREE.MathUtils.clamp(cam.tz, EZ0, EZ1);
-      // 唔穿樓：視線被樓擋住就將鏡頭升高少少（最多加 0.5 弧度仰角）；升就即刻升，落就慢慢落。
-      // 之後再保證鏡頭本身喺附近樓頂之上（唔會入咗樓入面 / 貼住牆）
-      const ty = HG.at(cam.tx, cam.tz), at = (pt) => [cam.tx + Math.sin(cam.yaw) * Math.cos(pt) * cam.dist, Math.sin(pt) * cam.dist + 5, cam.tz + Math.cos(cam.yaw) * Math.cos(pt) * cam.dist];
-      let pe = cam.pitch;
-      while (pe < Math.min(1.45, cam.pitch + 0.5) && clearFrac(cam.tx, ty + 2, cam.tz, ...at(pe)) < 1) pe += 0.05;
-      cam.pe = pe >= (cam.pe ?? pe) ? pe : cam.pe + (pe - cam.pe) * Math.min(1, 2 * dt);
-      const [cx, cy, cz] = at(cam.pe);
-      let roof = 0; for (const ox of [-4, 0, 4]) for (const oz of [-4, 0, 4]) roof = Math.max(roof, HG.at(cx + ox, cz + oz));
-      camera.position.set(cx, Math.max(cy, roof + 3), cz); camera.lookAt(cam.tx, ty, cam.tz);
+      // 航拍可以穿樓（BG 2026-09-28：撞樓自動升鏡頭會彈嚟彈去，唔要）
+      const cx = cam.tx + Math.sin(cam.yaw) * Math.cos(cam.pitch) * cam.dist, cz = cam.tz + Math.cos(cam.yaw) * Math.cos(cam.pitch) * cam.dist, cy = Math.sin(cam.pitch) * cam.dist + 5;
+      camera.position.set(cx, cy, cz); camera.lookAt(cam.tx, 0, cam.tz);
       sky.position.copy(camera.position);
     } else {
       const mx = sideK || IN.mx, my = fwdK || IN.my, sp = (keys.shift ? 12 : 4.5) * dt;
@@ -1572,6 +1580,12 @@ body.touch.race #street{font-size:14px}
   function enter() {
     active = true; cam.mode = 'race'; document.body.classList.add('race'); root.visible = true; $('rui').hidden = false;
     TRAFFIC.hide = closed;
+    if (window.TILES) {   // 真模型圖幅：固定載入賽道經過嘅（手機最多 3 幅，揀賽道經過最多嗰啲）
+      const sc = TILES.list.map((t) => { const [x0, z0, x1, z1] = t.bb; let dmin = 1e9, cov = 0;
+        for (let i = 0; i < N; i += 10) { const d = Math.hypot(Math.max(x0 - P[i].x, 0, P[i].x - x1), Math.max(z0 - P[i].z, 0, P[i].z - z1)); dmin = Math.min(dmin, d); if (d < 100) cov++; }
+        return [t, dmin, cov]; }).filter((a) => a[1] < 450).sort((a, b) => b[2] - a[2]);
+      TILES.pin(sc.slice(0, TOUCH ? 3 : 16).map((a) => a[0]));
+    }
     GAME.state = 'title'; GAME.attract = 0; $('rtitle').hidden = false; $('over').hidden = true;
     for (const id of UI_PLAY.concat(['item', 'rhelp', 'howto', 'tip', 'rot'])) $(id).hidden = true;
     placeCars();
@@ -1579,7 +1593,7 @@ body.touch.race #street{font-size:14px}
   function exit() {
     if (!active) return;
     active = false; document.body.classList.remove('race', 'tips'); root.visible = false; $('rui').hidden = true;
-    TRAFFIC.hide = null; SND.engine(0, false, false, false);
+    TRAFFIC.hide = null; SND.engine(0, false, false, false); if (window.TILES) TILES.pin(null);
     $('speed').style.opacity = 0; camera.fov = innerWidth < innerHeight ? 75 : 60; camera.updateProjectionMatrix();
     cam.tx = player.x; cam.tz = player.z; cam.yaw = player.h + Math.PI; cam.mode = 'fly'; setMode('fly');
   }
@@ -2029,10 +2043,10 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   addEventListener('resize', () => active && layoutCam());
   function nearestTraffic(r) {
     let best = null, bd = r;
-    for (const c of TRAFFIC.cars) { if (c.taken || c.kind === 2 || c.x === undefined) continue; const d = Math.hypot(c.x - hero.x, c.z - hero.z); if (d < bd) { bd = d; best = c; } }
+    for (const c of TRAFFIC.cars) { if (c.taken || c.x === undefined) continue; const d = Math.hypot(c.x - hero.x, c.z - hero.z) - (c.kind === 2 ? 3.5 : 0); if (d < bd) { bd = d; best = c; } }   // 巴士都揸得（12 米長：由車身計，唔係車中心）
     return best;
   }
-  function nearestParked(r) { let best = null, bd = r; for (const p of car.parked) { const d = Math.hypot(p.x - hero.x, p.z - hero.z); if (d < bd) { bd = d; best = p; } } return best; }
+  function nearestParked(r) { let best = null, bd = r; for (const p of car.parked) { const d = Math.hypot(p.x - hero.x, p.z - hero.z) - (p.kind === 2 ? 3.5 : 0); if (d < bd) { bd = d; best = p; } } return best; }
   function act() {
     if (!active) return;
     if (inCar) return leaveCar();
@@ -2079,18 +2093,18 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       cam.wx = hero.x; cam.wz = hero.z;
     } else {
       // 揸車：街頭版 KOWLOON DRIFT（撞樓會彈返、撞街車會震）
-      const thr = my, maxV = run ? 38 : 28;
-      if (thr > 0) car.v += (car.v < maxV ? 16 : -8) * thr * dt; else if (thr < 0) car.v -= (car.v > 0 ? 26 : 8) * -thr * dt; else car.v -= Math.sign(car.v) * Math.min(Math.abs(car.v), 5 * dt);
-      car.v = clamp(car.v, -9, run ? 40 : 30);
-      const hand = jump, steerIn = -mx, rate = steerIn * (1.9 - 0.02 * Math.abs(car.v)) * clamp(Math.abs(car.v) / 6, 0, 1) * Math.sign(car.v || 1) * (hand ? 1.6 : 1);
+      const bus = car.kind === 2, thr = my, maxV = bus ? (run ? 21 : 16) : run ? 38 : 28;   // 巴士：慢啲、加速慢啲、轉彎闊啲
+      if (thr > 0) car.v += (car.v < maxV ? (bus ? 7 : 16) : -8) * thr * dt; else if (thr < 0) car.v -= (car.v > 0 ? 26 : 8) * -thr * dt; else car.v -= Math.sign(car.v) * Math.min(Math.abs(car.v), 5 * dt);
+      car.v = clamp(car.v, -9, maxV + 2);
+      const hand = jump, steerIn = -mx, rate = steerIn * ((bus ? 1.2 : 1.9) - 0.02 * Math.abs(car.v)) * clamp(Math.abs(car.v) / 6, 0, 1) * Math.sign(car.v || 1) * (hand ? 1.6 : 1);
       car.h += rate * dt; car.slip += ((hand && Math.abs(car.v) > 10 ? Math.sign(steerIn) * 0.45 : 0) - car.slip) * Math.min(1, 6 * dt); if (hand) car.v *= Math.exp(-0.6 * dt);
       const nx = car.x + Math.sin(car.h) * car.v * dt, nz = car.z + Math.cos(car.h) * car.v * dt;
-      const hit = (x, z) => { const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = fz, rz = -fx; for (const [a, b] of [[2.1, 0.8], [2.1, -0.8], [-2.1, 0.8], [-2.1, -0.8]]) if (solid(x + fx * a + rx * b, z + fz * a + rz * b)) return true; return false; };
+      const hit = (x, z) => { const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = fz, rz = -fx; for (const [a, b] of bus ? [[5.6, 1.1], [5.6, -1.1], [-5.6, 1.1], [-5.6, -1.1], [0, 1.1], [0, -1.1]] : [[2.1, 0.8], [2.1, -0.8], [-2.1, 0.8], [-2.1, -0.8]]) if (solid(x + fx * a + rx * b, z + fz * a + rz * b)) return true; return false; };
       if (hit(nx, nz)) { if (Math.abs(car.v) > 8) bump(); car.v *= -0.3; } else { car.x = nx; car.z = nz; }
       { const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = fz, rz = -fx; car.cd = (car.cd || 0) - dt;
         for (const c of TRAFFIC.cars) {   // 撞街車：用車身長方形（唔係圓形），側邊擦過只會推開，正面撞先減速
           if (c.taken || c.x === undefined) continue;
-          const dx = c.x - car.x, dz = c.z - car.z, lo = dx * fx + dz * fz, la = dx * rx + dz * rz, HL = c.kind === 2 ? 7.5 : 4.3, HW = c.kind === 2 ? 2.3 : 1.9;
+          const dx = c.x - car.x, dz = c.z - car.z, lo = dx * fx + dz * fz, la = dx * rx + dz * rz, HL = (c.kind === 2 ? 7.5 : 4.3) + (bus ? 3.6 : 0), HW = (c.kind === 2 ? 2.3 : 1.9) + (bus ? 0.35 : 0);
           if (Math.abs(lo) >= HL || Math.abs(la) >= HW) continue;
           const pl = HL - Math.abs(lo), pw = HW - Math.abs(la);
           if (pw < pl) { car.x -= rx * Math.sign(la) * pw; car.z -= rz * Math.sign(la) * pw; }
@@ -2102,7 +2116,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       car.mesh.position.set(car.x, 0, car.z); car.mesh.rotation.y = car.h + car.slip;
       for (const w of car.mesh.userData.wheels) w.rotation.x += car.v * dt / 0.34;
       hero.x = car.x; hero.z = car.z; TRAFFIC.block = { x: car.x, z: car.z }; $('oprompt').hidden = true;
-      const fx = Math.sin(car.h), fz = Math.cos(car.h), back = 8.5, up = 3.3;
+      const fx = Math.sin(car.h), fz = Math.cos(car.h), back = bus ? 15 : 8.5, up = bus ? 6 : 3.3;
       _v.set(car.x - fx * back, up, car.z - fz * back);
       const f = Math.max(0.3, clearFrac(car.x, 1.5, car.z, _v.x, _v.y, _v.z)); _v.set(car.x + (_v.x - car.x) * f, 1.5 + (_v.y - 1.5) * f, car.z + (_v.z - car.z) * f);
       camera.position.lerp(_v, 1 - Math.exp(-8 * dt)); camera.lookAt(car.x + fx * 6, 1.4, car.z + fz * 6);
