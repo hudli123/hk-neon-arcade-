@@ -19,7 +19,7 @@ Ten browser games — no download, no sign-up. Each game is a single self-contai
 
 Sound: most games synthesise sound with WebAudio. 趙雲無雙 also embeds recorded effects from Kenney.nl (CC0) and clips from myinstants.com; GENTLEMAN AGENT uses Kenney.nl CC0 sounds only; its hero is rigged and animated with Adobe Mixamo (royalty-free animations).
 
-香港 3D 城市 data and assets: map data © Lands Department and Highways Department, HKSAR Government (DATA.GOV.HK / CSDI Portal);
+香港 3D 城市 data and assets: map data © Lands Department, Highways Department and Transport Department, HKSAR Government (DATA.GOV.HK / CSDI Portal);
 3D building models © Lands Department, HKSAR Government, "3D Visualisation Map" via the CSDI Portal; parks and coastline
 © OpenStreetMap contributors (ODbL); pedestrians: Quaternius "Ultimate Animated Character Pack" (CC0); cars: Kenney "Car Kit" (CC0) plus a Hong Kong taxi, minibus and double-decker generated with Z-Image Turbo + Hunyuan3D-2;
 hero animations: Adobe Mixamo.
