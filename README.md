@@ -21,5 +21,5 @@ Sound: most games synthesise sound with WebAudio. 趙雲無雙 also embeds recor
 
 香港 3D 城市 data and assets: map data © Lands Department, Highways Department and Transport Department, HKSAR Government (DATA.GOV.HK / CSDI Portal);
 3D building models © Lands Department, HKSAR Government, "3D Visualisation Map" via the CSDI Portal; parks and coastline
-© OpenStreetMap contributors (ODbL); pedestrians: Quaternius "Ultimate Animated Character Pack" (CC0); cars: Kenney "Car Kit" (CC0) plus a Hong Kong taxi, minibus and double-decker generated with Z-Image Turbo + Hunyuan3D-2;
+© OpenStreetMap contributors (ODbL); pedestrians generated with Z-Image Turbo + Tencent Hunyuan3D-2.1, rigged on Quaternius "Universal Base Characters" (CC0) with Quaternius "Universal Animation Library" (CC0) animations; cars and buses generated with Z-Image Turbo + Tencent Hunyuan3D-2.1 (Kenney "Car Kit", CC0, kept as fallback); traffic lights placed from Transport Department traffic aids drawings; Hunyuan3D outputs used under the Tencent Hunyuan 3D 2.1 Community License;
 hero animations: Adobe Mixamo.
