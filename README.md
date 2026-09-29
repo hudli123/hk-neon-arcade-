@@ -1,7 +1,7 @@
 # HK NEON ARCADE
 
 Ten browser games — no download, no sign-up. Each game is a single self-contained HTML file
-(three.js inlined, graphics generated in code; hero models made with Hunyuan3D-2). The one exception is
+(three.js inlined, graphics generated in code; hero models made with Hunyuan3D-2; 趙雲無雙 characters, officers and soldiers made with Meshy). The one exception is
 香港 3D 城市, which streams real building models from `tiles/` as you move.
 
 
