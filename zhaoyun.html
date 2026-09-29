@@ -495,7 +495,7 @@ const NMAX = 340;
 const S = {
   x: new Float32Array(NMAX), z: new Float32Array(NMAX), y: new Float32Array(NMAX), vx: new Float32Array(NMAX), vz: new Float32Array(NMAX), vy: new Float32Array(NMAX),
   yaw: new Float32Array(NMAX), hp: new Float32Array(NMAX), st: new Uint8Array(NMAX), t: new Float32Array(NMAX), walk: new Float32Array(NMAX), walkAmt: new Float32Array(NMAX), lx: new Float32Array(NMAX), lz: new Float32Array(NMAX),
-  alive: new Uint8Array(NMAX), token: new Uint8Array(NMAX), eng: new Uint8Array(NMAX), hx: new Float32Array(NMAX), hz: new Float32Array(NMAX), hitId: new Int32Array(NMAX), flash: new Float32Array(NMAX), tilt: new Float32Array(NMAX), kind: new Uint8Array(NMAX),
+  alive: new Uint8Array(NMAX), token: new Uint8Array(NMAX), eng: new Uint8Array(NMAX), hx: new Float32Array(NMAX), hz: new Float32Array(NMAX), hitId: new Int32Array(NMAX), flash: new Float32Array(NMAX), tilt: new Float32Array(NMAX), kind: new Uint8Array(NMAX), spin: new Uint8Array(NMAX),
 };
 // st: 0 行 1 蓄勢 2 出招 3 收招 4 硬直 5 浮空 6 倒地
 // ============ 人物：比例、關節、塊面（眼耳口鼻 + 表情）============
@@ -1608,9 +1608,13 @@ function stepSoldiers(dt) {
       if (d > want + 0.3) sp = d > 25 ? 4.2 : 3.2; else if (d < want - 0.6) sp = -1.6;
       if (sp) { S.x[i] += dx / d * sp * dt; S.z[i] += dz / d * sp * dt; S.walk[i] += dt * 9; }
       else { S.x[i] += -dz / d * Math.sin(GAME.t * 0.7 + i) * 0.8 * dt; S.z[i] += dx / d * Math.sin(GAME.t * 0.7 + i) * 0.8 * dt; }
-      if (S.token[i] && d < 2.6 && S.t[i] > 0.5 && GAME.state === 'play') { S.st[i] = 1; S.t[i] = 0; }
+      if (S.token[i] && d < 2.6 && S.t[i] > 0.5 && GAME.state === 'play') { S.st[i] = 1; S.t[i] = 0; S.spin[i] = S.kind[i] && Math.random() < 0.45 ? 1 : 0; }   // BG 09-29 敵人多啲招：隊長有時用旋風斬
     } else if (st === 1) { S.yaw[i] += angDiff(face, S.yaw[i]) * Math.min(1, dt * 8); if (S.t[i] > 0.62) { S.st[i] = 2; S.t[i] = 0; } }
-    else if (st === 2) {
+    else if (st === 2 && S.spin[i]) {   // 隊長旋風斬：360° 半徑 3.1 米，轉 0.45 秒
+      S.yaw[i] += dt * 16;
+      if (S.t[i] < dt * 1.5) { ring(S.x[i], S.z[i], 3.1, 0xff6040, 0.3); if (d < 3.1) hurtPlayer(14, S.x[i], S.z[i], false); }
+      if (S.t[i] > 0.45) { S.st[i] = 3; S.t[i] = 0; S.spin[i] = 0; }
+    } else if (st === 2) {
       if (S.t[i] < dt * 1.5) { const [fx, fz] = fwd(S.yaw[i]); S.vx[i] += fx * 4; S.vz[i] += fz * 4; if (d < 2.7 && Math.abs(angDiff(face, S.yaw[i])) < 1.1) hurtPlayer(9 + (S.kind[i] ? 5 : 0), S.x[i], S.z[i], false); }
       if (S.t[i] > 0.22) { S.st[i] = 3; S.t[i] = 0; }
     } else if (st === 3) { if (S.t[i] > 0.7) { S.st[i] = 0; S.t[i] = 0; S.token[i] = 0; } }
@@ -2010,15 +2014,18 @@ $('loading').hidden = true; $('pick').hidden = false;   // 載入完先出掣（
       else if (st === 6) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.12, 0.55, 0.73)); }
       else if (st === 4) { a = use('Hit_Reaction'); at(a, lin(b.t, 0, 0.55, 0, 0.9)); }
       else if (st === 5) { a = use('BeHit_FlyUp'); at(a, 0.2); }
+      else if (st === 7) { a = use('Sword_Shout'); at(a, b.t < 1 ? lin(b.t, 0, 1, 0.8, 1.3) : 1.3); }   // 朱雀：舉刀（boss_ext.js）
+      else if (st === 8) { a = use('Triple_Combo_Attack'); at(a, b.t < 0.25 ? lin(b.t, 0, 0.25, 0.45, 0.73) : b.t < 0.6 ? lin(b.t, 0.25, 0.6, 0.73, 1.5) : b.t < 0.95 ? lin(b.t, 0.6, 0.95, 1.5, 2.23) : lin(b.t, 0.95, 1.3, 2.23, 2.5)); }
+      else if (st === 9) { a = use('Charged_Ground_Slam'); at(a, b.t < 0.35 ? lin(b.t, 0, 0.35, 0.3, 0.9) : b.t < 0.95 ? lin(b.t, 0.35, 0.95, 0.9, 1.63) : lin(b.t, 0.95, 1.5, 1.63, 2.2)); }
       else if (mv > 0.5) { a = use('Run_02'); loopT += rdt; at(a, loopT % a.getClip().duration); }
       else { a = use('Combat_Stance'); loopT += rdt; at(a, loopT % a.getClip().duration); }
       prevW = Math.max(0, prevW - rdt / 0.12);
       if (prev) { prev.setEffectiveWeight(prevW); if (prevW <= 0) { prev.stop(); prev = null; } }
       cur.setEffectiveWeight(1 - (prev ? prevW : 0));
       R.mixer.update(0);
-      if (st === 5) R.bones.Hips.position.y = hipY;
+      if (st === 5 || st === 9) R.bones.Hips.position.y = hipY;   // 跳高由遊戲（boss.y）話事
       bossG.updateMatrixWorld(true);
-      const em = b.flash > 0 ? 0xffffff : st === 1 || st === 3 ? 0x551022 : 0; R.mesh.material.emissive.setHex(em);
+      const em = b.flash > 0 ? 0xffffff : st === 7 ? 0x6a2400 : st === 1 || st === 3 || (st === 8 && b.t < 0.25) || (st === 9 && b.t < 0.35) ? 0x551022 : 0; R.mesh.material.emissive.setHex(em);
       // 戟：握位 = 掌心；方向 = 手骨軸
       const hand = R.bones.RightHand; hand.getWorldQuaternion(_hq); hand.getWorldPosition(_p);
       _f.set(0, 1, 0).applyQuaternion(_hq); _p.addScaledVector(_f, 0.07);
@@ -2045,8 +2052,8 @@ $('loading').hidden = true; $('pick').hidden = false;   // 載入完先出掣（
   for (let k = 0; k < 8; k++) POSES.push(['Run_02', k / 8 * 0.733, 0, 0]);
   POSES.push(['Combat_Stance', 0, 0, 0], ['Combat_Stance', 0.83, 0, 0],
     ['Thrust_Slash', 0.45, 1, 0], ['Thrust_Slash', 0.73, 1, 0], ['Thrust_Slash', 1.05, 0, 0],
-    ['Hit_Reaction', 0.25, 1, 0], ['BeHit_FlyUp', 0.2, 1, 1], ['Knock_Down', 2.3, 1, 0]);
-  const RUN0 = 0, IDLE0 = 8, WIND = 10, THRUST = 11, REC = 12, HIT = 13, AIR = 14, DOWN = 15;
+    ['Hit_Reaction', 0.25, 1, 0], ['BeHit_FlyUp', 0.2, 1, 1], ['Knock_Down', 2.3, 1, 0], ['Reaping_Swing', 3.3, 1, 0]);   // 最後 = 隊長旋風斬
+  const RUN0 = 0, IDLE0 = 8, WIND = 10, THRUST = 11, REC = 12, HIT = 13, AIR = 14, DOWN = 15, SPIN = 16;
   const CLIPS = [...new Set(POSES.map((p) => p[0]))];
 
   function bake(id) {
@@ -2102,7 +2109,7 @@ $('loading').hidden = true; $('pick').hidden = false;   // 載入完先出掣（
       _base.compose(_v.set(S.x[i], S.y[i], S.z[i]), _q, _s.set(SC, SC, SC));
       let pose;
       if (st === 0) pose = S.walkAmt[i] > 0.05 ? RUN0 + ((Math.floor(S.walk[i] / TAU2 * 8) % 8) + 8) % 8 : IDLE0 + ((GAME.t * 1.2 + i * 0.37) % 2 | 0);
-      else pose = st === 1 ? WIND : st === 2 ? THRUST : st === 3 ? REC : st === 4 ? HIT : st === 5 ? AIR : DOWN;
+      else pose = st === 1 ? WIND : st === 2 ? (S.spin[i] ? SPIN : THRUST) : st === 3 ? REC : st === 4 ? HIT : st === 5 ? AIR : DOWN;
       const B = BK[S.kind[i] ? 1 : 0][(S.x[i] - cx) ** 2 + (S.z[i] - cz) ** 2 > LOD_D2 ? 1 : 0][pose];
       B.mesh.setMatrixAt(B.n, _base); B.mesh.setColorAt(B.n, S.flash[i] > 0 ? FLASH : st === 1 ? TINT : WHITE); B.n++;
       curFlash = S.flash[i] > 0; curTint = st === 1 ? 1 : 0; curKind = S.kind[i];
@@ -2120,6 +2127,133 @@ $('loading').hidden = true; $('pick').hidden = false;   // 載入完先出掣（
     shadowMesh.count = k; shadowMesh.instanceMatrix.needsUpdate = true;
   };
   window.__crowd = BK;
+})();
+</script>
+<script>'use strict';
+// ============ 張郃加強（BG 09-29：「加強難度、敵人多啲招式、好似主角咁出大招 → 朱雀」）============
+// 新招（boss.st）：7 朱雀大招 = 1 秒蓄力 → 朱雀繞身飛、火圈由張郃向外擴散（跳起或者閃避就避得開）→ 朱雀俯衝玩家位置爆炸（見紅圈就走）；
+//                 8 三連斬（逐刀向前踏）；9 飛身劈地（跳去玩家位置，落地震波）。
+// 朱雀期間霸體（打佢唔會硬直）。血跌穿 70 % 同 35 % 一定放朱雀，之後每 18 秒可以再放。原本 0–6 號招式唔變（stepBoss 包一層）。
+(() => {
+  const b = boss, PX = { zh: '朱雀・焚天！', en: 'VERMILION BIRD!' }[LANG];
+  const lin = (t, t0, t1, a, c) => a + (c - a) * clamp((t - t0) / (t1 - t0), 0, 1);
+
+  // ---------- 朱雀（程式砌：身、頭、喙、冠、兩邊各 7 條翼羽、5 條尾羽、光暈）----------
+  const bird = new THREE.Group(); bird.visible = false; scene.add(bird);
+  const fireMat = (c, o = 0.95) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  const feather = (L, w) => { const s = new THREE.Shape(); s.moveTo(0, 0); s.quadraticCurveTo(w, L * 0.45, 0, L); s.quadraticCurveTo(-w * 0.35, L * 0.45, 0, 0); return new THREE.ShapeGeometry(s, 6); };
+  const body = new THREE.Mesh(new THREE.SphereGeometry(0.7, 12, 8), fireMat(0xff4a16)); body.scale.set(0.8, 0.75, 2.1); bird.add(body);
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.5, 10, 8), fireMat(0xff7a22)); head.position.set(0, 0.45, 1.75); bird.add(head);
+  const beak = new THREE.Mesh(new THREE.ConeGeometry(0.16, 0.7, 6).rotateX(Math.PI / 2), fireMat(0xffd04a)); beak.position.set(0, 0.4, 2.45); bird.add(beak);
+  for (let k = 0; k < 3; k++) { const c = new THREE.Mesh(feather(1.3 - k * 0.2, 0.28).rotateX(-2.2 + k * 0.25), fireMat(0xffb030)); c.position.set((k - 1) * 0.12, 0.8, 1.6); bird.add(c); }   // 頭冠
+  const wings = [-1, 1].map((side) => {
+    const w = new THREE.Group(); w.position.set(side * 0.45, 0.3, 0.3); w.scale.x = side; bird.add(w);
+    for (let k = 0; k < 7; k++) {
+      const col = new THREE.Color(0xffd04a).lerp(new THREE.Color(0xe8200c), k / 6);
+      const f = new THREE.Mesh(feather(2.0 + k * 0.45, 0.6).rotateZ(-Math.PI / 2), fireMat(col.getHex(), 0.85)); f.rotation.y = 0.15 + k * 0.2; f.position.z = -k * 0.12; w.add(f);
+    }
+    return w;
+  });
+  const tails = [...Array(5)].map((_, k) => { const t = new THREE.Mesh(feather(4.2 + (k === 2 ? 1.6 : Math.abs(k - 2) * 0.4), 0.55).rotateX(-Math.PI / 2), fireMat(k === 2 ? 0xffc040 : 0xff5a1a, 0.8)); t.position.set((k - 2) * 0.22, 0.1, -1.3); bird.add(t); return t; });
+  const glow = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: 0xff6a20, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: 0.9, fog: false }));
+  glow.scale.set(9, 9, 1); bird.add(glow);
+  let flap = 0;
+  function poseBird(x, y, z, yaw, roll, s, dt) {
+    bird.position.set(x, y, z); bird.rotation.set(0, yaw, roll); bird.scale.setScalar(s); flap += dt * 9;
+    wings.forEach((w) => { w.rotation.z = Math.sin(flap) * 0.65; });
+    tails.forEach((t, k) => { t.rotation.y = Math.sin(flap * 0.6 + k) * 0.18; });
+    if (Math.random() < 0.9) for (let k = 0; k < 3; k++) {   // 火星
+      const a = bird.localToWorld(new THREE.Vector3(rand(-4, 4) * s, rand(-0.2, 0.6), rand(-4, 1) * s));
+      emit(a.x, a.y, a.z, rand(-1, 1), rand(0.5, 2.5), rand(-1, 1), rand(0.3, 0.6), rand(0.6, 1.3), Math.random() < 0.5 ? 0xff7a22 : 0xffd04a, -2, 2);
+    }
+  }
+
+  // ---------- 招式選擇（包住 stepBoss）----------
+  let phxCd = 0, used70 = false, used35 = false, hitRing = false, tx = 0, tz = 0, cx = 0, cz = 0, hits = 0;
+  const sb0 = stepBoss;
+  stepBoss = function (dt) {
+    if (!b.alive) return sb0(dt);
+    phxCd -= dt;
+    if (b.hp > b.max * 0.99) { used70 = used35 = false; phxCd = 10; }   // 新一隻 boss（再戰）
+    // 血跌穿 70 % / 35 %：就算俾人連緊都爆氣（推開玩家）即刻放朱雀
+    if (b.st !== 7 && b.y <= 0 && GAME.state === 'play' && ((!used70 && b.hp < b.max * 0.7) || (!used35 && b.hp < b.max * 0.35))) {
+      if (b.hp < b.max * 0.7) used70 = true; if (b.hp < b.max * 0.35) used35 = true; phxCd = 18;
+      b.st = 7; b.t = 0; b.vx = b.vz = 0; hitRing = false; banner(PX, '#ff6a2a'); SND.charge(); SND.roar(); ring(b.x, b.z, 6, 0xff6a2a, 0.4);
+      const ex = player.x - b.x, ez = player.z - b.z, ed = Math.hypot(ex, ez) || 1; if (ed < 5) { player.kx = ex / ed * 14; player.kz = ez / ed * 14; }
+    }
+    if (b.st === 0 && b.cd <= 0 && b.y <= 0 && GAME.state === 'play') {
+      const d = Math.hypot(player.x - b.x, player.z - b.z), r = Math.random();
+      let n = -1;
+      if (phxCd <= 0 && b.hp < b.max * 0.9 && r < 0.35) { n = 7; phxCd = 18; }
+      else if (d < 5.5 && r < 0.45) n = 8;
+      else if (d > 7 && d < 18 && r < 0.4) n = 9;
+      if (n >= 0) { b.st = n; b.t = 0; hitRing = false; hits = 0; cx = b.x; cz = b.z; tx = player.x; tz = player.z;
+        if (n === 7) { banner(PX, '#ff6a2a'); SND.charge(); SND.roar(); }
+        else SND.swing(true); }
+    }
+    if (b.st < 7) return sb0(dt);
+    // 自己嘅招：物理同原本一樣
+    b.flash -= dt; b.t += dt; b.cd -= dt;
+    const dx = player.x - b.x, dz = player.z - b.z, d = Math.hypot(dx, dz) || 0.001, face = Math.atan2(dx, dz);
+    b.x += b.vx * dt; b.z += b.vz * dt; b.vx *= Math.max(0, 1 - 4 * dt); b.vz *= Math.max(0, 1 - 4 * dt);
+    const t = b.t;
+    if (b.st === 7) {   // 朱雀
+      b.vx = b.vz = 0;
+      if (t < 1.0) {
+        if (((t / 0.25) | 0) !== (((t - dt) / 0.25) | 0)) ring(b.x, b.z, 3.5, 0xff5020, 0.5);
+        for (let k = 0; k < 3; k++) { const a = Math.random() * TAU, rr = rand(0.5, 2.5); emit(b.x + Math.cos(a) * rr, 0.2, b.z + Math.sin(a) * rr, 0, rand(3, 7), 0, rand(0.3, 0.6), rand(0.5, 1.1), 0xff6a20, -3, 1); }
+        if (t > 0.55) { bird.visible = true; poseBird(b.x, 2 + (t - 0.55) * 3, b.z, b.yaw, 0, (t - 0.55) / 0.45, dt); }
+      } else if (t < 2.6) {
+        if (!hitRing && t - dt < 1.0) { ring(b.x, b.z, 10.4, 0xff4010, 1.6); SND.gong(); camShake = Math.max(camShake, 0.4); }
+        const R = (t - 1.0) * 6.5, a = (t - 1.0) / 1.6 * TAU + 1.2, br = lin(t, 1.0, 2.6, 3, 10);
+        const px = b.x + Math.sin(a) * br, pz = b.z + Math.cos(a) * br;
+        poseBird(px, 3.2, pz, a + Math.PI / 2, -0.45, 1, dt);
+        for (let k = 0; k < 14; k++) { const q = Math.random() * TAU; emit(b.x + Math.cos(q) * R, 0.3, b.z + Math.sin(q) * R, Math.cos(q) * 2, rand(2, 5), Math.sin(q) * 2, rand(0.25, 0.5), rand(0.8, 1.6), Math.random() < 0.5 ? 0xff5a1a : 0xffc040, -2, 1); }
+        if (!hitRing && Math.abs(d - R) < 0.9 && player.y < 1.2) { hitRing = true; hurtPlayer(28, b.x, b.z, true); }
+        if (t + dt >= 2.6) { tx = player.x; tz = player.z; ring(tx, tz, 3.6, 0xff2010, 0.9); }   // 俯衝目標：紅圈
+      } else if (t < 3.45) {
+        if (((t / 0.3) | 0) !== (((t - dt) / 0.3) | 0)) ring(tx, tz, 3.6, 0xff2010, 0.35);
+        poseBird(lin(t, 2.6, 3.45, bird.position.x, tx), lin(t, 2.6, 3.45, 3.2, 12), lin(t, 2.6, 3.45, bird.position.z, tz), Math.atan2(tx - bird.position.x, tz - bird.position.z), 0, 1, dt);
+      } else if (t < 3.75) {
+        const k = (t - 3.45) / 0.3; poseBird(tx, 12 - k * 11.5, tz, bird.rotation.y, 0, 1 + k * 0.3, dt); bird.rotation.x = 1.2;
+        if (t + dt >= 3.75) {
+          bird.visible = false; bird.rotation.x = 0; SND.bigboom(); camShake = Math.max(camShake, 1.0); flash(0.35); ring(tx, tz, 7, 0xffa040, 0.6);
+          for (let q = 0; q < 60; q++) { const a2 = Math.random() * TAU, sp = rand(4, 14); emit(tx, 0.6, tz, Math.cos(a2) * sp, rand(3, 10), Math.sin(a2) * sp, rand(0.4, 0.9), rand(0.8, 1.8), q % 3 ? 0xff5a1a : 0xffd04a, 14, 2); }
+          if (Math.hypot(player.x - tx, player.z - tz) < 3.6) hurtPlayer(34, tx, tz, true);
+        }
+      } else if (t > 4.1) { b.st = 0; b.t = 0; b.cd = 1.8; }
+    } else if (b.st === 8) {   // 三連斬
+      b.yaw += angDiff(face, b.yaw) * Math.min(1, dt * 6);
+      const HT = [0.25, 0.6, 0.95];
+      if (hits < 3 && t >= HT[hits]) {
+        const [fx, fz] = fwd(b.yaw); b.vx += fx * 7; b.vz += fz * 7; SND.swing(true);
+        if (d < 5 && Math.abs(angDiff(face, b.yaw)) < 1.3) hurtPlayer(16, b.x, b.z, hits === 2);
+        for (let k = 0; k < 10; k++) { const a = b.yaw - 1 + k / 10 * 2; emit(b.x + Math.sin(a) * 3.5, 1.5, b.z + Math.cos(a) * 3.5, 0, 0, 0, .25, 1.3, 0xff5a8a); }
+        hits++;
+      }
+      if (t > 1.3) { b.st = 0; b.t = 0; b.cd = rand(1.0, 1.8); }
+    } else if (b.st === 9) {   // 飛身劈地
+      if (t < 0.35) { b.yaw += angDiff(face, b.yaw) * Math.min(1, dt * 8); tx = player.x; tz = player.z; cx = b.x; cz = b.z; }
+      else if (t < 0.95) { const k = (t - 0.35) / 0.6; b.x = cx + (tx - cx) * k; b.z = cz + (tz - cz) * k; b.y = Math.sin(k * Math.PI) * 5; }
+      else if (!hitRing) {
+        hitRing = true; b.y = 0; ring(b.x, b.z, 6, 0xff8a40, 0.5); SND.bigboom(); camShake = Math.max(camShake, 0.8);
+        for (let q = 0; q < 30; q++) { const a2 = Math.random() * TAU; emit(b.x + Math.cos(a2) * 2, 0.3, b.z + Math.sin(a2) * 2, Math.cos(a2) * rand(4, 9), rand(2, 6), Math.sin(a2) * rand(4, 9), rand(.3, .6), rand(.8, 1.4), 0x9a8060, 14, 2); }
+        if (d < 6 && player.y < 1.0) hurtPlayer(30, b.x, b.z, true);
+      }
+      if (t > 1.5) { b.st = 0; b.t = 0; b.cd = rand(1.2, 2.0); }
+    }
+    b.x = clamp(b.x, -ARENA + 2, ARENA - 2); b.z = clamp(b.z, -ARENA + 2, ARENA - 2);
+    if (d < 1.8 && b.y < 1) { player.x += dx / d * (1.8 - d); player.z += dz / d * (1.8 - d); }
+  };
+  // 朱雀期間霸體：打中照扣血，但唔會硬直 / 飛起
+  const hb0 = hitBoss;
+  hitBoss = function (...a) {
+    const st = b.st, t = b.t, x = b.x, z = b.z;
+    hb0.apply(this, a);
+    if (st === 7 && b.alive) { b.st = 7; b.t = t; b.vx = b.vz = b.vy = 0; b.y = 0; b.x = x; b.z = z; b.poise = 90; }
+    if (!b.alive) bird.visible = false;
+  };
+  window.__phoenix = bird;
 })();
 </script>
 <script>// 自動產生（tools/make_bgm.py）：戰鬥背景音樂 + 播放器。唔好手改。來源 / 授權：assets/audio_battle/SOURCES.md
