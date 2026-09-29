@@ -175,7 +175,9 @@ window.buildMeshyRig = function (R, CL, want) {
   // 趙雲手骨 local 軸 → 呢個角色手骨 local 軸（武器方向校正用）
   const hs = srcIdx.RightHand, ht = R.bones.findIndex((b) => b.n === 'RightHand');
   const handAxis = (v) => v.clone().applyQuaternion(sBW[hs]).applyQuaternion(tBW[ht].clone().invert());
-  return { group, mesh, bones: byName, mixer, actions, handAxis, height: R.bones[0].hl[1] * R.rs / 0.82 };
+  const hl = R.bones.findIndex((b) => b.n === 'LeftHand');   // 左手：將右手軸喺綁定姿勢左右鏡像（x 反轉）再轉入左手骨座標
+  const handAxisL = (v) => { const w = v.clone().applyQuaternion(sBW[hs]); w.x = -w.x; return w.applyQuaternion(tBW[hl].clone().invert()); };
+  return { group, mesh, bones: byName, mixer, actions, handAxis, handAxisL, height: R.bones[0].hl[1] * R.rs / 0.82 };
 };
 </script>
 <script>// 自動產生（tools/pack_meshy.py rig）：Meshy 角色 mesh + 骨。唔好手改。
@@ -2064,7 +2066,12 @@ $('loading').hidden = true; $('pick').hidden = false;   // 載入完先出掣（
     return POSES.map(([clip, t, hand, lock]) => {
       const a = R.actions[clip]; a.reset(); a.play(); a.time = t; R.mixer.update(0);
       if (lock) R.bones.Hips.position.y = hipY;
-      R.group.updateMatrixWorld(true); sk.update(); a.stop();
+      R.group.updateMatrixWorld(true); sk.update();
+      // 握位（掌心）+ 槍方向，士兵本地座標。要喺 a.stop() 之前讀：stop() 會將骨還原做綁定姿勢（09-30 發現：以前每格都係 A-pose 隻手）
+      const hb = R.bones.RightHand; hb.getWorldQuaternion(_q); hb.getWorldPosition(_p);
+      _f.set(0, 1, 0).applyQuaternion(_q); _p.addScaledVector(_f, 0.07);
+      const grip = _p.clone(), dir = hand ? axis.clone().applyQuaternion(_q).normalize() : CARRY.clone();
+      a.stop();
       const M = sk.boneMatrices, pos = new Float32Array(n * 3), nrm = new Float32Array(n * 3);
       for (let v = 0; v < n; v++) {
         const x = P[v * 3], y = P[v * 3 + 1], z = P[v * 3 + 2], nx = N[v * 3], ny = N[v * 3 + 1], nz = N[v * 3 + 2];
@@ -2083,10 +2090,7 @@ $('loading').hidden = true; $('pick').hidden = false;   // 載入完先出掣（
       const mesh = new THREE.InstancedMesh(geo, mat, NMAX);
       mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage); mesh.frustumCulled = false;
       mesh.setColorAt(0, _col.setRGB(1, 1, 1)); mesh.count = 0; mesh.visible = false; scene.add(mesh);   // setColorAt 要喺 count = 0 之前（r128 用 count 決定 instanceColor 大細）
-      // 握位（掌心）+ 槍方向，士兵本地座標
-      const hb = R.bones.RightHand; hb.getWorldQuaternion(_q); hb.getWorldPosition(_p);
-      _f.set(0, 1, 0).applyQuaternion(_q); _p.addScaledVector(_f, 0.07);
-      return { mesh, n: 0, grip: _p.clone(), dir: hand ? axis.clone().applyQuaternion(_q).normalize() : CARRY.clone() };
+      return { mesh, n: 0, grip, dir };
     });
   }
   const M = window.MRIG, cap = M.weicaptain ? 'weicaptain' : 'weisoldier';
