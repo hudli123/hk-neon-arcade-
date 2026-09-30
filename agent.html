@@ -69,16 +69,16 @@ body.en .screen h1{letter-spacing:4px}
 </style>
 <body>
 <div id="hud" hidden>
-  <div id="me"><div id="face">AGENT</div><div class="bars"><div class="lbl">體力</div><div class="bar" id="hpb"><i></i></div><div class="lbl">風暴</div><div class="bar" id="msb"><i></i></div></div></div>
+  <div id="me"><div id="face">AGENT</div><div class="bars"><div class="lbl">體力</div><div class="bar" id="hpb"><i></i></div><div class="lbl">無雙</div><div class="bar" id="msb"><i></i></div></div></div>
   <div id="chain"><b>0</b><span>連擊 CHAIN</span></div>
   <canvas id="mini" width="220" height="220"></canvas>
   <div id="ko">擊破 <b>0</b></div>
   <div id="boss" hidden><span id="bossname"></span><div class="bar"><i></i></div></div>
-  <div id="help">WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I 風暴・Q/E 轉視角・M 音樂</div>
+  <div id="help">WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I 無雙・Q/E 轉視角・M 音樂</div>
 </div>
 <div id="ctl"><div id="stick"><i></i></div>
   <div class="b" id="bA" data-k="atk">攻</div><div class="b" id="bC" data-k="chg">蓄</div>
-  <div class="b" id="bJ" data-k="jump">跳</div><div class="b" id="bD" data-k="dodge">閃</div><div class="b" id="bM" data-k="musou">風暴</div>
+  <div class="b" id="bJ" data-k="jump">跳</div><div class="b" id="bD" data-k="dodge">閃</div><div class="b" id="bM" data-k="musou">無雙</div>
 </div>
 <div id="banner"></div>
 <div id="flash"></div>
@@ -140,18 +140,18 @@ const LANG = ((new URLSearchParams(location.search).get('lang') || navigator.lan
 const CG = true;   // 只用 CC0 音效
 const TX = {
   zh: { title: '紳士特工', sub: '霓虹灣警隊被黑幫收買。一個西裝特工話唔得。', start: '出動', again: '再出動', rotate: '請將手機打橫玩 ↻', face: '特工',
-    hp: '體力', mus: '風暴', chain: '連擊 CHAIN', ko: '擊倒', boss: '黑幫傭兵隊長', btn: ['攻', '蓄', '跳', '閃', '風暴'],
-    help: 'WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I 紳士風暴・Q/E 轉視角・M 音樂',
-    kos: (n) => `${n} 人擊倒！`, bossDown: '傭兵隊長 擊倒！', musou: '紳士風暴', bun: '漢堡：體力回復', wine: '咖啡：風暴回復',
+    hp: '體力', mus: '無雙', chain: '連擊 CHAIN', ko: '擊倒', boss: '黑幫傭兵隊長', btn: ['攻', '蓄', '跳', '閃', '無雙'],
+    help: 'WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I 特工無雙・Q/E 轉視角・M 音樂',
+    kos: (n) => `${n} 人擊倒！`, bossDown: '傭兵隊長 擊倒！', musou: '特工無雙', bun: '漢堡：體力回復', wine: '咖啡：無雙回復',
     bossIn: '黑幫傭兵隊長 出現！小心子彈！', go: '出動！', win: '任務完成', lose: '任務失敗',
-    pickZ: ['出動', '西裝特工・單人對全城'], pickG: ['', ''], faceG: '', musouG: '紳士風暴',
+    pickZ: ['出動', '西裝特工・單人對全城'], pickG: ['', ''], faceG: '', musouG: '特工無雙',
     stats: (k, c, t, b) => `擊倒數 <b>${k}</b>・最大連擊 <b>${c}</b><br>時間 ${t}・最佳擊倒 ${b}` },
   en: { title: 'GENTLEMAN AGENT', sub: "Neon Bay's police force was bought by the Syndicate. One agent in a suit says no.", start: 'GO', again: 'GO AGAIN',
-    rotate: 'Rotate your phone ↻', face: 'AGENT', hp: 'HEALTH', mus: 'STORM', chain: 'HIT CHAIN', ko: 'KO', boss: 'Syndicate COMMANDO',
-    btn: ['ATK', 'CHG', 'JUMP', 'DODGE', 'STORM'], help: 'WASD move · J attack · K charge · Space jump · L dodge · I umbrella storm · Q/E camera · M music',
-    kos: (n) => `${n} KOs!`, bossDown: 'COMMANDO DOWN!', musou: 'UMBRELLA STORM', bun: 'Burger: health restored', wine: 'Coffee: storm gauge up',
+    rotate: 'Rotate your phone ↻', face: 'AGENT', hp: 'HEALTH', mus: 'MUSOU', chain: 'HIT CHAIN', ko: 'KO', boss: 'Syndicate COMMANDO',
+    btn: ['ATK', 'CHG', 'JUMP', 'DODGE', 'MUSOU'], help: 'WASD move · J attack · K charge · Space jump · L dodge · I agent musou · Q/E camera · M music',
+    kos: (n) => `${n} KOs!`, bossDown: 'COMMANDO DOWN!', musou: 'AGENT MUSOU', bun: 'Burger: health restored', wine: 'Coffee: musou gauge up',
     bossIn: 'COMMANDO INCOMING — DODGE THE BULLETS!', go: 'GO!', win: 'MISSION COMPLETE', lose: 'MISSION FAILED',
-    pickZ: ['GO', 'One agent vs the whole city'], pickG: ['', ''], faceG: '', musouG: 'UMBRELLA STORM',
+    pickZ: ['GO', 'One agent vs the whole city'], pickG: ['', ''], faceG: '', musouG: 'AGENT MUSOU',
     stats: (k, c, t, b) => `KOs <b>${k}</b> · Best chain <b>${c}</b><br>Time ${t} · Best KOs ${b}` },
 }[LANG];
 document.documentElement.lang = LANG === 'zh' ? 'zh-HK' : 'en'; document.body.classList.add(LANG);
@@ -1146,7 +1146,7 @@ const SND = {
   jump() { this.noise(0.18, 0.15, 400, 1500, 'bandpass'); },
   land() { if (this.sample('boom', 0.85, rand(0.9, 1.05))) { this.tone(55, 0.3, 'sine', 0.4, 0.5); return; } this.tone(60, 0.35, 'sine', 0.6, 0.5); this.noise(0.4, 0.4, 900, 90); },
   charge() { this.tone(160, 0.25, 'sawtooth', 0.12, 2.2); },
-  musou() {   // 風暴：風聲掃頻 + 上行和弦
+  musou() {   // 無雙：風聲掃頻 + 上行和弦
     if (!this.ctx) return;
     this.noise(3, 0.45, 300, 5000, 'bandpass', 0, null, 2); this.noise(2.6, 0.3, 4000, 600, 'bandpass', 0.3, null, 3);
     [0, 4, 7, 11, 14].forEach((n, k) => this.tone(330 * 2 ** (n / 12), 1.4, 'triangle', 0.1, 1, 0.05 + k * 0.07));
@@ -1679,7 +1679,7 @@ function syncVisuals(dt, rdt) {
   trailMat.uniforms.col.value.set(p.st === 'charge' ? 0xffc86a : p.st === 'musou' ? 0xffe07a : ACT.col);
   tipGlow.material.opacity = swinging ? 1 : 0.5;
   // 龍
-  if (p.st === 'musou') {   // 紳士風暴：藍白風圈 + 雨點繞住轉
+  if (p.st === 'musou') {   // 特工無雙：藍白風圈 + 雨點繞住轉
     const t = musouT, n = 10;
     for (let k = 0; k < n; k++) { const a = t * 9 + k / n * TAU, r = 2.5 + (k % 3) * 1.4 + Math.sin(t * 5 + k) * 0.5;
       emit(p.x + Math.cos(a) * r, 0.4 + (k % 4) * 0.7 + Math.sin(t * 3) * 0.3, p.z + Math.sin(a) * r, -Math.sin(a) * 14, rand(-1, 2), Math.cos(a) * 14, rand(.25, .45), rand(.5, 1.1), k % 3 ? 0x8ff5ff : 0xffffff, 0, 1); }
@@ -1915,10 +1915,10 @@ requestAnimationFrame(frame);
     heroBody.updateMatrixWorld(true);
   };
   C.rigTip = (tipW, midW) => { tipW.copy(tipLocal); umb.localToWorld(tipW); midW.copy(gripLocal); umb.localToWorld(midW); midW.lerp(tipW, 0.45); };
-  // 風暴：遮打開（canopy 變大）
+  // 無雙：遮打開（canopy 變大）
   C.rigUmbrella = (open) => { canopy.geometry = open ? OPEN_G : CLOSED_G; };
   const CLOSED_G = canopy.geometry, OPEN_G = new THREE.ConeGeometry(0.85, 0.42, 16, 1, true); OPEN_G.translate(0, 0.25, 0);
-  // ============ 紳士風暴：閃電（BG 09-27）============
+  // ============ 特工無雙：閃電（BG 09-27）============
   const BOLTS = [], boltMat = new THREE.MeshBasicMaterial({ color: 0xe8f4ff, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false }),
     glowMat = new THREE.MeshBasicMaterial({ color: 0x6fb8ff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
   const _d = new THREE.Vector3(), _s = new THREE.Vector3(), _cd = new THREE.Vector3();
@@ -2261,7 +2261,7 @@ KIND_AI[3] = (i, dt) => {
   else if (st === 3) { if (S.t[i] > 0.6) { S.st[i] = 0; S.t[i] = 0; S.cd[i] = rand(2.6, 4.2); } }
   return true;
 };
-// 巨漢：普通攻擊只得 25% 傷害、唔會硬直；蓄力技 / 風暴先破到防
+// 巨漢：普通攻擊只得 25% 傷害、唔會硬直；蓄力技 / 無雙先破到防
 const breaks = (o) => o.charge || o.fin || o.musou || o.boom;
 dmgHook = (i, d, o) => (S.kind[i] === 4 && !breaks(o) ? d * 0.4 : d);
 guardHook = (i, o, dx, dz) => {
@@ -3205,7 +3205,7 @@ window.MRIG = window.MRIG || {}; window.MRIG["ag_maid"] = {"Q":19858.78816573964
     };
   }
   // ---------- 3 女特工（BG 09-29 概念圖：學生服、女僕服；衣著保守）→ 可以揀 ----------
-  // 女僕用第二格（gy：重招 N_GY / CH_GY），學生開新一格 md（快招 N / CH）；武器都係收埋嘅遮；大招照用紳士風暴嘅閃電。
+  // 女僕用第二格（gy：重招 N_GY / CH_GY），學生開新一格 md（快招 N / CH）；武器都係收埋嘅遮；大招照用特工無雙嘅閃電。
   if (M.ag_student && M.ag_maid) {
     const SEG = { thrust: ['Thrust_Slash', 0.4, 0.73, 1.05], swingL: ['Left_Slash', 0.45, 0.77, 1.05], swingR: ['Right_Hand_Sword_Slash', 0.25, 0.53, 0.85],
       thrust2: ['Triple_Combo_Attack', 0.45, 0.73, 1.5, 1.75], swingWide: ['Reaping_Swing', 2.95, 3.3, 3.75], spin: ['Double_Blade_Spin', 0.4, 0.83, 1.23, 1.53, 1.95],
@@ -3219,7 +3219,7 @@ window.MRIG = window.MRIG || {}; window.MRIG["ag_maid"] = {"Q":19858.78816573964
       inner.children.forEach((c) => { c.visible = false; });
       const sm = new THREE.MeshLambertMaterial({ color: 0x1a1a1e }), cm = new THREE.MeshLambertMaterial({ color: cloth }), tm = new THREE.MeshLambertMaterial({ color: trim, emissive: 0x2a2208 });
       const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.02, 1.6, 8).rotateX(Math.PI / 2), sm); shaft.position.z = 0.68; inner.add(shaft);
-      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.11, 0.95, 12).rotateX(-Math.PI / 2), cm); can.position.z = 0.85; inner.add(can);
+      const can = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.11, 0.95, 12).rotateX(Math.PI / 2) /* 09-30：粗嗰頭近手柄、向遮尖收窄（之前倒轉，好似揸住遮尖）*/, cm); can.position.z = 0.85; inner.add(can);
       const tip = new THREE.Mesh(new THREE.ConeGeometry(0.012, 0.12, 8).rotateX(Math.PI / 2), tm); tip.position.z = 1.52; inner.add(tip);
       const hook = new THREE.Mesh(new THREE.TorusGeometry(0.06, 0.018, 6, 12, Math.PI), tm); hook.position.set(0, -0.06, -0.12); hook.rotation.set(0, Math.PI / 2, 0); inner.add(hook);
     }
@@ -3274,7 +3274,7 @@ window.MRIG = window.MRIG || {}; window.MRIG["ag_maid"] = {"Q":19858.78816573964
         if (mode !== 'hand') carryDir.lerp(CARRY[mode], Math.min(1, rdt * 8)).normalize();
         _qc.setFromUnitVectors(Z, carryDir);
         C.w.position.copy(_p); C.w.quaternion.copy(_qa).slerp(_qc, carryW); C.wi.position.set(0, 0, 0); C.w.updateMatrixWorld(true);
-        if (CHARS.zy.rigLightning) CHARS.zy.rigLightning(rdt);   // 紳士風暴：閃電
+        if (CHARS.zy.rigLightning) CHARS.zy.rigLightning(rdt);   // 特工無雙：閃電
       };
       return R;
     }
