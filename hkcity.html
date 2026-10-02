@@ -17,7 +17,7 @@ canvas{display:block}
 #helpbox .hb{max-width:560px;max-height:88vh;overflow:auto;background:#141a2e;border:1px solid rgba(140,170,255,.45);border-radius:16px;padding:16px 20px;font-size:15px;line-height:1.7;box-shadow:0 10px 40px #000}
 #helpbox h3{margin:4px 0 6px;font-size:20px;color:#ffd23f}#helpbox h4{margin:12px 0 2px;color:#7fd4ff;font-size:15px}
 #helpbox kbd{display:inline-block;min-width:20px;padding:0 6px;margin:0 2px;border-radius:5px;border:1px solid rgba(255,255,255,.5);background:rgba(255,255,255,.12);font:700 13px/20px inherit;font-family:inherit;text-align:center}
-#helpbox ul{margin:2px 0;padding-left:20px}#hclose{margin-top:12px;width:100%;font:bold 17px inherit;font-family:inherit;color:#fff;border:0;border-radius:24px;padding:10px;background:linear-gradient(90deg,#1f5f9b,#1fb5a8);cursor:pointer}
+#helpbox ul{margin:2px 0;padding-left:20px}#helpbox summary{cursor:pointer;margin-top:8px;color:#7fd8ff}#hclose{margin-top:12px;width:100%;font:bold 17px inherit;font-family:inherit;color:#fff;border:0;border-radius:24px;padding:10px;background:linear-gradient(90deg,#1f5f9b,#1fb5a8);cursor:pointer}
 #credit{position:fixed;left:8px;bottom:34px;font-size:10px;padding:6px 8px;border-radius:8px;background:rgba(0,0,0,.6);max-width:70vw;display:none}
 #credit.on{display:block}
 #credbtn{position:fixed;left:8px;bottom:6px;padding:3px 9px;border-radius:12px;border:1px solid rgba(255,255,255,.35);background:rgba(0,0,0,.45);color:#fff;font-size:11px;opacity:.8}
@@ -2454,22 +2454,23 @@ function setMode(m) {
   $('help').textContent = m === 'fly' ? (TOUCH ? '拖動轉角度・兩指縮放' : '拖動轉角度・右鍵拖動平移・滾輪縮放・WASD 移動') : (TOUCH ? '左邊搖桿行路・右邊拖動望' : 'WASD 行・拖動望・Shift 跑');
 }
 // ---------- 玩法說明（每個模式一版；開放世界第一次入會自動彈出）----------
-const HELP = {
-  fly: `<h3>🏙 香港 3D 城市</h3>真實九龍（旺角 → 尖沙咀），用政府開放數據砌成。
-<h4>航拍（而家呢個模式）</h4><ul><li>電腦：滑鼠拖動 = 轉角度；右鍵拖動（或者 <kbd>Shift</kbd>＋拖動）= 平移；滾輪 = 拉近拉遠；<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> = 移動</li><li>手機：一隻手指拖動 = 轉角度；兩隻手指 = 拉近拉遠</li></ul>
-<h4>右上角揀模式</h4><ul><li><b>落街行</b>：第一身行街，睇樓睇人</li><li><b>賽車</b>：喺彌敦道、梳士巴利道、廣東道、佐敦道飛車，兩圈</li><li><b>開放世界</b>：做紳士特工，行街、搶車、接任務賺錢</li><li><b>夜晚／日頭</b>：轉時間</li></ul>
-<h4>小貼士</h4>行近地標（太空館、半島酒店、IFC……）左上角會顯示名。網上版行到邊區會自動載入真實建築模型。`,
-  walk: `<h3>🚶 落街行</h3><ul><li>電腦：<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 或方向鍵 = 行；<kbd>Shift</kbd> = 跑；滑鼠拖動 = 望</li><li>手機：左邊用手指拖 = 搖桿行路；右邊拖動 = 望</li></ul>唔可以穿牆；左上角會顯示你喺邊條街。撳「航拍」返高空。`,
-  open: `<h3>🎮 開放世界：紳士特工</h3>目標：接任務，賺錢。錢會自動儲低。
-<h4>👤 角色</h4>紳士特工／女僕特工／學生特工，招式一樣；時空來客趙雲（長槍）、關羽（大刀）。撳右上角 👤 隨時換（第一次要下載約 1.3–2 MB）。<br><button class="hpk" onclick="window.HEROPICK && HEROPICK.show()">👤 換角色</button>
-<h4>落街行</h4><ul><li>電腦：<kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> = 行，<kbd>Shift</kbd> = 跑，<kbd>空白鍵</kbd> = 跳，滑鼠拖動 = 轉鏡頭</li><li>手機：左邊拖 = 搖桿，右邊拖 = 轉鏡頭；按「衝」= 跑、「跳」= 跳</li></ul>
-<h4>揸車</h4><ul><li>行近任何一架街車，撳 <kbd>E</kbd>（手機撳「上車」）就可以揸走佢</li><li><kbd>W</kbd> 油門、<kbd>S</kbd> 剎車／倒後、<kbd>A</kbd><kbd>D</kbd> 轉彎、<kbd>Shift</kbd> 加速、<kbd>空白鍵</kbd> 手掣漂移</li><li>再撳 <kbd>E</kbd> 落車；車會泊喺度，行返埋去可以再揸</li></ul>
-<h4>任務（行入黃色光柱接任務）</h4><ul><li>🍜 <b>外賣</b>：限時將外賣送去指定大廈（綠色光柱）。行或者揸車都得</li><li>🚕 <b>的士</b>：一定要揸車。停喺紅色「客」旁邊接客，再送去目的地停車落客</li><li>🏎 <b>追偷雞賊</b>：揸車撞黃色賊車 3 次</li><li>🚐 <b>小巴司機</b>：揸綠色小巴行運輸署真實路線，跟住光柱行，去到「站」要停車上落客</li></ul>
-<h4>⏳ 時空裂縫</h4>西九 M+ 附近有道時空裂縫（小地圖紫點）：行入去同三國魏軍開戰，打低張郃，再挑戰最強嘅呂布（第一次要下載約 4.5 MB）。見到呂布發紅光、地上出紅圈 = 佢要串人：即刻閃（<kbd>L</kbd>）、跳或者走出紅圈；俾佢串住就狂撳攻擊／閃避（手機撳掣或者㩒螢幕）掙脫。行出裂縫＝放棄。
-<h4>🥊 隨街打交・惡名 ★</h4><kbd>J</kbd>／<kbd>Z</kbd>／滑鼠左掣 打、<kbd>K</kbd> 重擊、<kbd>L</kbd> 閃、<kbd>I</kbd> 無雙大招（手機撳「打」開打）；打途人會升惡名 ★，警察會嚟追你，打低有錢；避開佢哋視線、走遠啲或者入理大圖書館 ★ 會散；有 ★ 唔入得地鐵站。<br>🍢 街邊嘅垃圾桶、紙皮箱、膠凳打得爛（揸車撞都得），一分鐘後會變返出嚟；有時會跌出魚蛋串、奶茶、雞蛋仔、菠蘿包，行過去食咗回復體力（30 秒內食，唔係就冇咗）。<br>🥤 街上有自動售賣機（小地圖藍色細格）：行埋去撳 <kbd>E</kbd>（手機「🥤 買」）用錢買飲品：檸檬茶 $8 體力 +60、豆奶 $8 體力 +40 無雙 +10、汽水 $10 無雙 +30、奶茶 $15 體力 +100 無雙 +15（冇 ★ 時體力本身已經滿，無雙會儲起下次開打用）。<br>🚔 有 ★ 揸車唔好停：停低警察會行埋嚟拉你落車；★★★ 以上會有警車閃燈趕到，警察落車追你。
-<h4>🚇 地鐵</h4><ul><li>行近地鐵出口（彩色「地鐵」出口牌；小地圖上嘅彩色方格），撳 <kbd>E</kbd>（手機撳「入站」）</li><li>揀一個站嘅出口，就會喺嗰個出口行返出嚟（12 個真實車站、112 個出口，位置來自 OpenStreetMap）</li><li>做緊任務嗰陣唔可以搭</li></ul>
-<h4>睇住邊度</h4>右上角小地圖：白色箭咀係你，彩色點係任務，綠點係目的地，彩色方格係地鐵出口。<kbd>Esc</kbd> 或者 ✕ 返地圖。`,
-};
+const HELP = (() => { const T = TOUCH, k = (x) => `<kbd>${x}</kbd>`;   // v47：朋友話字太多 → 只顯示呢部機啱用嘅操作，一件事一行，細節收埋喺「更多」
+  return {
+  fly: `<h3>🏙 香港 3D 城市</h3>真實九龍（旺角 → 尖沙咀）<ul><li>${T ? '一指拖 = 轉角度・兩指 = 縮放' : `拖動 = 轉角度・右鍵拖 = 平移・滾輪 = 縮放・${k('WASD')} 移動`}</li><li>右上角揀：<b>落街行</b>／<b>賽車</b>／<b>開放世界</b>／<b>夜晚</b></li></ul>`,
+  walk: `<h3>🚶 落街行</h3><ul><li>${T ? '左邊搖桿行・右邊拖動望' : `${k('WASD')} 行・${k('Shift')} 跑・拖動望`}</li><li>撳「航拍」返高空</li></ul>`,
+  open: `<h3>🎮 開放世界：紳士特工</h3><ul>
+<li>🎯 接任務賺錢：行入<b>黃色光柱</b></li>
+<li>🕹 ${T ? '左邊搖桿行・右邊拖轉鏡頭・「衝」跑・「跳」跳' : `${k('WASD')} 行・${k('Shift')} 跑・${k('Space')} 跳・拖動轉鏡頭`}</li>
+<li>🥊 ${T ? '撳「打」開打' : `${k('J')} 打・${k('K')} 重擊・${k('L')} 閃・${k('I')} 無雙`}</li>
+<li>🚗 ${T ? '行近架車撳「上車」' : `行近架車撳 ${k('E')} 上車／落車`}</li></ul>
+<button class="hpk" onclick="window.HEROPICK && HEROPICK.show()">👤 換角色</button>
+<details><summary>更多</summary><ul>
+${T ? '' : `<li>🚗 揸車：${k('W')} 油・${k('S')} 剎・${k('A')}${k('D')} 轉・${k('Space')} 漂移</li>`}
+<li>🍜 外賣：限時送去綠色光柱</li><li>🚕 的士：揸車接紅色「客」，送到目的地</li><li>🏎 追賊：揸車撞黃色賊車 3 次</li><li>🚐 小巴：跟光柱行，到「站」停車</li>
+<li>★ 惡名：打途人會升，警察會追；走遠就散</li><li>🥤 售賣機（小地圖藍格）：買飲品回體力</li>
+<li>🚇 地鐵：行近出口${T ? '撳「入站」' : `撳 ${k('E')}`}，揀站就到</li><li>⏳ 時空裂縫（小地圖紫點）：打三國魏軍同呂布，見紅圈即刻閃</li>
+<li>🗺 小地圖：白箭咀 = 你，綠點 = 目的地</li></ul></details>`,
+  }; })();
 window.showHelp = (m) => { $('hbody').innerHTML = HELP[m] || HELP.fly; $('helpbox').hidden = false; };
 $('tHelp').onclick = () => showHelp(cam.mode === 'walk' ? 'walk' : 'fly');
 $('hclose').onclick = () => { $('helpbox').hidden = true; };
