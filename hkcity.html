@@ -619,6 +619,7 @@ const LIFT = +((location.search.match(/[?&]lift=([\d.]+)/) || [])[1] || 0);
   const g = new THREE.BufferGeometry();
   g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3));
   g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.setAttribute('seed', new THREE.Float32BufferAttribute(SEED, 1)); g.setAttribute('roof', new THREE.Float32BufferAttribute(ROOF, 1)); g.setAttribute('hgt', new THREE.Float32BufferAttribute(HG, 1)); g.setAttribute('tile', new THREE.Float32BufferAttribute(TL, 1)); g.setAttribute('keep', new THREE.Float32BufferAttribute(KP, 1)); g.setAttribute('bidx', new THREE.Float32BufferAttribute(BI, 1)); g.setAttribute('kcol', new THREE.Float32BufferAttribute(KC, 3)); g.setAttribute('bcap', new THREE.Float32BufferAttribute(CP, 1));
+  for (const A of [P, N, UV, SEED, ROOF, HG, TL, KP, KC, CP, BI]) A.length = 0;   // autoKeep 等 closure 會留住呢個 scope：清走 JS 數組（約 100 MB），GPU 已經有 Float32 版
   const mat = new THREE.ShaderMaterial({ uniforms: U, side: THREE.DoubleSide,
     vertexShader: `attribute float seed; attribute float roof; attribute float hgt; attribute float tile; attribute float keep; attribute float bcap; attribute vec3 kcol; attribute float bidx; uniform sampler2D tileTex, keepTex; uniform float keepH; varying vec2 vUv; varying float vSeed, vRoof, vDist, vH, vTile; varying vec3 vN, vKc; varying float vY;
       void main(){ vec3 p = position; vec2 u = uv;
