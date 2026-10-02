@@ -7400,6 +7400,7 @@ window.HARB = (() => {
   const block = (x, z) => near(x, z) || wet(x, z);   // 落街行 / 紳士風暴：欄杆 + 海
   const T2 = performance.now();
   { const rc = RAILS.cross; RAILS.cross = (ax, az, bx, bz) => rc(ax, az, bx, bz) || cross(ax, az, bx, bz); }   // 途人（PEOPLE）：唔可以穿過海旁欄杆（俾車撞飛 / 打飛都係）
+  if (TOUCH) return { step() {}, near, cross, block, wet, solidB: (x, z) => blocked(x, z) || block(x, z), rails: RS, ships: [], lanes: {}, ms: { rail: Math.round(T1 - T0), wet: Math.round(T2 - T1) }, get t() { return 0; } };   // v48：手機唔放船（開機高峰約 135 MB），欄杆同海照計
 
   // ---------- 船：模型 ----------
   const M4 = (x, y, z, ry = 0, rx = 0, rz = 0) => new THREE.Matrix4().compose(new THREE.Vector3(x, y, z), new THREE.Quaternion().setFromEuler(new THREE.Euler(rx, ry, rz)), new THREE.Vector3(1, 1, 1));
