@@ -2468,7 +2468,7 @@ const HELP = (() => { const T = TOUCH, k = (x) => `<kbd>${x}</kbd>`;   // v47：
 <details><summary>更多</summary><ul>
 ${T ? '' : `<li>🚗 揸車：${k('W')} 油・${k('S')} 剎・${k('A')}${k('D')} 轉・${k('Space')} 漂移</li>`}
 <li>🍜 外賣：限時送去綠色光柱</li><li>🚕 的士：揸車接紅色「客」，送到目的地</li><li>🏎 追賊：揸車撞黃色賊車 3 次</li><li>🚐 小巴：跟光柱行，到「站」停車</li>
-<li>★ 惡名：打途人會升，警察會追；走遠就散</li><li>🥤 售賣機（小地圖藍格）：買飲品回體力</li>
+<li>★ 惡名：打途人會升，警察會追；走遠就散</li>${T ? '' : '<li>🥤 售賣機（小地圖藍格）：買飲品回體力</li>'}
 <li>🚇 地鐵：行近出口${T ? '撳「入站」' : `撳 ${k('E')}`}，揀站就到</li><li>⏳ 時空裂縫（小地圖紫點）：打三國魏軍同呂布，見紅圈即刻閃</li>
 <li>🗺 小地圖：白箭咀 = 你，綠點 = 目的地</li></ul></details>`,
   }; })();
@@ -7833,7 +7833,8 @@ window.BRK = (() => {
 <script>// v44 make_vend.py：自動售賣機 = SHOPF bay（b * 2 + 右邊 ? 1 : 0，36 進制差值）。n / sum = 過期檢查
 window.VEND_DATA = { n: 71332, sum: 1012554332, count: 386, ids: '1l,n,5,k,21,2m,62,12,k,13,56,3y,t,46,1d,g,4,i,h,m,64,h,17,26,34,7,1c,1c,m,17,7,e,o,4p,g,1i,19,1e,x,1l,c,u,8,4p,22,13,p,d,f2,j,52,1d,h,4l,1i,2m,a,3g,7,d,3,3h,1c,2c,4l,v,r,4w,2p,3t,p,66,3m,eb,5b,20,b2,h,7h,b6,2,3,79,f,2j,8,1h,2y,y,10,1t,d,6z,2u,1m,1g,e,57,s,1b,7t,4,6,15,k,9o,ci,2f,s,1u,f,o,10,s,5,m,1m,w,1p,5z,2k,9s,r,60,1g,1y,33,3i,6l,82,ey,1t,2z,89,v,1f,2l,31,86,64,b,n,v,75,2z,e,c4,5,4g,it,4y,5e,14,5o,3b,2,1i,4g,14,ef,35,2s,oz,v,e,7b,24,1a,u,5i,s,2s,2h,9f,9h,7t,7,5k,w,z3,fm,43,1m,1t,h,2e,5y,1m,3m,6n,5s,6h,49,1o,3y,m4,3,a,cb,1d,2z,52,19,s,n,4z,bb,1,2j,3,3z,6g,5s,2m,3u,1d,i3,6q,ga,i6,8x,e0,m,cb,6j,6p,iv,dl,16,2d,90,6v,6h,5,9i,54,3j,11,o,8y,eu,n0,2m,23,fc,2q,8q,5o,lh,5c,1uv,73,af,7e,k,bg,h,7d,zf,1i,19l,1r,f,s,ht,84,7,5k,5,bk,dc,4x,25,3k,f8,a,q,c5,51,6x,1r,1a,e5,5l,9i,1,50,5j,g,b8,is,38,w,jx,5y,it,pz,ah,5t,68,n,5y,4c,oo,16,qk,5w,1c,gy,3,1p,6b,v,6v,13p,1j,qp,5,ad,9f,co,1kk,f6,vo,tu,ng,21,1ty,h6,2x,38,p,z,38,u,r,1mn,12a,4o,5a,2d,43,2u,b8,1u,p,f4,10,1ck,m,3s,39,h,15,2p,w,18,14,1f,10,6h,2b,x,5a,a,a3,5o,f7,l,1c4,6p,4y,ku,gr,12r,4z,d,2ab,t,2,fe,9k,ne,6p,15,ep' };
 </script><script>window.BOOT && BOOT(0.996)</script>
-<script>// ============ v44 自動售賣機（BG 10-01：「類似汽水機嘅可以俾玩家用錢去買飲品保能」）============
+<script>if (!TOUCH) {   // v48：手機唔載 v44 售賣機 / 差佬拉落車 / Musk（三樣加埋令手機 100% 爆，BG 實測 t1–t4）
+// ============ v44 自動售賣機（BG 10-01：「類似汽水機嘅可以俾玩家用錢去買飲品保能」）============
 // 街上（行人路、貼住鋪頭一邊）有自動售賣機：行埋去 → E（手機撳「🥤 買」）→ 揀飲品 → 用遊戲錢買 → 回復體力 / 無雙。
 // 飲品全部冇牌子、冇標誌（紙包檸檬茶、紙包豆奶、罐裝汽水、樽裝奶茶）；機身只寫「凍飲」。位置 🟡 = 遊戲擺位（唔係真實位置）。
 // 價錢 vs 收入（GAME.md v44）：打低一個警察 $25–85、外賣一單 ~$100、小巴一轉 ~$300 → 最貴嘅奶茶 $15 = 半個 KO。
@@ -8009,8 +8010,9 @@ body.touch.ff-fight.vend-near #obE{display:flex!important;bottom:124px}   /* 手
   return { step, map, hit, buy, open, close, list: M, DRINKS, S, stats, dump, meshes: [body, face], get near() { return S.near; } };
 })();
 { const s0 = GAME.step; GAME.step = function (dt) { s0.call(this, dt); VEND.step(dt); VEND.map(); }; }   // v44：售賣機（主循環之後，同 v42 船 / 打得爛嘅嘢一樣做法）
-</script><script>window.BOOT && BOOT(0.996)</script>
-<script>// ============ v44 差佬識搵人落車 + ★3 警車趕到（BG 10-01：「差佬識搵人落車」；v40 / v41 未做嘅「★3+ 警車駛埋嚟、警察落車」）============
+}</script><script>window.BOOT && BOOT(0.996)</script>
+<script>if (!TOUCH) {
+// ============ v44 差佬識搵人落車 + ★3 警車趕到（BG 10-01：「差佬識搵人落車」；v40 / v41 未做嘅「★3+ 警車駛埋嚟、警察落車」）============
 // ① 拉落車：有 ★ 揸緊車，車停咗 / 好慢（< 1.5 m/s，包括俾人 / 車 / 牆夾住）而有警察行到司機位（香港右軚 = 車右邊）1.2 米內 →
 //    提示「🚔 差佬嚟緊拉你落車！快啲開車！」0.9 秒（呢段時間開車走得甩）→ 拉你落車（open.js leaveCar = 右邊落車）、跌一跌（BRAWL 'hurt'）、即刻開打。
 //    有 ★ 坐喺停咗嘅車入面：警察會喺附近派過嚟（每 2 秒兩個，最多 2 + ★ 個；freefight.js 本身揸車時唔派），喺度搵緊你嘅警察會行埋架車度。
@@ -8160,8 +8162,9 @@ window.COPCAR = (() => {
   { const t0 = FREEFIGHT.tick; FREEFIGHT.tick = (dt) => { t0(dt); const FF = FREEFIGHT, A = FF.api; if (!A) return; try { if (FF.on) dragStep(dt, A, FF); carStep(dt, A, FF); } catch (e) { console.warn('copcar', e.message); } }; }
   return { D, PC, dispatch, release, plan: (x, z) => (prep(), plan(x, z)) };
 })();
-</script><script>window.BOOT && BOOT(0.997)</script>
-<script>// ============ v44 火箭富豪 Musk（BG 09-30 / 10-01：Elon Musk 做可以揀嘅角色，卡通公仔樣、揸住支火箭，大招 = 召喚火箭）============
+}</script><script>window.BOOT && BOOT(0.997)</script>
+<script>if (!TOUCH) {
+// ============ v44 火箭富豪 Musk（BG 09-30 / 10-01：Elon Musk 做可以揀嘅角色，卡通公仔樣、揸住支火箭，大招 = 召喚火箭）============
 // BG 知道用真人樣嘅風險之後明確揀咗用。守則：友善卡通化，冇侮辱、冇政治、冇任何品牌 / 標誌 / 公司名（火箭係白身黑頭嘅程式模型，冇字）。
 // 骨架 + 貼圖好大（~1.2 MB）→ hero_musk.js（make_musk.py，揀咗先載；動作用 hero_clips.js，同女特工一樣）。呢個檔（入 hkcity.html）：
 //   ① rocket()：程式火箭（白色機身、黑色機頭、黑色尾翼、黑框舷窗、一格紅色方塊、深灰噴嘴）
@@ -8429,7 +8432,7 @@ window.MUSK_EXT = function () {
   };
   return { setHero: HEROF.setHero, MX, SM };
 };
-</script><script>window.BOOT && BOOT(0.998)</script>
+}</script><script>window.BOOT && BOOT(0.998)</script>
 <script>// ============ 揀角色（v40，BG 09-30「點樣揀用女主角玩？」「hkcity 搬埋過去，加返角色」）============
 // 紳士特工（預設，已經喺頁面入面）/ 女僕特工 / 學生特工 = games/agent 嘅 Meshy 女特工（衣著同 agent game 一樣保守）。
 // 女特工好大（骨架 ~0.8 MB + 動作 ~0.56 MB）→ 唔入 hkcity.html：揀咗先載 hero_clips.js + hero_maid.js / hero_student.js（同 hkcity.html 放埋一齊）。
@@ -8439,7 +8442,7 @@ window.HEROPICK = (() => {
   const $ = (id) => document.getElementById(id);
   const LIST = [['zy', '🎩', '紳士特工', '西裝・長遮', '#8ff5ff'], ['maid', '🎀', '女僕特工', '女僕裝・黑遮', '#d8e8ff'], ['student', '🎒', '學生特工', '校服・深藍遮', '#ff8fd8'],
     ['zyun', '🐉', '趙雲', '白袍・龍膽亮銀槍', '#8fd0ff', '約 2 MB'], ['gy', '🌙', '關羽', '綠袍・青龍偃月刀', '#7dffb0', '約 1.5 MB'],   // v43 時空來客（三國）：timerift.js 載入（RIFT.loadHero）
-    ['musk', '🚀', '火箭富豪 Musk', '卡通版・大招召喚火箭', '#ffb347', '約 1.2 MB']];   // v44 特別嘉賓：musk.js（hero_musk.js 揀咗先載）
+    ['musk', '🚀', '火箭富豪 Musk', '卡通版・大招召喚火箭', '#ffb347', '約 1.2 MB']].filter((r) => !TOUCH || r[0] !== 'musk');   // v48 手機冇 Musk；v44 特別嘉賓：musk.js（hero_musk.js 揀咗先載）
   const NAME = {}; for (const r of LIST) NAME[r[0]] = r[2];
   const K3 = { zyun: 1, gy: 1 }, GUEST = { musk: 1 };
   const RIG = { maid: 'ag_maid', student: 'ag_student', zyun: 'zy', gy: 'guanyu', musk: 'musk' };
@@ -8461,7 +8464,7 @@ window.HEROPICK = (() => {
 #hbody .hpk{margin:4px 0;padding:6px 14px;font:bold 14px inherit;font-family:inherit;color:#fff;border:1px solid rgba(160,210,255,.6);border-radius:16px;background:rgba(20,30,50,.8);cursor:pointer}
 </style>`);
   $('oui').insertAdjacentHTML('beforeend', '<div id="ohero" title="換角色">👤</div><div id="hload" hidden></div>');
-  document.body.insertAdjacentHTML('beforeend', '<div id="hpick" hidden><div class="hp"><div class="hh"><span style="cursor:auto;font-size:18px;padding:0">👤 揀角色</span><span id="hpickx">✕</span></div><div class="row" id="hprow"></div><div class="sub">⏳ 時空來客（三國）</div><div class="row" id="hprow3"></div><div class="sub">🚀 特別嘉賓（卡通版）</div><div class="row" id="hprowg"></div><div class="ft">三個特工招式一樣・趙雲長槍快攻、關羽大刀重擊・Musk 攬住火箭、無雙召喚火箭・隨時撳右上角 👤 再換</div></div></div>');
+  document.body.insertAdjacentHTML('beforeend', '<div id="hpick" hidden><div class="hp"><div class="hh"><span style="cursor:auto;font-size:18px;padding:0">👤 揀角色</span><span id="hpickx">✕</span></div><div class="row" id="hprow"></div><div class="sub">⏳ 時空來客（三國）</div><div class="row" id="hprow3"></div><div class="sub">🚀 特別嘉賓（卡通版）</div><div class="row" id="hprowg"></div><div class="ft">三個特工招式一樣・趙雲長槍快攻、關羽大刀重擊' + (TOUCH ? '' : '・Musk 攬住火箭、無雙召喚火箭') + '・隨時撳右上角 👤 再換</div></div></div>'); if (TOUCH) $('hprowg').previousElementSibling.hidden = true;   // v48 手機冇 Musk
   for (const ev of ['pointerdown', 'pointerup', 'mousedown', 'click', 'wheel']) $('hpick').addEventListener(ev, (e) => e.stopPropagation());
   $('ohero').onclick = () => show(); $('hpickx').onclick = () => hide();
   addEventListener('keydown', (e) => { if (!$('hpick').hidden && e.key === 'Escape') { e.stopImmediatePropagation(); hide(); } }, true);   // Esc 只係閂選單，唔好退出開放世界
