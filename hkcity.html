@@ -1989,18 +1989,19 @@ const TRAFFIC = (() => {
   });
   body.frustumCulled = cab.frustumCulled = false; scene.add(body, cab);   // r128 InstancedMesh 用原點包圍球裁剪，唔關就成街車唔見
   // Kenney 車（CC0）+ AI 香港車：按款式 + 顏色分組實例化
-  const CL = window.HK_CARS && window.buildCars ? buildCars(HK_CARS) : null, groups = new Map();
-  const AI = !!(window.HK_CARS && HK_CARS.models.ai_sedan);   // 有 Hunyuan3D-2.1 寫實私家車就唔用 Kenney 玩具車
+  let CL = window.HK_CARS && window.buildCars ? buildCars(HK_CARS) : null; const groups = new Map();
+  const pools = () => { const AI = !!(window.HK_CARS && HK_CARS.models.ai_sedan);   // 有 Hunyuan3D-2.1 寫實私家車就唔用 Kenney 玩具車
   const PRIV = AI ? [['ai_sedan', 22], ['ai_mpv', 18], ['ai_exec', 12], ['ai_hatch', 12], ['ai_suv', 14], ['ai_van', 14], ['ai_truck', 8]]
     : [['sedan', 30], ['van', 18], ['suv', 12], ['hatchback-sports', 12], ['suv-luxury', 8], ['sedan-sports', 6], ['delivery', 7], ['truck', 7]];
   const GOODS = AI ? [['ai_van', 55], ['ai_truck', 45]] : [['van', 40], ['delivery', 35], ['truck', 25]], COLS = [['white', 34], ['silver', 22], ['black', 22], ['blue', 10], ['red', 12]];
   const EMV = [['police_car', 45], ['police_van', 20], ['ambulance', 22], ['fire_engine', 13]];
   const EMVH = { police_car: [1.62, 0.45, 1], police_van: [2.86, 1.2, 1], ambulance: [2.9, 1.4, 2], fire_engine: [3.36, 2.9, 2] };   // 閃燈：車頂高、離車中心向前幾米、1 = 警察紅藍 / 2 = 消防處藍燈
   const HV = [['lorry', 50], ['mixer', 25], ['crane', 25]].filter(([k]) => window.HK_CARS && HK_CARS.models[k]);   // v39：中型貨車（尾板）/ 石屎車 / 吊臂車
+  return { AI, PRIV, GOODS, COLS, EMV, EMVH, HV }; };
   const wpick = (list, r) => { let t = list.reduce((a, b) => a + b[1], 0) * r; for (const [k, w] of list) if ((t -= w) <= 0) return k; return list[0][0]; };
   const o = new THREE.Object3D(), BOXCOL = { white: 0xe8e8e8, silver: 0x9a9ea6, black: 0x1a1a1e, blue: 0x2a4a8a, red: 0x8a1a1a, hkred: 0xc0182a };
-  if (CL) {
-    const M = HK_CARS.models;
+  const up3d = () => {   // v49：手機開機後先載 3D 車，再行一次
+    const M = HK_CARS.models, { AI, PRIV, GOODS, COLS, EMV, EMVH, HV } = pools();
     cars.forEach((c, i) => {
       if (c.kind === 2) { if (!M.hkbus) return; c.model = M.coach && rnd(i * 8.3) < 0.18 ? 'coach' : 'hkbus'; c.colour = ''; }   // v39：約兩成大車係旅遊巴
       else if (c.kind === 1) { c.model = M.hktaxi ? 'hktaxi' : 'taxi'; c.colour = 'hkred'; }
@@ -2018,7 +2019,9 @@ const TRAFFIC = (() => {
     for (const [key, G] of groups) { const [m, col] = key.split('|'); G.mesh = new THREE.InstancedMesh(CL.geo(m, col), CL.matFor(m), G.list.length); G.mesh.frustumCulled = false; G.who = [];
       if (HK_CARS.models[m].lo) { G.lo = new THREE.InstancedMesh(CL.geo(m, col, true), CL.matFor(m), G.list.length); G.lo.frustumCulled = false; G.whoLo = []; scene.add(G.lo); }   // 70 米外用簡化版
       scene.add(G.mesh); }
-  }
+    if (body.instanceColor) body.instanceColor.needsUpdate = true; if (cab.instanceColor) cab.instanceColor.needsUpdate = true;
+  };
+  if (CL) up3d();
   const LP = new Float32Array(N * 4 * 3), LC = new Float32Array(N * 4 * 3), lg = new THREE.BufferGeometry();
   lg.setAttribute('position', new THREE.BufferAttribute(LP, 3)); lg.setAttribute('color', new THREE.BufferAttribute(LC, 3));
   for (let i = 0; i < N; i++) for (let k = 0; k < 4; k++) { const w = k < 2; LC.set(w ? [1, .95, .8] : [1, .12, .08], (i * 4 + k) * 3); }
@@ -2085,7 +2088,7 @@ const TRAFFIC = (() => {
   let T = 0, sigT = 0;
   const SCOL = [[1, 0.1, 0.08], [1, 0.75, 0.1], [0.2, 1, 0.45]], LCOL = SCOL.map((c) => [new THREE.Color(...c.map((v) => v * 0.13)), new THREE.Color(...c)]);
   const ON = new THREE.Color(1, 1, 1), OFF = new THREE.Color(0.1, 0.1, 0.1); let blink = false;
-  const emvCars = cars.filter((c) => c.emv), EMAX = 160, EP = new Float32Array(EMAX * 3), EC = new Float32Array(EMAX * 3), eg = new THREE.BufferGeometry();
+  let emvCars = cars.filter((c) => c.emv); const EMAX = 160, EP = new Float32Array(EMAX * 3), EC = new Float32Array(EMAX * 3), eg = new THREE.BufferGeometry();
   eg.setAttribute('position', new THREE.BufferAttribute(EP, 3)); eg.setAttribute('color', new THREE.BufferAttribute(EC, 3));
   { const pts = new THREE.Points(eg, new THREE.PointsMaterial({ map: GLOW, size: 1.3, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); pts.frustumCulled = false; scene.add(pts); }
   const CG = new Map();
@@ -2189,7 +2192,8 @@ const TRAFFIC = (() => {
   // 行人燈狀態（BG 09-30 行人：「綠燈先過，紅燈等」）：(x, z) 10 米內最近嘅行人燈 → 2 綠 / 1 閃 / 0 紅；冇行人燈（斑馬線）→ -1
   const PHD = heads.filter((H) => H.t === 2);
   const pedState = (x, z) => { let b = null, bd = 100; for (const H of PHD) { const d = (H.x - x) ** 2 + (H.z - z) ** 2; if (d < bd) { bd = d; b = H; } } return b ? sigState(b, T) : -1; };
-  const api = { step, lights, cars, lanes, signals: SIG, heads, hide: null, block: null, fighters: null, hitFighter: null, carlib: CL, emv: emvCars, pedState };   // fighters [{x, z, i}] + hitFighter(i, 車方向 fx, fz, 車速, 側向 lx, lz)：freefight.js 設定   // hide(x, z)：賽車封路時收起賽道上嘅街車；block：玩家位置（街車會停）
+  const api = { step, lights, cars, lanes, signals: SIG, heads, hide: null, block: null, fighters: null, hitFighter: null, carlib: CL, emv: emvCars, pedState,
+    load3d() { if (CL || !window.HK_CARS || !window.buildCars) return; CL = buildCars(HK_CARS); up3d(); api.carlib = CL; api.emv = emvCars = cars.filter((c) => c.emv); } };   // fighters [{x, z, i}] + hitFighter(i, 車方向 fx, fz, 車速, 側向 lx, lz)：freefight.js 設定   // hide(x, z)：賽車封路時收起賽道上嘅街車；block：玩家位置（街車會停）
   return api;
 })();
 
@@ -2577,7 +2581,8 @@ const GEOFREE = (() => {
   if (TOUCH) scene.traverse((o) => { const g = o.geometry; if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || !g || !g.attributes.position || g.attributes.position.count < 50000) return;
     if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
     for (const at of [...Object.values(g.attributes), g.index]) if (at && !at.isInterleavedBufferAttribute) { at.onUpload(function () { this.__up = true; }); L.push(at); } });
-  return { list: L, step() { if (done || performance.now() - t0 < 20000) return; done = true; let b = 0; for (const at of L) if (at.__up && at.version === 0) { b += at.array.byteLength; at.array = new at.array.constructor(0); } window.GEOFREE_MB = +(b / 1e6).toFixed(1); } };
+  return { list: L, step() { if (done || performance.now() - t0 < 20000) return; done = true; let b = 0; for (const at of L) if (at.__up && at.version === 0) { b += at.array.byteLength; at.array = new at.array.constructor(0); } window.GEOFREE_MB = +(b / 1e6).toFixed(1);
+    setTimeout(() => { const s = document.createElement('script'); s.src = 'hkcity_cars.js'; s.onload = () => TRAFFIC.load3d(); document.head.appendChild(s); }, 5000); } };   // v49：手機開機高峰過咗先喺背景載 3D 車
 })();
 function frame(now) { requestAnimationFrame(frame); const ms = now - last, dt = Math.min(0.1, ms / 1000); last = now; autoRes(ms); GAME.step(dt); CULL.update(); renderer.render(scene, camera); GEOFREE.step(); }   // v45：dt 上限 0.05 → 0.1（低 FPS 唔再慢鏡）
 requestAnimationFrame(frame);
