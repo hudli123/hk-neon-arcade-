@@ -904,6 +904,32 @@ if (CITY.rsign && window.ROADSIGNS) {
   for (let i = 0; i < PO.length; i += 3) { o.position.set(PO[i] / 10, 0, PO[i + 1] / 10); o.scale.set(1, PO[i + 2] / 100, 1); o.updateMatrix(); pm.setMatrixAt(i / 3, o.matrix); }
   pm.frustumCulled = false; scene.add(pm); window.__rsigns = P.length / 18;
 }
+// v54 方向路牌：運輸署真實牌面（hkcity_ds.js + atlas）。開機後先喺背景載，唔加重開機高峰；手機用細 atlas、等 3D 車載完先載
+window.DS_LOAD = () => {
+  if (window.__dsLoading) return; window.__dsLoading = 1;
+  const s = document.createElement('script'); s.src = 'hkcity_ds.js'; s.onload = () => {
+    const D = window.DSIGN, P = [], UV = [], posts = [], o = new THREE.Object3D(), uo = TOUCH ? 13 : 9;
+    for (const d of D) {
+      const [x, z, fx, fz, y00, w, h, kind, el] = d, c = d.slice(uo, uo + 4);
+      let b = 0; if (el && window.ELEV) { const q = ELEV.surf(x, z, 200, 0, 'r'); if (q > 0) b = q; }
+      const y0 = b + y00, cx = x + fx * 0.08, cz = z + fz * 0.08, rx = fz * w / 2, rz = -fx * w / 2;
+      const A = [cx - rx, y0, cz - rz], B = [cx + rx, y0, cz + rz], C = [cx + rx, y0 + h, cz + rz], E = [cx - rx, y0 + h, cz - rz];
+      P.push(...A, ...B, ...C, ...A, ...C, ...E); UV.push(c[0], c[1], c[2], c[1], c[2], c[3], c[0], c[1], c[2], c[3], c[0], c[3]);
+      const k = kind ? (w / 2 + 0.6) / (w / 2) : 0.6, top = y0 + h * (kind ? 1.04 : 0.9);
+      for (const sg of [-1, 1]) posts.push([x + rx * k * sg, b, z + rz * k * sg, 0.16, top - b, 0.16]);   // 支柱
+      if (kind) posts.push([x - fx * 0.15, y0 + h + 0.2, z - fz * 0.15, w + 1.4, 0.35, 0.35, Math.atan2(fz, -fx)]);   // 門架橫樑
+    }
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.computeVertexNormals();
+    const tex = new THREE.TextureLoader().load(TOUCH ? 'hkcity_ds_m.png' : 'hkcity_ds.png'); tex.anisotropy = 4;
+    const mat = new THREE.MeshLambertMaterial({ map: tex, emissiveMap: tex, emissive: 0x666666, alphaTest: 0.5, side: THREE.DoubleSide });   // 反光牌：夜晚都睇到
+    mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.42, 0.43, 0.45);'); };
+    const m = new THREE.Mesh(g, mat); m.frustumCulled = false; scene.add(m);
+    const pm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x8a8d90 }), posts.length);
+    posts.forEach((q, i) => { o.position.set(q[0], q[1] + (q.length === 7 ? 0 : q[4] / 2), q[2]); o.rotation.set(0, q[6] || 0, 0); o.scale.set(q[3], q[4], q[5]); o.updateMatrix(); pm.setMatrixAt(i, o.matrix); });
+    pm.frustumCulled = false; scene.add(pm); window.__dsigns = D.length; window.DSMESH = m;
+  }; document.head.appendChild(s);
+};
+if (!TOUCH) setTimeout(window.DS_LOAD, 4000);
 // ---------- 天台雜物：水箱、樓梯屋、天線（instanced）----------
 {
   const pinside = (ring, x, z) => { let c = false; for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) { const a = ring[i], b = ring[j]; if ((a[1] > z) !== (b[1] > z) && x < (b[0] - a[0]) * (z - a[1]) / (b[1] - a[1]) + a[0]) c = !c; } return c; };
@@ -2590,7 +2616,7 @@ const GEOFREE = (() => {   // v50：欄杆嘅 position 要留（撞爛 / 現返�
     if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
     for (const at of [...Object.values(g.attributes), g.index]) if (at && !at.isInterleavedBufferAttribute && !(g === RAILS.geo && at === g.attributes.position)) { at.onUpload(function () { this.__up = true; }); L.push(at); } });
   return { list: L, step() { if (done || performance.now() - t0 < 20000) return; done = true; let b = 0; for (const at of L) if (at.__up && at.version === 0) { b += at.array.byteLength; at.array = new at.array.constructor(0); } window.GEOFREE_MB = +(b / 1e6).toFixed(1);
-    setTimeout(() => { const s = document.createElement('script'); s.src = 'hkcity_cars_m.js'; s.onload = () => TRAFFIC.load3d(); document.head.appendChild(s); }, 5000); } };   // v49：手機開機高峰過咗先喺背景載 3D 車
+    setTimeout(() => { const s = document.createElement('script'); s.src = 'hkcity_cars_m.js'; s.onload = () => { TRAFFIC.load3d(); setTimeout(() => window.DS_LOAD && DS_LOAD(), 15000); }; document.head.appendChild(s); }, 5000); } };   // v54：手機 3D 車載完 15 秒後先載方向路牌   // v49：手機開機高峰過咗先喺背景載 3D 車
 })();
 function frame(now) { requestAnimationFrame(frame); const ms = now - last, dt = Math.min(0.1, ms / 1000); last = now; autoRes(ms); GAME.step(dt); CULL.update(); renderer.render(scene, camera); GEOFREE.step(); }   // v45：dt 上限 0.05 → 0.1（低 FPS 唔再慢鏡）
 requestAnimationFrame(frame);
