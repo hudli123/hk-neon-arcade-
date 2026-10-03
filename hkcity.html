@@ -3603,10 +3603,19 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
           if (!best || front < best.front || (front === best.front && o.s < best.s)) best = o;
         }
       }
-    if (!best) best = { x: e[2], z: e[3], yaw: 0 };
+    for (let r = 20; r <= 120 && !best; r += 4)   // v53：九龍站等出口喺大平台底（成片 footprint 都係實心），16 米內冇空位就向外搵到平台邊
+      for (let a = 0; a < 36; a++) {
+        const x = e[2] + Math.cos(a * 0.1745) * r, z = e[3] + Math.sin(a * 0.1745) * r; if (!free(x, z)) continue;
+        const base = Math.atan2(rd.x - x, rd.z - z);
+        for (const dy of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) {
+          const o = { x, z, yaw: base + dy, far: true }, [sc, front] = fit(o); o.s = sc + r * 0.3; o.front = front;
+          if (!best || front < best.front || (front === best.front && o.s < best.s)) best = o;
+        }
+      }
+    if (!best) return null;   // 搵唔到街面位就唔放呢個出口（以前會擺喺樓入面，一出站就卡死）
     const [fx, fz] = w2(best, 0, 0.8), [ax, az] = w2(best, 0, 2.2);
-    return { e, x: best.x, z: best.z, yaw: best.yaw, fx, fz, ax, az, front: best.front };
-  });
+    return { e, x: best.x, z: best.z, yaw: best.yaw, fx, fz, ax, az, front: best.front, far: !!best.far };
+  }).filter((o, i, A) => o && !(o.far && A.slice(0, i).some((q) => q && (q.x - o.x) ** 2 + (q.z - o.z) ** 2 < 100)));   // 搬出嚟嘅出口如果撞埋同一個位就只留一個
   if (EXS.length) {
     // 出口本體：一個 InstancedMesh（頂點顏色）
     const P = [], C = [], c3 = new THREE.Color(), m4 = new THREE.Matrix4();
@@ -3680,6 +3689,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     $('omtr').hidden = true; metro = 'ride'; $('ofade').style.opacity = 1; beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200);
     setTimeout(() => {
       let x = o.ax, z = o.az; if (solid(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
+      for (let r = 1; r <= 30 && solid(x, z); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
       hero.x = x; hero.z = z; hero.y = 0; hero.vy = 0; hero.h = o.yaw; cam.wyaw = o.yaw + Math.PI; cam.wx = x; cam.wz = z;
       spawnGivers(); $('ofade').style.opacity = 0; metro = null; big(`${MTR.st[o.e[0]][0]} ${o.e[1]} 出口`, stCol(o.e[0]));
     }, 700);
