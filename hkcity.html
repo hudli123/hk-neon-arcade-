@@ -1230,8 +1230,14 @@ if (CITY.tad) {
   window.RAILS = { gaps: RGAP.size, segs: () => RKEEP,
     cross(ax, az, bx, bz) {   // 一步（< 10 米）有冇穿過欄杆
       const L = RKG.get(rkg(ax, az)), L2 = rkg(bx, bz) !== rkg(ax, az) ? RKG.get(rkg(bx, bz)) : null;
-      for (const list of [L, L2]) if (list) for (const k of list) { const s = RKEEP[k]; if (rX(ax, az, bx, bz, s[0], s[1], s[2], s[3])) return true; }
-      return false; } };
+      for (const list of [L, L2]) if (list) for (const k of list) { const s = RKEEP[k]; if (!s[4] && rX(ax, az, bx, bz, s[0], s[1], s[2], s[3])) return true; }
+      return false; },
+    hits(ax, az, bx, bz) {   // v50：架車撞中邊幾段（未爛）欄杆
+      const out = []; for (const q of new Set([rkg(ax, az), rkg(bx, bz), rkg((ax + bx) / 2, (az + bz) / 2)])) for (const k of RKG.get(q) || []) { const s = RKEEP[k]; if (!s[4] && !out.includes(k) && rX(ax, az, bx, bz, s[0], s[1], s[2], s[3])) out.push(k); }
+      return out; },
+    set(k, on) {   // v50：撞爛 = 段欄杆瞓低（頂三點落地）；現返 = 企返起身
+      const s = RKEEP[k], A = RAILS.geo && RAILS.geo.attributes.position; s[4] = on ? 0 : 1; if (!A) return;
+      for (const j of [2, 4, 5]) A.setY(k * 6 + j, on ? 1.1 : 0.2); A.needsUpdate = true; } };
   const railTex = (() => { const c = document.createElement('canvas'); c.width = 256; c.height = 128; const x = c.getContext('2d');
     x.fillStyle = '#c9ced3'; x.fillRect(0, 0, 256, 9); x.fillRect(0, 116, 256, 7); x.fillRect(0, 0, 11, 128);   // 頂欄、底欄、柱
     for (let k = 1; k < 20; k++) x.fillRect(11 + k * 12.3 - 1.5, 9, 3, 107);                                      // 鐵枝（約 12 厘米一條）
@@ -1239,7 +1245,7 @@ if (CITY.tad) {
     const t = new THREE.CanvasTexture(c); t.wrapS = THREE.RepeatWrapping; t.anisotropy = 8; return t; })();
   const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(RP, 3)); rg.setAttribute('uv', new THREE.Float32BufferAttribute(RUV, 2)); rg.computeVertexNormals();
   const railMat = new THREE.MeshLambertMaterial({ color: 0xb8bec4, map: railTex, alphaTest: 0.5, side: THREE.DoubleSide });
-  scene.add(new THREE.Mesh(rg, railMat)); RAILS.mat = railMat;   // v42：海旁欄杆（harbour.js）用同一款
+  scene.add(new THREE.Mesh(rg, railMat)); RAILS.mat = railMat; RAILS.geo = rg;   // v42：海旁欄杆（harbour.js）用同一款
 }
 // ---------- 空間索引：大廈牆身（招牌 / 行街碰撞用）----------
 const GS = 20, WALLS = new Map(), RINGS = new Map();
@@ -1319,7 +1325,7 @@ function blocked(x, z) { const list = RINGS.get(gkey(x, z)); if (!list) return f
   for (const [geo, mat, pts] of sets) {
     const im = new THREE.InstancedMesh(geo, mat, pts.length);
     pts.forEach(([x, z, h], k) => { o.position.set(x, 0.16, z); o.rotation.set(0, h, 0); o.updateMatrix(); im.setMatrixAt(k, o.matrix); });
-    scene.add(im); CULL.add(im, 300); if (pts === bp) window.__binMesh = im;   // v42：垃圾桶打得爛（breakables.js）
+    scene.add(im); CULL.add(im, 300); if (pts === bp) window.__binMesh = im; else (window.__hydSets = window.__hydSets || []).push([im, pts]);   // v42：垃圾桶打得爛（breakables.js）
   }
 }
 // 高度格（4 米一格，記格內最高樓頂）→ 賽車 / 開放世界鏡頭唔穿樓
@@ -1831,7 +1837,7 @@ const HYDL = (() => {
   for (let i = 0; i < LAMPS.n; i++) {
     const x = P[i * 2] / LAMPS.q, z = P[i * 2 + 1] / LAMPS.q, a = A[i] / 256 * Math.PI * 2, h = H[i], arm = h >= 10 ? 1.8 : h >= 8 ? 1.5 : 0;
     let y = E[i] === 0 ? 0.16 : 0; if (E[i] === 1) { const d = ELEV.surf(x, z, 200, 0, 'r'); if (d > 0) y = d; }   // 車路入面嘅燈：有高架路 / 天橋就企喺橋面
-    L.push({ x, z, y, a, h }); lampPts.push(x + Math.sin(a) * arm, y + h - 0.15, z + Math.cos(a) * arm);
+    L.push({ x, z, y, a, h, li: lampPts.length / 3 }); lampPts.push(x + Math.sin(a) * arm, y + h - 0.15, z + Math.cos(a) * arm);
   }
   const mat = new THREE.MeshLambertMaterial({ color: 0x9a9b98 }), cyl = (r0, r1, h, s = 6) => new THREE.CylinderGeometry(r0, r1, h, s, 1, true);
   const mk = (h) => {   // 一款燈柱：柱 + 燈臂（向 +z）+ 扁身 LED 燈頭；5 米 = 柱頂燈
@@ -1846,9 +1852,9 @@ const HYDL = (() => {
   const T = { 5: [], 8: [], 10: [] }; for (const l of L) T[l.h].push(l);
   const IM = {}; for (const h in T) { IM[h] = new THREE.InstancedMesh(mk(+h), mat, T[h].length); IM[h].count = 0; IM[h].frustumCulled = false; scene.add(IM[h]); }
   const o = new THREE.Object3D(); let key = null;
-  return { list: L, near(cx, cz, low) {
+  return { list: L, refresh() { key = null; }, near(cx, cz, low) {
     const k = low ? Math.floor(cx / 60) * 100000 + Math.floor(cz / 60) : -1; if (k === key) return; key = k;
-    for (const h in T) { let n = 0; if (low) for (const l of T[h]) { if ((l.x - cx) ** 2 + (l.z - cz) ** 2 > 67600) continue; o.position.set(l.x, l.y, l.z); o.rotation.set(0, l.a, 0); o.updateMatrix(); IM[h].setMatrixAt(n++, o.matrix); }
+    for (const h in T) { let n = 0; if (low) for (const l of T[h]) { if (l.broken || (l.x - cx) ** 2 + (l.z - cz) ** 2 > 67600) continue; o.position.set(l.x, l.y, l.z); o.rotation.set(0, l.a, 0); o.updateMatrix(); IM[h].setMatrixAt(n++, o.matrix); }
       IM[h].count = n; IM[h].instanceMatrix.needsUpdate = true; }
   } };
 })();
@@ -2079,6 +2085,7 @@ const TRAFFIC = (() => {
   const OFF0 = new THREE.Color(0.1, 0.1, 0.1);   // 先寫一次實例顏色：第一次畫之前冇 instanceColor，shader 就唔會支援逐盞燈顏色
   for (let i = 0; i < VH.length * 6; i++) lamps.setColorAt(i, OFF0); for (let i = 0; i < PH.length; i++) { pedR.setColorAt(i, OFF0); pedG.setColorAt(i, OFF0); }
   for (let i = 0; i < (MS ? VH.length : 0); i++) { vpR.setColorAt(i, OFF0); vpG.setColorAt(i, OFF0); }
+  window.__SIG = { VH, PH, vBody, pBody, lamps, pedR, pedG, vpR, vpG };   // v50：紅綠燈撞得爛（breakables）
   for (const m of [vBody, pBody, lamps, pedR, pedG, vpR, vpG]) { m.frustumCulled = false; scene.add(m); CULL.add(m, 600); }
   const SP = new Float32Array(heads.length * 3), SC = new Float32Array(heads.length * 3), sg = new THREE.BufferGeometry();
   heads.forEach((H, i) => SP.set([H.x, H.t === 2 ? PY[0] : LY[0], H.z], i * 3));
@@ -2329,6 +2336,7 @@ const PEOPLE = (() => {
         const t = c.downT - c.down;   // 已經過咗幾耐
         c.tilt = t < 0.35 ? -Math.PI / 2 * (t / 0.35) : c.down < 0.6 ? -Math.PI / 2 * (c.down / 0.6) : -Math.PI / 2;   // 跌低 → 躺 → 起身
         c.hop = t < 0.35 ? Math.sin(t / 0.35 * Math.PI) * 0.6 : 0;
+        if (c.ko && c.down < 0.6) { c.ko = false; c.down = 0; c.tilt = 0; c.on = false; c.p.root.visible = false; continue; }   // v50 KO：唔起身，收埋（下格喺第二度生返）
         if (c.down <= 0) { c.down = 0; c.tilt = 0; c.flee = 3; c.idle = false; c.tx = c.fx; c.tz = c.fz; anim(c, 'run'); }
         continue;
       }
@@ -2415,10 +2423,10 @@ const PEOPLE = (() => {
     }
     m.instanceMatrix.needsUpdate = true;
   }
-  function knock(c, dx, dz, speed) {   // 俾車撞：(dx, dz) = 車行緊嘅方向
-    if (c.down > 0) return; const s = Math.min(9, 2 + speed * 0.45);
+  function knock(c, dx, dz, speed, ko) {   // 俾車撞：(dx, dz) = 車行緊嘅方向；ko（v50，玩家快車撞）= 瞓低唔起身，之後喺第二度補返
+    if (c.down > 0) return; const s = Math.min(9, 2 + speed * 0.45); c.ko = !!ko;
     c.kx = dx * s; c.kz = dz * s; c.tx = -dx; c.tz = -dz; c.fx = dx; c.fz = dz;   // 面向架車、向後飛；起身之後向車行嘅方向走開
-    c.downT = c.down = 2.6 + Math.random(); c.flee = 0;
+    c.downT = c.down = ko ? 4.5 : 2.6 + Math.random(); c.flee = 0;
   }
   function scare(x, z, r) {   // 附近嘅人散開：跑向遠離撞車點嘅方向
     for (const c of crowd) { if (!c.on || c.down > 0) continue; const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz); if (d > r || d < 0.01) continue;
@@ -2576,11 +2584,11 @@ function autoRes(ms) {   // v45：連續 2 秒慢過 ~26 FPS 就降解像度，�
   if (nx !== prNow) { prNow = nx; renderer.setPixelRatio(prNow); layout(); dispatchEvent(new Event('resize')); }
 }
 // v47 手機：大型靜態幾何（≥ 5 萬頂點）上載咗 GPU 之後放走 JS 嗰份（three.js 預設 CPU / GPU 兩邊都留，≈ 110 MB）。只放走已上載 + 開機 20 秒內冇改過（version 0）嘅 attribute
-const GEOFREE = (() => {
+const GEOFREE = (() => {   // v50：欄杆嘅 position 要留（撞爛 / 現返要改）
   const L = [], t0 = performance.now(); let done = !TOUCH;
   if (TOUCH) scene.traverse((o) => { const g = o.geometry; if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || !g || !g.attributes.position || g.attributes.position.count < 50000) return;
     if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
-    for (const at of [...Object.values(g.attributes), g.index]) if (at && !at.isInterleavedBufferAttribute) { at.onUpload(function () { this.__up = true; }); L.push(at); } });
+    for (const at of [...Object.values(g.attributes), g.index]) if (at && !at.isInterleavedBufferAttribute && !(g === RAILS.geo && at === g.attributes.position)) { at.onUpload(function () { this.__up = true; }); L.push(at); } });
   return { list: L, step() { if (done || performance.now() - t0 < 20000) return; done = true; let b = 0; for (const at of L) if (at.__up && at.version === 0) { b += at.array.byteLength; at.array = new at.array.constructor(0); } window.GEOFREE_MB = +(b / 1e6).toFixed(1);
     setTimeout(() => { const s = document.createElement('script'); s.src = 'hkcity_cars.js'; s.onload = () => TRAFFIC.load3d(); document.head.appendChild(s); }, 5000); } };   // v49：手機開機高峰過咗先喺背景載 3D 車
 })();
@@ -3898,7 +3906,8 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       if (PEOPLE.crowd) for (const p of PEOPLE.crowd) {   // 車撞人（BG 09-29）：快過 4 m/s 撞中 → 向後飛、跌低、附近嘅人散開；慢慢推埋去就行開
         if (!p.on || p.down > 0) continue; const dx = p.x - car.x, dz = p.z - car.z, d2 = dx * dx + dz * dz; if (d2 >= 9) continue;
         const fx = Math.sin(car.h), fz = Math.cos(car.h), sg = Math.sign(car.v || 1), lo = (dx * fx + dz * fz) * sg, la = Math.abs(dx * fz - dz * fx);
-        if (Math.abs(car.v) > 4 && lo > 0 && la < 1.4) { PEOPLE.knock(p, fx * sg, fz * sg, Math.abs(car.v)); PEOPLE.scare(p.x, p.z, 16); car.v *= 0.85; }
+        if (Math.abs(car.v) > 4 && lo > 0 && la < 1.4) { const ko = Math.abs(car.v) > 8.3; PEOPLE.knock(p, fx * sg, fz * sg, Math.abs(car.v), ko); PEOPLE.scare(p.x, p.z, 16); car.v *= 0.85;   // v50：快過 30 km/h = KO + 1 粒 ★
+          if (ko && window.FREEFIGHT && FREEFIGHT.wanted) FREEFIGHT.wanted(p.x, p.z, 1); }
         else if (d2 < 4) { const d = Math.sqrt(d2) || 1; p.x += dx / d * 1.2 * dt * 6; p.z += dz / d * 1.2 * dt * 6; }
       }
       { const fx = Math.sin(car.h), fz = Math.cos(car.h), hf = ELEV.surf(car.x + fx * 2, car.z + fz * 2, car.y + 0.4, 1.6, 'r'), hb = ELEV.surf(car.x - fx * 2, car.z - fz * 2, car.y + 0.4, 1.6, 'r');
@@ -7334,6 +7343,7 @@ body.ff-fight.touch #omis{max-height:24px;line-height:24px;overflow:hidden}
     starHTML: () => { const s = stars(); return s ? `<span class="st${F.seen ? '' : ' blink'}">${'★'.repeat(s)}<i>${'★'.repeat(5 - s)}</i></span>` : ''; },
     noMetro: () => big(`惡名 ${'★'.repeat(stars())} 未散，閘口有人睇住，入唔到站！`, '#ff6a5a'),
     get api() { return A; }, F, alive, end,
+    wanted(x, z, amt) { if (!OPEN.active) return; begin(); crime(x, z, amt); },   // v50：揸車撞 KO 途人（open.js）→ 開 session + 加 ★
   };
 })();
 </script><script>window.BOOT && BOOT(0.994)</script>
@@ -7680,6 +7690,18 @@ window.BRK = (() => {
   const BIN = window.__binMesh;
   if (BIN && window.__binPts) { __binPts.forEach(([x, z, h], i) => addO({ k: 0, x, z, y: 0.16, h, m: BIN, i }));
     BIN.geometry.setAttribute('bfade', new THREE.InstancedBufferAttribute(new Float32Array(__binPts.length).fill(1), 1)); dither(BIN.material); }
+  // v50（BG「撞圍欄街邊野會爛，不過會 respawn 返」）：消防栓 / 街燈 / 紅綠燈 / 欄杆（欄杆喺 ram() 用 RAILS.hits 即場搵）
+  for (const [im, pts] of window.__hydSets || []) { pts.forEach(([x, z, h], i) => addO({ k: 3, x, z, y: 0.16, h, m: im, i }));
+    im.geometry.setAttribute('bfade', new THREE.InstancedBufferAttribute(new Float32Array(Math.max(1, pts.length)).fill(1), 1)); dither(im.material); }
+  const LPTS = typeof lamps !== 'undefined' && lamps && lamps.geometry && lamps.geometry.attributes.position;
+  if (typeof HYDL !== 'undefined' && HYDL) HYDL.list.forEach((l) => addO({ k: 4, x: l.x, z: l.z, y: l.y, h: 0, big: 1, cb(on) { l.broken = !on; HYDL.refresh();
+    if (LPTS && l.li < LPTS.count) { LPTS.setY(l.li, on ? l.y + l.h - 0.15 : -999); LPTS.needsUpdate = true; } } }));
+  const hideSet = (L) => { L = L.filter(([m, i]) => i < m.count); let saved = null;
+    return (on) => { if (!on) saved = L.map(([m, i]) => { const a = m.instanceMatrix.array.slice(i * 16, i * 16 + 16); m.setMatrixAt(i, ZERO); m.instanceMatrix.needsUpdate = true; return a; });
+      else if (saved) { L.forEach(([m, i], q) => { m.instanceMatrix.array.set(saved[q], i * 16); m.instanceMatrix.needsUpdate = true; }); saved = null; } }; };
+  { const S = window.__SIG; if (S) {
+    S.VH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.vBody, i], ...[0, 1, 2, 3, 4, 5].map((q) => [S.lamps, i * 6 + q]), [S.vpR, i], [S.vpG, i]]) }));
+    S.PH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.pBody, i], [S.pedR, i], [S.pedG, i]]) })); } }
   const SHOP_K = new Map([[1, 2], [7, 2], [10, 2], [20, 2], [21, 2], [22, 2], [29, 2], [0, 1], [2, 1], [3, 1], [4, 1], [9, 1], [11, 1], [12, 1], [24, 1], [26, 1]]);   // shops.js 鋪名次序 → 2 膠凳 / 1 紙皮
   const PG = new Map(), pk = (x, z) => Math.floor(x / 4) * 100000 + Math.floor(z / 4);   // 路邊嘢（消防栓、垃圾桶）+ 已擺嘅，4 米格，唔好疊埋
   const mark = (x, z) => { const q = pk(x, z); (PG.get(q) || PG.set(q, []).get(q)).push(x, z); };
@@ -7703,19 +7725,19 @@ window.BRK = (() => {
     scene.add(m); return m; }
   const MCARD = inst(CARD, newP[1], 1), MSTOOL = inst(STOOL, newP[2], 2);
   const _m = new THREE.Matrix4(), ZERO = new THREE.Matrix4().makeScale(0, 0, 0);
-  function show(o, on) { if (on) { _o.position.set(o.x, o.y, o.z); _o.rotation.set(0, o.h, 0); _o.scale.set(1, 1, 1); _o.updateMatrix(); o.m.setMatrixAt(o.i, _o.matrix); } else o.m.setMatrixAt(o.i, ZERO); o.m.instanceMatrix.needsUpdate = true; }
-  function fade(o, f) { const a = o.m.geometry.attributes.bfade; a.array[o.i] = f; a.needsUpdate = true; }
+  function show(o, on) { if (o.cb) return o.cb(on); if (on) { _o.position.set(o.x, o.y, o.z); _o.rotation.set(0, o.h, 0); _o.scale.set(1, 1, 1); _o.updateMatrix(); o.m.setMatrixAt(o.i, _o.matrix); } else o.m.setMatrixAt(o.i, ZERO); o.m.instanceMatrix.needsUpdate = true; }
+  function fade(o, f) { if (!o.m) return; const a = o.m.geometry.attributes.bfade; a.array[o.i] = f; a.needsUpdate = true; }
 
   // ---------- 碎片（同 storm engine 嘅 KO 方塊碎一樣做法：instanced 方塊、彈地、慢慢縮細）----------
   const CM = 260, chunks = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0xffffff }), CM);
   chunks.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CM * 3).fill(1), 3);   // 要喺 count = 0 之前整好（setColorAt 用 count 開 buffer → 0 長 → 全黑）
   chunks.instanceMatrix.setUsage(THREE.DynamicDrawUsage); chunks.frustumCulled = false; chunks.count = 0; scene.add(chunks);
   const CH = []; let chHead = 0, chLive = 0;
-  const PAL = { 0: [0xe4561e, 0xe4561e, 0xc84a18, 0xb4b6b8, 0x18181a, 0xf2f2ea, 0x9fd26a], 1: [0xb08a5a, 0xa47e50, 0xc09a68, 0xd8c9a0, 0x8a6a40], 2: [0xc4231d, 0x9e1a15, 0xd83a2a] };
+  const PAL = { 0: [0xe4561e, 0xe4561e, 0xc84a18, 0xb4b6b8, 0x18181a, 0xf2f2ea, 0x9fd26a], 1: [0xb08a5a, 0xa47e50, 0xc09a68, 0xd8c9a0, 0x8a6a40], 2: [0xc4231d, 0x9e1a15, 0xd83a2a], 3: [0xc8201c, 0xa81a16, 0xe0a020, 0x555555], 4: [0x9a9b98, 0xb8b9b6, 0x6e6f6c, 0xfff2c0], 5: [0x1e2023, 0x2a2c30, 0xff3024, 0x3dff8a, 0xffc020], 6: [0xc9ced3, 0xa8adb2, 0x8a8e94] };
   function burst(o, dx, dz, pw) {
     const pal = PAL[o.k], n = 16;
     for (let q = 0; q < n; q++) { const ci = chHead, c = CH[ci] || (CH[ci] = {}); chHead = (chHead + 1) % CM;
-      Object.assign(c, { x: o.x + rand(-0.25, 0.25), y: o.y + rand(0.1, 0.7), z: o.z + rand(-0.25, 0.25), vx: dx * pw * rand(0.4, 1.1) + rand(-1.6, 1.6), vy: rand(2, 5.5), vz: dz * pw * rand(0.4, 1.1) + rand(-1.6, 1.6),
+      Object.assign(c, { x: o.x + rand(-0.25, 0.25), y: o.y + rand(0.1, o.big ? 3 : 0.7), z: o.z + rand(-0.25, 0.25), vx: dx * pw * rand(0.4, 1.1) + rand(-1.6, 1.6), vy: rand(2, 5.5), vz: dz * pw * rand(0.4, 1.1) + rand(-1.6, 1.6),
         rx: rand(0, 6), ry: rand(0, 6), wx: rand(-12, 12), wy: rand(-12, 12), s: o.k === 1 ? rand(0.14, 0.3) : rand(0.1, 0.24), life: rand(1.4, 2.4), g: o.y, sx: o.k === 1 ? 1.6 : 1 });
       chunks.setColorAt(ci, _c.set(pal[(Math.random() * pal.length) | 0])); }
     chunks.instanceColor.needsUpdate = true; chLive = 1;
@@ -7736,6 +7758,7 @@ window.BRK = (() => {
   function sound(k) { const A = window.BRAWL && BRAWL.api, S = A && A.SND; if (!S || !S.ctx || GAME.t - sndT < 0.05) return; sndT = GAME.t;
     if (k === 0) { S.shatter(); S.tone(95, 0.16, 'sine', 0.3, 0.5); }                                            // 玻璃纖維桶：碎 + 悶響
     else if (k === 1) { S.noise(0.22, 0.4, 800, 150, 'lowpass'); S.noise(0.1, 0.22, 2600, 900, 'bandpass', 0.02); }   // 紙皮：噗 + 沙沙聲
+    else if (k >= 3) { S.tone(140, 0.2, 'square', 0.12, 0.5); S.noise(0.18, 0.35, 1800, 400, 'bandpass', 0.02); }   // v50 鐵嘢：噹 + 金屬聲
     else { S.tone(560, 0.07, 'square', 0.07, 0.6); S.noise(0.12, 0.28, 3200, 1200, 'bandpass', 0.01, null, 2); } }   // 膠凳：啪
 
   // ---------- 小食 ----------
@@ -7802,7 +7825,8 @@ window.BRK = (() => {
   const wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   function hitArc(cx, cz, range, arc, half, dmg, opts) {   // BRAWL doHit → objHit（自由行 + 紳士特工無雙任務）：同打人一樣嘅範圍 / 扇形
     const A = BRAWL.api, P = A.player; let n = 0;
-    near(cx, cz, range + 0.8, (o) => { if (o.st) return; const dx = o.x - cx, dz = o.z - cz, d = Math.hypot(dx, dz); if (d > range + 0.6) return;
+    near(cx, cz, range + 0.8, (o) => { if (o.st || o.k >= 3) return;   // 鐵嘢打唔爛，要揸車撞
+      const dx = o.x - cx, dz = o.z - cz, d = Math.hypot(dx, dz); if (d > range + 0.6) return;
       if (arc < 360 && d > 0.9 && Math.abs(wrapA(Math.atan2(dx, dz) - P.yaw)) > half + 0.25) return;
       smash(o, dx / (d || 1), dz / (d || 1), opts && (opts.fin || opts.musou || opts.charge) ? 7 : 4); n++; });
     return n;
@@ -7815,8 +7839,11 @@ window.BRK = (() => {
   function ram() {   // 揸車撞：車身範圍（同 open.js 碰撞探針一樣大細）+ 0.3 米
     const c = OPEN.car, v = Math.abs(c.v); if (v < 2.5) return;
     const fx = Math.sin(c.h), fz = Math.cos(c.h), hl = (c.kind === 2 ? 5.6 : c.big ? 3.7 : 2.1) + 0.3, hw = (c.kind === 2 ? 1.1 : c.big ? 1.05 : 0.8) + 0.3, sg = Math.sign(c.v);
-    near(c.x, c.z, hl + 1, (o) => { if (o.st) return; const dx = o.x - c.x, dz = o.z - c.z, a = dx * fx + dz * fz, s = dx * fz - dz * fx; if (Math.abs(a) > hl || Math.abs(s) > hw) return;
-      smash(o, fx * sg * 0.8 + (s > 0 ? fz : -fz) * 0.4, fz * sg * 0.8 - (s > 0 ? fx : -fx) * 0.4, Math.min(9, 2 + v * 0.4)); });
+    near(c.x, c.z, hl + 1, (o) => { if (o.st || (o.big && v < 5) || Math.abs(o.y - (c.y || 0)) > 3) return; const dx = o.x - c.x, dz = o.z - c.z, a = dx * fx + dz * fz, s = dx * fz - dz * fx; if (Math.abs(a) > hl || Math.abs(s) > hw) return;
+      smash(o, fx * sg * 0.8 + (s > 0 ? fz : -fz) * 0.4, fz * sg * 0.8 - (s > 0 ? fx : -fx) * 0.4, Math.min(9, 2 + v * 0.4)); if (o.k >= 3) c.v *= o.big ? 0.6 : 0.85; });   // v50：撞鐵嘢減速
+    if (window.RAILS && RAILS.hits && Math.abs(c.y || 0) < 2) {   // v50：欄杆（一段段，撞中 = 瞓低，60 秒後企返）
+      const bx = c.x + fx * hl * sg, bz = c.z + fz * hl * sg, ks = new Set([...RAILS.hits(c.x, c.z, bx, bz), ...RAILS.hits(bx - fz * hw, bz + fx * hw, bx + fz * hw, bz - fx * hw)]);
+      for (const k of ks) { const o = { k: 6, x: bx, z: bz, y: 0.16, h: 0, st: 0, t: 0, f: 1, cb: (on) => RAILS.set(k, on) }; smash(o, fx * sg, fz * sg, Math.min(9, 2 + v * 0.4)); c.v *= 0.9; stats.rails++; } }
   }
   function stepRespawn(dt) {
     if (!broken.length) return; const P = me();
@@ -7824,7 +7851,7 @@ window.BRK = (() => {
       if (o.st === 1 && o.t >= RESPAWN && !(P && Math.hypot(P.x - o.x, P.z - o.z) < 1.5)) { o.st = 2; o.t = 0; fade(o, 0); show(o, true); }   // 主角企喺度就等
       else if (o.st === 2) { const f = Math.min(1, o.t / FADE); fade(o, f); if (f >= 1) { o.st = 0; broken.splice(i, 1); } } }
   }
-  const stats = { broken: 0, bins: BIN ? __binPts.length : 0, card: newP[1].length, stool: newP[2].length, ms: 0 };
+  const stats = { broken: 0, bins: BIN ? __binPts.length : 0, card: newP[1].length, stool: newP[2].length, hyd: O.filter((o) => o.k === 3).length, lamp: O.filter((o) => o.k === 4).length, sig: O.filter((o) => o.k === 5).length, rails: 0, ms: 0 };
   stats.ms = Math.round(performance.now() - T0);
   return {
     step(dt) {
