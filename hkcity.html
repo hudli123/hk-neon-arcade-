@@ -3687,7 +3687,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
 
   // ---------- 任務 ----------
   let money = 0; try { money = +localStorage.getItem('hkopen-money') || 0; } catch (e) {}
-  const addMoney = (v) => { money += v; try { localStorage.setItem('hkopen-money', money); } catch (e) {} };
+  const addMoney = (v, src) => { money += v; try { localStorage.setItem('hkopen-money', money); } catch (e) {} if (v > 0 && window.NET && NET.earn) NET.earn(src || 'job', v); };   // v51：網上版同時報俾伺服器計排行榜
   const markers = [], mission = { type: null };
   const iconTex = (txt, bg) => { const c = document.createElement('canvas'); c.width = c.height = 128; const x = c.getContext('2d'); x.fillStyle = bg; x.beginPath(); x.arc(64, 64, 58, 0, 7); x.fill(); x.strokeStyle = '#fff'; x.lineWidth = 6; x.stroke(); x.fillStyle = '#fff'; x.font = '900 46px "PingFang HK","Noto Sans TC",sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(txt, 64, 66); return new THREE.CanvasTexture(c); };
   const ICON = { food: iconTex('外賣', '#e8702a'), taxi: iconTex('的士', '#c0182a'), chase: iconTex('追', '#7a3cc8'), goal: iconTex('目的', '#1fb56a'), pax: iconTex('客', '#c0182a'), gmb: iconTex('小巴', '#1c9a5a'), stop: iconTex('站', '#1c9a5a') };
@@ -5035,7 +5035,7 @@ function hitBoss(dmg, kb, launch, dx, dz) {
   for (let k = 0; k < 10; k++) emit(boss.x, 2.2, boss.z, dx * rand(3, 9) + rand(-4, 4), rand(1, 7), dz * rand(3, 9) + rand(-4, 4), rand(.15, .35), rand(.6, 1.1), 0xffe0a0, 14, 3);
   if (boss.poise <= 0 || launch > 8 && boss.poise < 25) { boss.poise = 90; boss.st = 4; boss.t = 0; boss.vx = dx * kb * 1.2; boss.vz = dz * kb * 1.2; if (launch) { boss.vy = launch * 0.8; boss.st = 5; } }
   if (boss.hp <= 0) {
-    boss.alive = false; bossG.visible = false; kos++; $('boss').hidden = true;
+    boss.alive = false; bossG.visible = false; kos++; $('boss').hidden = true; if (HOOK.boss) HOOK.boss();
     shatter(boss.x, 0, boss.z, dx, dz, 12, BOSS_PAL, 120, 1.6); ring(boss.x, boss.z, 16, 0xffc060, 0.8);
     hitstop = 0.35; camShake = 1.2; flash(0.8); SND.bigboom(); SND.gong();
     banner(boss.downText || TX.bossDown, '#ffd24a');
@@ -6504,7 +6504,7 @@ window.STORM = (() => {
     if (!cur) return;
     const A = BRAWL.api, won = A && A.won, pay = cur.pay;
     if (won) {
-      OPEN.addMoney(cur.pay); DONE[cur.id] = 1; try { localStorage.setItem('hkcity-storm-done', JSON.stringify(DONE)); } catch (e) {}
+      OPEN.addMoney(cur.pay, 'storm'); DONE[cur.id] = 1; try { localStorage.setItem('hkcity-storm-done', JSON.stringify(DONE)); } catch (e) {}
       cur.lab.material.map.dispose(); cur.lab.material.map = labelTex(labelOf(cur));
     }
     const px = A ? A.player.x : cur.x, pz = A ? A.player.z : cur.z;
@@ -7013,7 +7013,7 @@ body.ff-fight.touch #omis{max-height:24px;line-height:24px;overflow:hidden}
     { const om = OPEN.hero.rig && OPEN.hero.rig.mesh, bm = window.__rig && __rig.mesh;   // 同一張特工貼圖：打鬥主角用返開放世界主角嗰張（慳一次 JPEG 解碼 + 上載）
       if (om && bm && om.material.map && bm.material.map !== om.material.map) { const t = bm.material.map; bm.material.map = om.material.map; bm.material.needsUpdate = true; if (t) t.dispose(); } }
     A.hero.traverse((o) => { if (o.isPointLight) heroLight = o; });   // 風暴用嘅主角補光：自由行收埋（多一盞燈 = 全城 shader 要重新 compile + 每格多計）
-    A.HOOK.objHit = hitPeds; A.HOOK.kill = onKill;   // 兩個都會睇 HOOK.free（風暴任務唔受影響）
+    A.HOOK.objHit = hitPeds; A.HOOK.kill = onKill; A.HOOK.boss = () => window.NET && NET.defeat && NET.defeat('boss');   // 兩個都會睇 HOOK.free（風暴任務唔受影響）
     const over1 = A.GAME.over; A.GAME.over = (w) => (A.HOOK.free ? knockedOut() : over1(w));
     // 預熱（v39-C 量度：第一拳原本卡 ~170 ms）：擺三個幫會（嘍囉 / 頭目 / 巨漢）入 instanced mesh（有 instanceColor 先 compile 到啱嘅 shader），
     // 只 compile 打鬥層（臨時 scene：同城市一樣嘅燈 + 霧 → 同一個 shader key），再清走；聲音喺呢個手勢入面開（AudioContext + 解碼音效）
@@ -7123,9 +7123,10 @@ body.ff-fight.touch #omis{max-height:24px;line-height:24px;overflow:hidden}
     if (A && A.SND.ctx) { A.SND.tone(660, 0.12, 'square', 0.08); A.SND.tone(880, 0.16, 'square', 0.08, 1, 0.13); }   // v41（BG「delete the pop up words 警長出埋黎」）：唔再彈「★★★ 警長都出埋嚟」等大字，淨係響一聲 + ★ HUD
   }
   function onKill(i) {   // 打低幫會：有錢 + 惡名 +0.1
+    if (window.NET && NET.defeat) NET.defeat('gang');   // v51 討伐榜（自由打同風暴任務都計）
     if (!A.HOOK.free) return;
     const k = A.S.kind[i], pay = (10 + 15 * Math.max(1, stars())) * (k === 4 ? 3 : k === 1 ? 2 : 1);
-    OPEN.addMoney(pay); F.pay += pay; F.kos++; payPop(pay); A.SND.pickup();
+    OPEN.addMoney(pay, 'gang'); F.pay += pay; F.kos++; payPop(pay); A.SND.pickup();
     const s0 = stars(); F.heat = Math.min(5, F.heat + 0.1); if (stars() > s0) announce(stars(), s0);
   }
   function knockedOut() {   // 俾人打暈（HP 0）：倒地 2.4 秒 → 扣醫藥費 → 最近地鐵出口醒返
@@ -8785,7 +8786,7 @@ window.RIFT = (() => {
     const H = OPEN.hero, dx = px - X, dz = pz - Z, d = Math.hypot(dx, dz), r = Math.max(d, 6), ux = d > 0.5 ? dx / d : 0, uz = d > 0.5 ? dz / d : 1;   // 由打完嘅位置繼續（離裂縫中心至少 6 米，唔會即刻再入）
     H.x = X + ux * r; H.z = Z + uz * r; H.y = 0; H.root.visible = true;
     const ui = $('oui'); if (ui) ui.hidden = false; cam.mode = 'open';
-    if (won) { OPEN.addMoney(PAY); if (!DONE) { DONE = true; try { localStorage.setItem('hkcity-rift-done', '1'); } catch (e) {} drawLabel(); } }
+    if (won) { OPEN.addMoney(PAY, 'rift'); if (!DONE) { DONE = true; try { localStorage.setItem('hkcity-rift-done', '1'); } catch (e) {} drawLabel(); } }
     const e = $('oprompt'); if (e) { e.textContent = won ? `✅ 時空裂縫封印！+$${PAY}` : why === 'abort' ? '⏳ 你行出咗時空裂縫（任務放棄）' : '⏳ 返到現代香港'; e.hidden = false; }
     S.last = { why: why || 'button', won };
   }
@@ -8912,9 +8913,11 @@ body.open #nchat{top:50px}
 #nmodal .lnk{background:none;border:0;color:#9aa3c7;text-decoration:underline;font:12px inherit;font-family:inherit;cursor:pointer;padding:0}
 #nmenu{position:fixed;z-index:70;background:#141a2e;border:1px solid rgba(140,170,255,.5);border-radius:12px;padding:6px;display:flex;flex-direction:column;gap:4px;box-shadow:0 6px 20px #000;pointer-events:auto}
 #nmenu .nbtn{height:34px;font-size:14px}
+.lbtabs{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}.lbtabs .nbtn{height:32px;font-size:14px;padding:0 10px}.lbtabs .on{background:#ffd23f;color:#111}
+.lblist{max-height:52vh;overflow:auto;font-size:15px;line-height:1.8;margin-bottom:10px}.lblist div{display:flex;justify-content:space-between;gap:12px}.lblist .me{color:#ffd23f;border-top:1px solid #445;margin-top:4px;padding-top:4px}
 </style>`);
   document.body.insertAdjacentHTML('beforeend', `<div id="nbar" hidden><div class="nb" id="nstat"><i id="ndot"></i><span id="ncount"></span><span class="unit">人</span></div>
-<button class="nb" id="nchatb">💬<span id="nbadge" hidden></span></button><button class="nb" id="nroomb">🚪</button></div>
+<button class="nb" id="nchatb">💬<span id="nbadge" hidden></span></button><button class="nb" id="nlbb" title="排行榜">🏆</button><button class="nb" id="nroomb">🚪</button></div>
 <div id="nticker"></div>
 <div id="nchat" hidden><div class="nh"><div><b id="nroomname"></b> <span id="nping" style="font-size:12px;cursor:default;color:#9aa3c7"></span></div><span id="nclose">✕</span></div>
 <div id="nwho"></div><div id="nlist"></div><form id="nform" autocomplete="off"><input id="ninp" maxlength="100" enterkeyhint="send" placeholder="講嘢… Say something"><button class="nbtn" id="nsend">送出</button></form></div>
@@ -9041,6 +9044,7 @@ body.open #nchat{top:50px}
   }
   addEventListener('pagehide', () => { if (room && tok && navigator.sendBeacon) navigator.sendBeacon(SERVER + '/api/leave', JSON.stringify({ t: tok })); });
   $('nroomb').onclick = () => (room ? leave() : tok ? showRooms() : showLogin());
+  $('nlbb').onclick = () => showBoard();
   $('nchatb').onclick = () => openChat(!chatOpen);
   $('nclose').onclick = () => openChat(false);
   $('nstat').onclick = () => openChat(!chatOpen);
@@ -9291,7 +9295,38 @@ body.open #nchat{top:50px}
     if (t) sysLine(t);
     if (NET.onEvent) NET.onEvent(kind, d);
   }
+  // ---------- v51 排行榜：賺錢 / 打低人先排隊，每 3 秒交一次；伺服器每樣都有上限，報大數都唔會收 ----------
+  const LBQ = { e: [], d: {} }; let lbBusy = false;
+  const earn = (src, v) => { if (tok && room && LBQ.e.length < 60) LBQ.e.push([src, Math.round(v)]); };
+  const defeat = (k) => { if (tok && room) LBQ.d[k] = (LBQ.d[k] || 0) + 1; };
+  setInterval(async () => {
+    if (lbBusy || !tok || !room || (!LBQ.e.length && !Object.keys(LBQ.d).length)) return;
+    const e = LBQ.e.splice(0, 20), d = Object.entries(LBQ.d).map(([k, n]) => [k, Math.min(20, n)]); LBQ.d = {};
+    lbBusy = true; try { await api('score', { t: tok, r: room.id, e, d }); } catch (err) {} finally { lbBusy = false; }
+  }, 3000);
+  function showBoard(by = 'wealth', scope = 'week') {
+    modal((b) => {
+      b.append(el('h3', null, '🏆 排行榜'));
+      const tabs = el('div', 'lbtabs');
+      for (const [k, t] of [['wealth', '💰 財富'], ['defeats', '⚔️ 討伐'], ['week', '本週'], ['all', '總榜']]) {
+        const isBy = k === 'wealth' || k === 'defeats', x = el('button', 'nbtn' + ((isBy ? by : scope) === k ? ' on' : ''), t);
+        x.onclick = () => (isBy ? showBoard(k, scope) : showBoard(by, k)); tabs.append(x);
+      }
+      const list = el('div', 'lblist', '載入中…'), close = el('button', 'nbtn', '關閉');
+      close.onclick = hideModal; b.append(tabs, list, close);
+      const fmt = (v) => (by === 'wealth' ? '$' + v.toLocaleString() : v + (by === 'defeats' ? ' 分' : ''));
+      api('top', tok ? { by, scope, t: tok } : { by, scope }).then((j) => {
+        list.textContent = '';
+        if (!j.rows.length) list.append(el('div', null, '暫時未有人上榜'));
+        j.rows.forEach(([n, v], i) => { const r = el('div'); r.append(el('span', null, `${['🥇', '🥈', '🥉'][i] || i + 1 + '.'} ${n}`), el('span', null, fmt(v))); list.append(r); });
+        if (j.me) { const r = el('div', 'me'); r.append(el('span', null, `你：第 ${j.me[0]} 名`), el('span', null, fmt(j.me[1]))); list.append(r); }
+        else if (!tok) list.append(el('div', 'me', '登入網上版先會計你嘅分'));
+        if (by === 'defeats') list.append(el('div', null, '打低幫會 1 分・Boss 50 分（途人唔計）'));
+      }).catch((e) => { list.textContent = errText(e); });
+    });
+  }
   const NET = window.NET = {
+    earn, defeat, showBoard,
     get room() { return room; }, get me() { return me; }, get mission() { return mission; },
     players: () => [...names].map(([pid, name]) => ({ pid, name, hero: heroOf(pid) })),
     positions: () => [...remotes.values()].filter((R) => R.buf.length && names.has(R.pid)).map((R) => { const b = R.buf[R.buf.length - 1];   // BG 09-30「標埋所有 player 喺邊」：小地圖點 + 玩家列表
