@@ -2582,7 +2582,7 @@ const GEOFREE = (() => {
     if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
     for (const at of [...Object.values(g.attributes), g.index]) if (at && !at.isInterleavedBufferAttribute) { at.onUpload(function () { this.__up = true; }); L.push(at); } });
   return { list: L, step() { if (done || performance.now() - t0 < 20000) return; done = true; let b = 0; for (const at of L) if (at.__up && at.version === 0) { b += at.array.byteLength; at.array = new at.array.constructor(0); } window.GEOFREE_MB = +(b / 1e6).toFixed(1);
-    setTimeout(() => { const s = document.createElement('script'); s.src = 'hkcity_cars.js'; s.onload = () => TRAFFIC.load3d(); document.head.appendChild(s); }, 5000); } };   // v49：手機開機高峰過咗先喺背景載 3D 車
+    setTimeout(() => { const s = document.createElement('script'); s.src = 'hkcity_cars_m.js'; s.onload = () => TRAFFIC.load3d(); document.head.appendChild(s); }, 5000); } };   // v49：手機開機高峰過咗先喺背景載 3D 車
 })();
 function frame(now) { requestAnimationFrame(frame); const ms = now - last, dt = Math.min(0.1, ms / 1000); last = now; autoRes(ms); GAME.step(dt); CULL.update(); renderer.render(scene, camera); GEOFREE.step(); }   // v45：dt 上限 0.05 → 0.1（低 FPS 唔再慢鏡）
 requestAnimationFrame(frame);
