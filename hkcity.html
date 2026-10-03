@@ -2117,8 +2117,8 @@ const TRAFFIC = (() => {
       sigT = 0.25; blink = !blink;
       heads.forEach((H, i) => {
         const st = sigState(H, T);
-        if (H.t === 2) { if (H.pi === undefined) { SC.set([0, 0, 0], i * 3); return; } const g = st === 2 || (st === 1 && blink); pedR.setColorAt(H.pi, st === 0 ? ON : OFF); pedG.setColorAt(H.pi, g ? ON : OFF); SC.set(st === 0 ? SCOL[0] : g ? SCOL[2] : [0, 0, 0], i * 3); SP[i * 3 + 1] = st === 0 ? PY[0] : PY[1]; }
-        else { for (let f = 0; f < 2; f++) for (let k = 0; k < 3; k++) lamps.setColorAt(H.li + f * 3 + k, LCOL[k][k === st ? 1 : 0]); SC.set(SCOL[st], i * 3); SP[i * 3 + 1] = LY[st];
+        if (H.t === 2) { if (H.pi === undefined) { SC.set([0, 0, 0], i * 3); return; } const g = st === 2 || (st === 1 && blink); pedR.setColorAt(H.pi, st === 0 ? ON : OFF); pedG.setColorAt(H.pi, g ? ON : OFF); SC.set(st === 0 ? SCOL[0] : g ? SCOL[2] : [0, 0, 0], i * 3); SP[i * 3 + 1] = H.dead ? -999 : st === 0 ? PY[0] : PY[1]; }
+        else { for (let f = 0; f < 2; f++) for (let k = 0; k < 3; k++) lamps.setColorAt(H.li + f * 3 + k, LCOL[k][k === st ? 1 : 0]); SC.set(SCOL[st], i * 3); SP[i * 3 + 1] = H.dead ? -999 : LY[st];
           if (MS) { vpR.setColorAt(H.li / 6, st === 0 ? OFF : ON); vpG.setColorAt(H.li / 6, st === 0 ? ON : OFF); } }
       });
       for (const m of [lamps, pedR, pedG, vpR, vpG]) if (m.instanceColor) m.instanceColor.needsUpdate = true;
@@ -7696,8 +7696,8 @@ window.BRK = (() => {
   const LPTS = typeof lamps !== 'undefined' && lamps && lamps.geometry && lamps.geometry.attributes.position;
   if (typeof HYDL !== 'undefined' && HYDL) HYDL.list.forEach((l) => addO({ k: 4, x: l.x, z: l.z, y: l.y, h: 0, big: 1, cb(on) { l.broken = !on; HYDL.refresh();
     if (LPTS && l.li < LPTS.count) { LPTS.setY(l.li, on ? l.y + l.h - 0.15 : -999); LPTS.needsUpdate = true; } } }));
-  const hideSet = (L, H) => { L = L.filter(([m, i]) => i < m.count); let saved = null, gy = 0;
-    return (on) => { const G = window.__SIG && __SIG.glow; if (G && H && H.gi !== undefined) { if (!on) { gy = G.getY(H.gi); G.setY(H.gi, -999); } else G.setY(H.gi, gy); G.needsUpdate = true; } if (!on) saved = L.map(([m, i]) => { const a = m.instanceMatrix.array.slice(i * 16, i * 16 + 16); m.setMatrixAt(i, ZERO); m.instanceMatrix.needsUpdate = true; return a; });
+  const hideSet = (L, H) => { L = L.filter(([m, i]) => i < m.count); let saved = null;
+    return (on) => { const G = window.__SIG && __SIG.glow; if (H) H.dead = !on; if (G && H && H.gi !== undefined && !on) { G.setY(H.gi, -999); G.needsUpdate = true; }   // 紅綠燈動畫（H.dead）會一直收埋光暈 if (!on) saved = L.map(([m, i]) => { const a = m.instanceMatrix.array.slice(i * 16, i * 16 + 16); m.setMatrixAt(i, ZERO); m.instanceMatrix.needsUpdate = true; return a; });
       else if (saved) { L.forEach(([m, i], q) => { m.instanceMatrix.array.set(saved[q], i * 16); m.instanceMatrix.needsUpdate = true; }); saved = null; } }; };
   { const S = window.__SIG; if (S) {
     S.VH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.vBody, i], ...[0, 1, 2, 3, 4, 5].map((q) => [S.lamps, i * 6 + q]), [S.vpR, i], [S.vpG, i]], H) }));
