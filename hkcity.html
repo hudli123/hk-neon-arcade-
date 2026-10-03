@@ -3435,6 +3435,7 @@ window.OPEN = (() => {
   const clamp = THREE.MathUtils.clamp, wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   document.head.insertAdjacentHTML('beforeend', `<style>
 #oui{position:fixed;inset:0;pointer-events:none}
+#ospd{position:fixed;right:14px;bottom:150px;font:italic 900 30px/1 inherit;font-family:inherit;color:#fff;text-shadow:0 0 8px #000,0 0 2px #000;pointer-events:none;z-index:5}#ospd small{font-size:14px;color:#ffd23f}body.touch #ospd{right:auto;left:50%;transform:translateX(-50%);bottom:auto;top:56px;font-size:24px}
 #omoney{position:fixed;left:50%;top:10px;transform:translateX(-50%);font:900 24px/1 inherit;font-family:inherit;color:#7dff6a;text-shadow:0 0 8px #000,0 0 2px #000}
 #omis{position:fixed;left:12px;top:64px;max-width:min(360px,56vw);padding:8px 12px;border-radius:12px;background:rgba(14,18,48,.72);border:1px solid rgba(140,160,255,.35);font-size:14px;line-height:1.5;text-shadow:0 1px 3px #000}
 #omis{pointer-events:auto;cursor:pointer}#omis .x{float:right;margin:-3px -6px 0 10px;padding:0 6px;font-size:17px;color:#fff;opacity:.85}
@@ -3460,7 +3461,7 @@ body.open #modes,body.open #time,body.open #help{display:none}
 body.open #hud{top:auto;bottom:10px;left:12px}
 body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);text-align:center}
 </style>`);
-  document.body.insertAdjacentHTML('beforeend', `<div id="oui" hidden><div id="omoney"></div><div id="omis" hidden></div><div id="oprompt" hidden></div>
+  document.body.insertAdjacentHTML('beforeend', `<div id="oui" hidden><div id="omoney"></div><div id="ospd" hidden></div><div id="omis" hidden></div><div id="oprompt" hidden></div>
 <canvas id="omap" width="300" height="300"></canvas><div id="ox">✕</div><div id="oq">❓</div><div id="omu">🎵</div><div id="obig"></div>
 <div id="ofade"></div><div id="omtr" hidden><div class="mh"><b>🚇 搭地鐵去邊度？揀出口</b><span id="omtrx">✕</span></div><div id="omtrl"></div></div>
 <div class="ob" id="obE">上車</div><div class="ob" id="obJ">跳</div><div class="ob" id="obR">衝</div></div>`);
@@ -3587,25 +3588,25 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     const rd = nearestRoad(e[2], e[3]) || { x: e[2], z: e[3] + 1 };
     const fit = (o) => {   // 樓梯口 + 入口前面一定要空（唔喺樓入面、唔出馬路）；後半截可以入樓（好多真出口都係咁）
       let sc = 0, front = 0;
-      for (const [lx, lz, wt] of [[0, 1.6, 1], [-1.4, 0.2, 3], [1.4, 0.2, 3], [-1.7, -1.3, 3], [1.7, -1.3, 3], [-1.7, -3.5, 1], [1.7, -3.5, 1], [-1.7, -5.7, 1], [1.7, -5.7, 1]]) {
-        const [qx, qz] = w2(o, lx, lz), bad = !free(qx, qz) ? wt : onRoad(qx, qz) ? Math.max(wt, 2) : 0;
-        sc += bad; if (bad && wt === 3) front++;
+      for (const [lx, lz, wt] of [[0, 2.2, 3], [0, 0.8, 3], [0, 1.6, 1], [-1.4, 0.2, 3], [1.4, 0.2, 3], [-1.7, -1.3, 3], [1.7, -1.3, 3], [-1.7, -3.5, 1], [1.7, -3.5, 1], [-1.7, -5.7, 1], [1.7, -5.7, 1]]) {
+        const [qx, qz] = w2(o, lx, lz), road = onRoad(qx, qz), bad = road ? 3 : !free(qx, qz) ? wt : 0;   // v54：成個出口 + 出站落腳位都唔可以喺車路（BG「一定在行人路上」）
+        sc += bad; if (road || (bad && wt === 3)) front++;
       }
       return [sc, front];
     };
     let best = null;   // 由 OSM 出口位開始，一圈圈（每 2 米，最遠 16 米）搵樓梯口空嘅位；同一圈揀最啱方向
     for (let r = 0; r <= 16 && !(best && best.front === 0); r += 2)
       for (let a = 0; a < (r ? 12 : 1); a++) {
-        const x = e[2] + Math.cos(a * 0.524) * r, z = e[3] + Math.sin(a * 0.524) * r; if (!free(x, z)) continue;
+        const x = e[2] + Math.cos(a * 0.524) * r, z = e[3] + Math.sin(a * 0.524) * r; if (!free(x, z) || onRoad(x, z)) continue;
         const base = Math.atan2(rd.x - x, rd.z - z);
         for (const [dy, pen] of [[0, 0], [Math.PI / 2, 0.5], [-Math.PI / 2, 0.5], [Math.PI, 1]]) {   // 首選樓梯口向街
           const o = { x, z, yaw: base + dy }, [sc, front] = fit(o); o.s = sc + pen + r * 0.3; o.front = front;
           if (!best || front < best.front || (front === best.front && o.s < best.s)) best = o;
         }
       }
-    for (let r = 20; r <= 120 && !best; r += 4)   // v53：九龍站等出口喺大平台底（成片 footprint 都係實心），16 米內冇空位就向外搵到平台邊
+    for (let r = 20; r <= 120 && !(best && best.front === 0); r += 4)   // v53：九龍站等出口喺大平台底（成片 footprint 都係實心），16 米內冇空位就向外搵到平台邊
       for (let a = 0; a < 36; a++) {
-        const x = e[2] + Math.cos(a * 0.1745) * r, z = e[3] + Math.sin(a * 0.1745) * r; if (!free(x, z)) continue;
+        const x = e[2] + Math.cos(a * 0.1745) * r, z = e[3] + Math.sin(a * 0.1745) * r; if (!free(x, z) || onRoad(x, z)) continue;
         const base = Math.atan2(rd.x - x, rd.z - z);
         for (const dy of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) {
           const o = { x, z, yaw: base + dy, far: true }, [sc, front] = fit(o); o.s = sc + r * 0.3; o.front = front;
@@ -3688,8 +3689,8 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   function ride(o) {
     $('omtr').hidden = true; metro = 'ride'; $('ofade').style.opacity = 1; beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200);
     setTimeout(() => {
-      let x = o.ax, z = o.az; if (solid(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
-      for (let r = 1; r <= 30 && solid(x, z); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
+      let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
+      for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
       hero.x = x; hero.z = z; hero.y = 0; hero.vy = 0; hero.h = o.yaw; cam.wyaw = o.yaw + Math.PI; cam.wx = x; cam.wz = z;
       spawnGivers(); $('ofade').style.opacity = 0; metro = null; big(`${MTR.st[o.e[0]][0]} ${o.e[1]} 出口`, stCol(o.e[0]));
     }, 700);
@@ -3973,9 +3974,10 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     }
   }
   // ---------- HUD + 小地圖 ----------
-  const mctx = $('omap').getContext('2d'); let moneyTxt = '';
+  const mctx = $('omap').getContext('2d'); let moneyTxt = '', spdTxt = '';
   function hud() {
-    const mt = `$ ${money.toLocaleString()}` + (window.FREEFIGHT ? FREEFIGHT.starHTML() : ''); if (mt !== moneyTxt) { moneyTxt = mt; $('omoney').innerHTML = mt; }   // 錢 + 惡名 ★（freefight.js）
+    const mt = `$ ${money.toLocaleString()}` + (window.FREEFIGHT ? FREEFIGHT.starHTML() : ''); if (mt !== moneyTxt) { moneyTxt = mt; $('omoney').innerHTML = mt; }
+    const st = inCar ? `${Math.round(Math.abs(car.v) * 3.6)}<small> km/h</small>` : ''; if (st !== spdTxt) { spdTxt = st; $('ospd').hidden = !st; $('ospd').innerHTML = st; }   // v54：揸車速度錶（BG）   // 錢 + 惡名 ★（freefight.js）
     const M = mission, box = $('omis');
     if (!M.type) { box.hidden = false; box.innerHTML = window.LIB && LIB.inside ? LIB.hint() : '<b>自由行</b><br>行去黃色光柱接任務：外賣・的士・追偷雞賊・小巴司機' + (MTR.ex.length ? '<br>🚇 行去地鐵出口（小地圖彩色方格）可以搭地鐵去第二個站' : '') + stormHint() + (window.RIFT ? RIFT.hint(hero) : '') + (window.LIB ? LIB.hint() : ''); }
     else {
@@ -4014,7 +4016,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   function side(dt) { drvTick(); if (!(window.LIB && LIB.inside)) stepMission(dt); hud(); }   // freefight.js 打緊交：任務、錢、小地圖照行
   addEventListener('pointerdown', () => { if (active) lastDrag = performance.now(); });
   addEventListener('pointermove', (e) => { if (active && e.buttons) lastDrag = performance.now(); });
-  return { enter, exit, step, hero, car, drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, mission, startMission, solid, inWater, exits: EXS, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
+  return { enter, exit, step, hero, car, onRoad: (x, z) => onRoad(x, z), drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, mission, startMission, solid, inWater, exits: EXS, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
    
     carNear: () => !(!mission.type && nearExit(3.5)) && !!(nearestParked(4.5) || nearestTraffic(5)) };   // v41：打緊交（freefight.js）手機顯示「上車」掣用；同 act() 次序一樣（地鐵口優先）
 })();
@@ -7850,7 +7852,7 @@ window.BRK = (() => {
   function ram() {   // 揸車撞：車身範圍（同 open.js 碰撞探針一樣大細）+ 0.3 米
     const c = OPEN.car, v = Math.abs(c.v); if (v < 2.5) return;
     const fx = Math.sin(c.h), fz = Math.cos(c.h), hl = (c.kind === 2 ? 5.6 : c.big ? 3.7 : 2.1) + 0.3, hw = (c.kind === 2 ? 1.1 : c.big ? 1.05 : 0.8) + 0.3, sg = Math.sign(c.v);
-    near(c.x, c.z, hl + 1, (o) => { if (o.st || (o.big && v < 5) || Math.abs(o.y - (c.y || 0)) > 3) return; const dx = o.x - c.x, dz = o.z - c.z, a = dx * fx + dz * fz, s = dx * fz - dz * fx; if (Math.abs(a) > hl || Math.abs(s) > hw) return;
+    near(c.x, c.z, hl + 1, (o) => { if (o.st || (o.big && v < 5) || Math.abs(o.y - (c.y || 0)) > 3) return; const dx = o.x - c.x, dz = o.z - c.z, a = dx * fx + dz * fz, s = dx * fz - dz * fx; const pad = o.big ? 0.5 : 0; if (Math.abs(a) > hl + pad || Math.abs(s) > hw + pad) return;   // v54：街燈 / 紅綠燈貼牆企（車頂住牆掂唔到）→ 範圍大 0.5 米
       smash(o, fx * sg * 0.8 + (s > 0 ? fz : -fz) * 0.4, fz * sg * 0.8 - (s > 0 ? fx : -fx) * 0.4, Math.min(9, 2 + v * 0.4)); if (o.k >= 3) c.v *= o.big ? 0.6 : 0.85; });   // v50：撞鐵嘢減速
     if (window.RAILS && RAILS.hits && Math.abs(c.y || 0) < 2) {   // v50：欄杆（一段段，撞中 = 瞓低，60 秒後企返）
       const bx = c.x + fx * hl * sg, bz = c.z + fz * hl * sg, ks = new Set([...RAILS.hits(c.x, c.z, bx, bz), ...RAILS.hits(bx - fz * hw, bz + fx * hw, bx + fz * hw, bz - fx * hw)]);
