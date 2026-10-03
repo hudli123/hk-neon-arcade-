@@ -2088,10 +2088,10 @@ const TRAFFIC = (() => {
   window.__SIG = { VH, PH, vBody, pBody, lamps, pedR, pedG, vpR, vpG };   // v50：紅綠燈撞得爛（breakables）
   for (const m of [vBody, pBody, lamps, pedR, pedG, vpR, vpG]) { m.frustumCulled = false; scene.add(m); CULL.add(m, 600); }
   const SP = new Float32Array(heads.length * 3), SC = new Float32Array(heads.length * 3), sg = new THREE.BufferGeometry();
-  heads.forEach((H, i) => SP.set([H.x, H.t === 2 ? PY[0] : LY[0], H.z], i * 3));
+  heads.forEach((H, i) => { H.gi = i; SP.set([H.x, H.t === 2 ? PY[0] : LY[0], H.z], i * 3); });
   sg.setAttribute('position', new THREE.BufferAttribute(SP, 3)); sg.setAttribute('color', new THREE.BufferAttribute(SC, 3));
   const sigPts = new THREE.Points(sg, new THREE.PointsMaterial({ map: GLOW, size: 1.6, vertexColors: true, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
-  sigPts.frustumCulled = false; scene.add(sigPts);
+  sigPts.frustumCulled = false; scene.add(sigPts); window.__SIG.glow = sg.attributes.position;   // v50：撞爛收埋光暈
   let T = 0, sigT = 0;
   const SCOL = [[1, 0.1, 0.08], [1, 0.75, 0.1], [0.2, 1, 0.45]], LCOL = SCOL.map((c) => [new THREE.Color(...c.map((v) => v * 0.13)), new THREE.Color(...c)]);
   const ON = new THREE.Color(1, 1, 1), OFF = new THREE.Color(0.1, 0.1, 0.1); let blink = false;
@@ -7696,12 +7696,12 @@ window.BRK = (() => {
   const LPTS = typeof lamps !== 'undefined' && lamps && lamps.geometry && lamps.geometry.attributes.position;
   if (typeof HYDL !== 'undefined' && HYDL) HYDL.list.forEach((l) => addO({ k: 4, x: l.x, z: l.z, y: l.y, h: 0, big: 1, cb(on) { l.broken = !on; HYDL.refresh();
     if (LPTS && l.li < LPTS.count) { LPTS.setY(l.li, on ? l.y + l.h - 0.15 : -999); LPTS.needsUpdate = true; } } }));
-  const hideSet = (L) => { L = L.filter(([m, i]) => i < m.count); let saved = null;
-    return (on) => { if (!on) saved = L.map(([m, i]) => { const a = m.instanceMatrix.array.slice(i * 16, i * 16 + 16); m.setMatrixAt(i, ZERO); m.instanceMatrix.needsUpdate = true; return a; });
+  const hideSet = (L, H) => { L = L.filter(([m, i]) => i < m.count); let saved = null, gy = 0;
+    return (on) => { const G = window.__SIG && __SIG.glow; if (G && H && H.gi !== undefined) { if (!on) { gy = G.getY(H.gi); G.setY(H.gi, -999); } else G.setY(H.gi, gy); G.needsUpdate = true; } if (!on) saved = L.map(([m, i]) => { const a = m.instanceMatrix.array.slice(i * 16, i * 16 + 16); m.setMatrixAt(i, ZERO); m.instanceMatrix.needsUpdate = true; return a; });
       else if (saved) { L.forEach(([m, i], q) => { m.instanceMatrix.array.set(saved[q], i * 16); m.instanceMatrix.needsUpdate = true; }); saved = null; } }; };
   { const S = window.__SIG; if (S) {
-    S.VH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.vBody, i], ...[0, 1, 2, 3, 4, 5].map((q) => [S.lamps, i * 6 + q]), [S.vpR, i], [S.vpG, i]]) }));
-    S.PH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.pBody, i], [S.pedR, i], [S.pedG, i]]) })); } }
+    S.VH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.vBody, i], ...[0, 1, 2, 3, 4, 5].map((q) => [S.lamps, i * 6 + q]), [S.vpR, i], [S.vpG, i]], H) }));
+    S.PH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.pBody, i], [S.pedR, i], [S.pedG, i]], H) })); } }
   const SHOP_K = new Map([[1, 2], [7, 2], [10, 2], [20, 2], [21, 2], [22, 2], [29, 2], [0, 1], [2, 1], [3, 1], [4, 1], [9, 1], [11, 1], [12, 1], [24, 1], [26, 1]]);   // shops.js 鋪名次序 → 2 膠凳 / 1 紙皮
   const PG = new Map(), pk = (x, z) => Math.floor(x / 4) * 100000 + Math.floor(z / 4);   // 路邊嘢（消防栓、垃圾桶）+ 已擺嘅，4 米格，唔好疊埋
   const mark = (x, z) => { const q = pk(x, z); (PG.get(q) || PG.set(q, []).get(q)).push(x, z); };
