@@ -2596,7 +2596,7 @@ const GAME = {
       _v.set(cam.wx - Math.sin(cam.wyaw) * Math.cos(cam.wpitch), 1.7 + cam.wy + Math.sin(cam.wpitch), cam.wz - Math.cos(cam.wyaw) * Math.cos(cam.wpitch)); camera.lookAt(_v);
     }
     if (window.FREEFIGHT) FREEFIGHT.tick(dt);   // 惡名 ★、幫會喺背景追 / 搵人、小地圖紅點（冇 ★ 冇打 = 幾乎 0 成本）
-    const LIBIN = window.LIB && LIB.inside;   // 理大圖書館入面（library.js）：城市唔畫（camera.layers），車 / 人 / 圖幅暫停
+    const LIBIN = !!((window.LIB && LIB.inside) || (window.IND && IND.inside));
     if (!LIBIN) {
     TRAFFIC.step(dt); TRAFFIC.lights.material.opacity = 0.35 + 0.65 * night;
     TILES.step(dt, cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z, camera.position.y < 150);
@@ -2616,7 +2616,7 @@ const GAME = {
         for (let k = 0; k < L.pts.length; k += 2) { const ax = L.pts[k] - px, az = L.pts[k + 1] - pz, dd = Math.hypot(ax, az); if (dd < d) { d = dd; vx = ax; vz = az; } }
         if (cam.mode !== 'fly' && d > 8 && (vx * fx + vz * fz) / d < 0.5) continue;
         if (d < ld) { ld = d; lm = L; } }
-      $('street').innerHTML = LIBIN ? LIB.label() : lm && ld < (cam.mode === 'fly' ? 60 : 40) ? `📍 ${lm.tc}<small>${lm.en.toUpperCase()}</small>`
+      $('street').innerHTML = LIBIN ? (window.IND && IND.inside ? IND.label() : LIB.label()) : lm && ld < (cam.mode === 'fly' ? 60 : 40) ? `📍 ${lm.tc}<small>${lm.en.toUpperCase()}</small>`
         : r && r.d < 40 && (r.name[0] || r.name[1]) ? `${r.name[0] || ''}<small>${(r.name[1] || '').toUpperCase()}</small>` : ''; }
   },
 };
@@ -3724,23 +3724,36 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   }
   const nearExit = (r) => { let best = null, bd = r; for (const o of EXS) { const d = Math.hypot(o.fx - hero.x, o.fz - hero.z); if (d < bd) { bd = d; best = o; } } return best; };
   let metro = null;   // null / 'menu' / 'ride'
-  function openMetro(from) {
+  let metroFreeRide = false, metroFromInside = false;
+  function openMetro(from, freeRide = false, fromInside = false) {
+    metroFreeRide = !!freeRide; metroFromInside = !!fromInside;
     metro = 'menu'; const here = from.e[0], d = (k) => Math.hypot(MTR.st[k][2] - MTR.st[here][2], MTR.st[k][3] - MTR.st[here][3]);
-    $('omtrl').innerHTML = MTR.st.map((s, k) => k).sort((a, b) => d(a) - d(b)).map((k) => { const s = MTR.st[k];
+    const canWalk = window.IND && IND.hasStation(here);
+    $('omtrl').innerHTML = (canWalk ? '<div class="ms"><button id="omtrWalk" style="width:100%;min-height:42px;border:2px solid #55cf98;border-radius:22px;background:#214b3a;color:#fff;font:900 16px inherit">🚶 行入站</button></div>' : '')
+      + MTR.st.map((s, k) => k).sort((a, b) => d(a) - d(b)).map((k) => { const s = MTR.st[k];
       return `<div class="ms"><b>${s[0]}</b><span class="en">${s[1]}</span>${s[4].map((i) => `<span class="ml" style="background:${MTR.lines[i][3]}">${MTR.lines[i][1]}</span>`).join('')}<br>`
         + EXS.map((o, j) => o.e[0] === k ? `<span class="me${o === from ? ' here' : ''}" data-j="${j}">${o.e[1]}</span>` : '').join('') + '</div>'; }).join('');
     for (const b of $('omtrl').querySelectorAll('.me')) b.onclick = () => ride(EXS[+b.dataset.j]);
+    const wb = $('omtrWalk'); if (wb) wb.onclick = () => { if (window.FREEFIGHT && FREEFIGHT.stars) FREEFIGHT.noMetro(); else IND.enterStation(from); };
+    const mh = $('omtr').querySelector('.mh b'); if (mh) mh.textContent = `🚇 車費 ${fromInside ? '$0・已入閘' : '$5'} · 搭地鐵去邊度？揀出口`;
     $('omtr').hidden = false; $('oprompt').hidden = true; beep(660, 0.1, 'sine', 0.06);
   }
-  function closeMetro() { metro = null; $('omtr').hidden = true; }
-  function ride(o) {
+  function closeMetro() { metro = null; metroFreeRide = false; metroFromInside = false; $('omtr').hidden = true; }
+  function ride(o, freeRide = metroFreeRide, fromInside = metroFromInside) {
+    if (!freeRide) {
+      if (money < 5) { big('八達通唔夠錢（要 $5）', '#ff765e'); return false; }
+      addMoney(-5, 'mtr'); big('搭地鐵 −$5', '#ffd23f');
+    }
+    metroFreeRide = false;
     $('omtr').hidden = true; metro = 'ride'; $('ofade').style.opacity = 1; beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200);
     setTimeout(() => {
+      if (fromInside && window.IND) IND.leave(true);
       let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
       for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
       hero.x = x; hero.z = z; hero.y = 0; hero.vy = 0; hero.h = o.yaw; cam.wyaw = o.yaw + Math.PI; cam.wx = x; cam.wz = z;
       spawnGivers(); $('ofade').style.opacity = 0; metro = null; big(`${MTR.st[o.e[0]][0]} ${o.e[1]} 出口`, stCol(o.e[0]));
     }, 700);
+    return true;
   }
 
   // ---------- 任務 ----------
@@ -3791,9 +3804,31 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   function startMission(kind) {
     clearMarkers();
     if (kind === 'food') {
-      const P = pickPlace(hero, 220, 700); if (!P) return spawnGivers();
-      Object.assign(mission, { type: 'food', title: '外賣速遞', to: P, t: 25 + dist(hero, P) / 5, pay: 80 + Math.round(dist(hero, P) / 10) });
-      goal = marker('goal', P.x, P.z); big('送外賣！', '#ffb24a');
+      const streetFood = () => {
+        const P = pickPlace(hero, 220, 700); if (!P) { mission.type = null; return spawnGivers(); }
+        Object.assign(mission, { type: 'food', title: '外賣速遞', indoor: null, to: P, t: 25 + dist(hero, P) / 5, pay: 80 + Math.round(dist(hero, P) / 10) });
+        goal = marker('goal', P.x, P.z); big('送外賣！', '#ffb24a');
+      };
+      const force = window.IND && IND.consumeForceFood();
+      if (window.IND && (force || Math.random() < 0.5)) {
+        const seq = (mission.seq || 0) + 1; mission.seq = seq;
+        Object.assign(mission, { type: 'food', title: '外賣速遞', indoor: { pending: true }, to: null, t: 0, pay: 0 });
+        IND.pickDelivery(hero).then((job) => {
+          if (mission.seq !== seq || mission.type !== 'food') return;
+          if (!job) { mission.indoor = null; mission.type = null; streetFood(); return; }
+          const name = job.poi[2] || '商店', level = Math.abs(job.o);
+          const time = 40 + job.distance / 5 + 8 * level, pay = 80 + Math.round(job.distance / 10) + 25 * level;
+          mission.indoor = { venue: job.venue.v.id, tc: job.venue.v.tc, en: job.venue.v.en, stage: 1, ordinal: job.o, floor: job.floor, name, x: job.x, z: job.z };
+          mission.to = { x: job.outside.x, z: job.outside.z, tc: job.venue.v.tc };
+          mission.t = time; mission.pay = pay;
+          goal = marker('goal', job.outside.x, job.outside.z);
+          big(`外賣：送去 ${job.venue.v.tc} ${job.floor} 〈${name}〉`, '#ffb24a');
+        }).catch(() => {
+          if (mission.seq === seq && mission.type === 'food') { mission.indoor = null; mission.type = null; streetFood(); }
+        });
+        return;
+      }
+      streetFood();
     } else if (kind === 'taxi') {
       const p = kerbPoint(hero.x + (Math.random() - 0.5) * 60, hero.z + (Math.random() - 0.5) * 60);
       Object.assign(mission, { type: 'taxi', title: '的士', stage: 'pick', t: 60, pax: p });
@@ -3817,7 +3852,8 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   function endMission(ok, msg, pay = 0) {
     if (goal) { scene.remove(goal.g); goal = null; } if (pax) { scene.remove(pax.g); pax = null; }
     if (villain) { scene.remove(villain.mesh); villain = null; }
-    mission.type = null; if (ok) { addMoney(pay); kaching(); big(`+$${pay}`, '#7dff6a'); } else big(msg || '失敗', '#ff5a5a');
+    if (window.IND) IND.setGoal(null);
+    mission.type = null; mission.indoor = null; if (ok) { addMoney(pay); kaching(); big(`+$${pay}`, '#7dff6a'); } else big(msg || '失敗', '#ff5a5a');
     setTimeout(() => active && !mission.type && spawnGivers(), 1800);
   }
 
@@ -3857,6 +3893,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   }
   function exit() {
     if (!active) return;
+    if (window.IND) IND.leave(true);
     if (window.LIB) LIB.leave();   // 喺圖書館入面都要還原城市
     if (window.TREES) TREES.clear();   // 鏡頭收埋咗嘅樹放返出嚟
     closeMetro(); $('ofade').style.opacity = 0; active = false; document.body.classList.remove('open'); $('oui').hidden = true; hero.root.visible = false; TRAFFIC.block = null;
@@ -3875,8 +3912,12 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     if (!active) return;
     if (metro) return;
     if (inCar) return leaveCar();
+    if (window.IND && IND.inside && IND.act()) return;
     if (!mission.type && window.LIB && LIB.act()) return;   // 圖書館入口 / 升降機 / 出口
-    const ex = !mission.type && nearExit(3.5); if (ex) return window.FREEFIGHT && FREEFIGHT.stars ? FREEFIGHT.noMetro() : openMetro(ex);   // 有惡名 ★：唔入得站（freefight.js）
+    if (window.IND && IND.act()) return;
+    const approachStation = mission.indoor && mission.indoor.stage === 1 && !mission.indoor.pending && !(window.IND && IND.inside) && !(window.LIB && LIB.inside);
+    const ex = (!mission.type || approachStation) && nearExit(3.5);
+    if (ex && (!mission.type || window.IND && IND.stationVenueId(ex.e[0]) === mission.indoor.venue)) return window.FREEFIGHT && FREEFIGHT.stars ? FREEFIGHT.noMetro() : openMetro(ex);   // 有惡名 ★：唔入得站（freefight.js）
     const p = nearestParked(4.5), t = p ? null : nearestTraffic(5);
     if (p) { car.parked.splice(car.parked.indexOf(p), 1); Object.assign(car, { mesh: p.mesh, kind: p.kind, big: p.big || 0, x: p.x, z: p.z, y: p.y || 0, h: p.h, v: 0 }); }
     else if (t) { t.taken = true; Object.assign(car, { mesh: makeCar(t.kind, TRAFFIC.cars.indexOf(t), t.model, t.colour), kind: t.kind, big: t.big || 0, x: t.x, z: t.z, y: t.y || 0, h: t.yaw, v: 0 }); }
@@ -3901,8 +3942,9 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   const _v = new THREE.Vector3();
   function step(dt) {
     drvTick();
-    const L = window.LIB; if (L) L.step(dt);   // 理大圖書館（library.js）：入 / 出 / 升降機淡出
-    if (metro || (L && L.busy)) { if (hero.rig) hero.rig.mixer.update(dt); return hud(); }
+    const L = window.LIB, I = window.IND; if (L) L.step(dt); if (I) I.step(dt);
+    if (metro || (L && L.busy) || (I && I.busy)) { if (mission.type && metro !== 'ride' && !(I && I.fading)) stepMission(dt); if (hero.rig) hero.rig.mixer.update(dt); return hud(); }
+    const lin = !!(L && L.inside), iin = !!(I && I.inside), int = lin || iin;
     const k = keys, fw = (k.w || k.arrowup ? 1 : 0) - (k.s || k.arrowdown ? 1 : 0), sd = (k.d || k.arrowright ? 1 : 0) - (k.a || k.arrowleft ? 1 : 0);
     const mx = sd || IN.mx, my = fw || IN.my, run = k.shift || tb.r, jump = k[' '] || tb.j;
     camYaw = cam.wyaw; camPitch = clamp(cam.wpitch, -0.2, 0.9);
@@ -3913,25 +3955,29 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
         const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = -fz, rz = fx, dx = fx * my + rx * mx, dz = fz * my + rz * mx, l = Math.hypot(dx, dz) || 1;
         hero.h += wrapA(Math.atan2(dx / l, dz / l) - hero.h) * Math.min(1, 12 * dt);
         const nx = hero.x + Math.sin(hero.h) * sp * dt, nz = hero.z + Math.cos(hero.h) * sp * dt;
-        const blk = L && L.inside ? L.walk : (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');   // 天橋欄杆：橋面上唔可以行出邊；圖書館入面 / 理大平台 = library.js
-        if (!blk(nx, hero.z)) hero.x = nx; if (!blk(hero.x, nz)) hero.z = nz;
+        const blk = iin ? I.walk : lin ? L.walk : (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');
+        const moveBlk = iin ? I.canMove : blk;
+        if (!moveBlk(nx, hero.z)) hero.x = nx; if (!moveBlk(hero.x, nz)) hero.z = nz;
       }
-      if (!(L && L.inside)) { const q = SHOPF.pushOut(hero.x, hero.z); if (q && !solid(q[0], q[1])) { hero.x = q[0]; hero.z = q[1]; } }   // v40：唔好企入鋪頭相後面（鋪頭相同外牆之間嘅窄位）
-      const gy = L && L.inside ? 0 : Math.max(ELEV.surf(hero.x, hero.z, hero.y, 0.7, 'rfs'), window.__peds && __peds.onFoot(hero.x, hero.z) ? 0.16 : 0);   // 腳下：地面 0 / 行人路面 0.16（BG 09-30「腳插咗落路面」）或者天橋／樓梯／高架路
-      if (jump && hero.y <= gy + 0.01) { hero.vy = 5.2; play('jump', 0.1); }
+      if (!int) { const q = SHOPF.pushOut(hero.x, hero.z); if (q && !solid(q[0], q[1])) { hero.x = q[0]; hero.z = q[1]; } }
+      const gy = int ? 0 : Math.max(ELEV.surf(hero.x, hero.z, hero.y, 0.7, 'rfs'), window.__peds && __peds.onFoot(hero.x, hero.z) ? 0.16 : 0);
+      if (jump && !iin && hero.y <= gy + 0.01) { hero.vy = 5.2; play('jump', 0.1); }
+      if (iin) { hero.y = 0; hero.vy = 0; }
       hero.vy -= 14 * dt; hero.y = Math.max(gy, hero.y + hero.vy * dt); if (hero.y <= gy) hero.vy = 0;
       if (hero.vy <= 0 && hero.y > gy && hero.y - gy < 0.45) { hero.y = gy; hero.vy = 0; }   // 落樓梯：貼住梯級，唔好一步一跳
       if (hero.y <= gy + 0.01) { if (sp > 0.3) { const g = hero.rig.gait ? hero.rig.gait(sp) : ['run', 0.45 + sp / 6.5 * 0.75]; play(g[0]); hero.rig.actions[g[0]].timeScale = g[1]; } else play('idle'); }   // 女特工（hero_pick.js gait）：慢行 / 跑兩個動作
       hero.root.position.set(hero.x, hero.y, hero.z); hero.root.rotation.y = hero.h; if (hero.rig) hero.rig.mixer.update(dt);
       TRAFFIC.block = { x: hero.x, z: hero.z, y: hero.y };
       // 提示
-      const lin = L && L.inside, lp = L && !mission.type && L.prompt();   // 圖書館門口 / 升降機 / 出口
-      const ex = !lp && !lin && !mission.type && nearExit(3.5), near = !lp && !lin && !ex && (nearestParked(4.5) || nearestTraffic(5));
+      const lp = iin ? I.prompt() : lin ? L.prompt() : !mission.type ? (L && L.prompt()) || (I && I.prompt()) : mission.indoor && !mission.indoor.pending ? I.prompt() : null;
+      const exitCandidate = !lp && !int && (!mission.type || mission.indoor && !mission.indoor.pending) && nearExit(3.5);
+      const ex = exitCandidate && (!mission.type || window.IND && IND.stationVenueId(exitCandidate.e[0]) === mission.indoor.venue) ? exitCandidate : null;
+      const near = !lp && !int && !ex && (nearestParked(4.5) || nearestTraffic(5));
       $('oprompt').hidden = !lp && !ex && !near; if (lp) $('oprompt').textContent = lp[0]; else if (ex) $('oprompt').textContent = window.FREEFIGHT && FREEFIGHT.stars ? '🚫 有惡名 ★，入唔到站' : `${TOUCH ? '撳「入站」' : 'E 入站'}：${MTR.st[ex.e[0]][0]} ${ex.e[1]} 出口`; else if (near) $('oprompt').textContent = TOUCH ? '撳「上車」' : 'E 上車';
-      $('obE').textContent = lp ? lp[1] : lin ? '—' : ex ? '入站' : '上車';
+      $('obE').textContent = lp ? lp[1] : int ? '—' : ex ? '入站' : '上車';
       // 鏡頭：跟喺背後，拖動可以轉；行路時慢慢轉返去背後
       if (mag > 0.05 && my > 0.1 && performance.now() - lastDrag > 1500 && camWant === null) cam.wyaw += wrapA(hero.h + Math.PI - cam.wyaw) * Math.min(1, 1.5 * dt);
-      if (lin) L.camera(camPitch); else {   // 圖書館入面：近身鏡頭（library.js）
+      if (iin) I.camera(camPitch); else if (lin) L.camera(camPitch); else {
       const d = cam.wd || 5.2, hy = hero.y + 1.6, cx = hero.x + Math.sin(cam.wyaw) * Math.cos(camPitch) * d, cz = hero.z + Math.cos(cam.wyaw) * Math.cos(camPitch) * d, cy = hy + Math.sin(camPitch) * d;
       const clr = (y) => { const qx = hero.x + Math.sin(y) * Math.cos(camPitch) * d, qz = hero.z + Math.cos(y) * Math.cos(camPitch) * d; return (L ? L.clear : clearFracS)(hero.x, hy, hero.z, qx, cy, qz); };
       const f0 = clr(cam.wyaw), f = Math.max(0.25, f0);   // v40：真樓宇輪廓 + 鋪頭相（v39 移出咗最多 3.5 米）都計（clearFracS）
@@ -3991,17 +4037,29 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       const fov = fovBase + Math.min(Math.abs(car.v), 40) / 40 * 10; if (Math.abs(camera.fov - fov) > 0.2) { camera.fov += (fov - camera.fov) * Math.min(1, 4 * dt); camera.updateProjectionMatrix(); }
       cam.wx = car.x; cam.wz = car.z; cam.wyaw = car.h + Math.PI;
     }
-    if (!(L && L.inside)) stepMission(dt);
+    if (!(L && L.inside) || (I && I.inside)) stepMission(dt);
     hud();
   }
   function stepMission(dt) {
     const me = { x: hero.x, z: hero.z };
+    if (metro === 'ride' || (window.IND && IND.fading)) return;
     for (const m of markers) { m.g.children[1].rotation.z += dt; if (dist(me, m) < 3.2) { startMission(m.kind); return; } }
     if (!mission.type && giverAt && dist(me, giverAt) > 350) spawnGivers();
     if (!mission.type) return;
+    if (mission.indoor && mission.indoor.pending) return;
     mission.t -= dt; if (mission.t <= 0) return endMission(false, '時間到！');
     if (mission.type === 'food') {
-      if (dist(me, mission.to) < 4) endMission(true, '', mission.pay + Math.round(mission.t));
+      if (mission.indoor) {
+        const q = mission.indoor;
+        if (q.stage === 1 && window.IND && IND.inside && IND.venue && IND.venue.id === q.venue) {
+          q.stage = 2; if (goal) { scene.remove(goal.g); goal = null; }
+          mission.to = { x: q.x, z: q.z, tc: q.tc };
+          IND.setGoal({ venue: q.venue, o: q.ordinal, x: q.x, z: q.z });
+          big(`送去 ${q.tc} ${q.floor} 〈${q.name}〉`, '#3cff8a');
+        } else if (q.stage === 2 && window.IND && IND.inside && IND.venue && IND.venue.id === q.venue && IND.floor === q.ordinal && dist(me, q) < 2.5) {
+          IND.setGoal(null); return endMission(true, '', mission.pay);
+        }
+      } else if (dist(me, mission.to) < 4) endMission(true, '', mission.pay + Math.round(mission.t));
     } else if (mission.type === 'taxi') {
       if (mission.stage === 'pick') {
         if (!inCar && dist(me, mission.pax) < 12) mission.hint = '要揸車先接到客！（E 上車）';
@@ -4042,13 +4100,14 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
         x.strokeStyle = '#ff5a3c'; x.lineWidth = 4; x.beginPath(); x.moveTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18); x.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6)); x.stroke();
         x.shadowColor = '#000'; x.shadowBlur = 8; x.fillStyle = '#fff'; x.font = 'italic 900 46px sans-serif'; x.fillText(k, cx, cy + 4); x.shadowBlur = 0; x.font = '700 13px sans-serif'; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillText('KM/H', cx, cy + 38); }; })()))(st); }   // v54：揸車速度錶（BG）   // 錢 + 惡名 ★（freefight.js）
     const M = mission, box = $('omis');
-    if (!M.type) { box.hidden = false; box.innerHTML = window.LIB && LIB.inside ? LIB.hint() : '<b>自由行</b><br>行去黃色光柱接任務：外賣・的士・追偷雞賊・小巴司機' + (MTR.ex.length ? '<br>🚇 行去地鐵出口（小地圖彩色方格）可以搭地鐵去第二個站' : '') + stormHint() + (window.RIFT ? RIFT.hint(hero) : '') + (window.LIB ? LIB.hint() : ''); }
+    if (!M.type) { box.hidden = false; box.innerHTML = window.IND && IND.inside ? IND.hint() : window.LIB && LIB.inside ? LIB.hint() : '<b>自由行</b><br>行去黃色光柱接任務：外賣・的士・追偷雞賊・小巴司機' + (MTR.ex.length ? '<br>🚇 行去地鐵出口（小地圖彩色方格）可以搭地鐵去第二個站' : '') + stormHint() + (window.RIFT ? RIFT.hint(hero) : '') + (window.LIB ? LIB.hint() : '') + (window.IND ? IND.hint() : ''); }
     else {
-      box.hidden = false; const tt = `<span class="t">${Math.ceil(M.t)} 秒</span>`;
+      box.hidden = false; const tt = `<span class="t">${M.indoor && M.indoor.pending ? '載入目標…' : `${Math.ceil(M.t)} 秒`}</span>`;
       const to = M.to ? `${M.to.tc}（${Math.round(dist({ x: hero.x, z: hero.z }, M.to))} 米）` : '';
       if (M.type === 'gmb') { const n = M.cps.length, st = M.cps[M.i]; box.innerHTML = `<b>小巴 ${M.route.n}</b> ${tt}<br>往 ${M.route.b || '總站'}：跟住光柱行（${M.i}/${n}）${st.stop ? '，下一個係<b>站</b>：停車上落客' : ''}${M.hint ? '<br>' + M.hint : ''}`; }
-      else box.innerHTML = M.type === 'food' ? `<b>外賣速遞</b> ${tt}<br>送去：${to}` : M.type === 'taxi' ? (M.stage === 'pick' ? `<b>的士</b> ${tt}<br>接客：揸車去紅色「客」停低${M.hint ? '<br>' + M.hint : ''}` : `<b>的士</b> ${tt}<br>去：${to}，停車落客`) : `<b>追偷雞賊</b> ${tt}<br>揸車撞佢 3 次（${M.hits}/3）`;
+      else box.innerHTML = M.type === 'food' ? `<b>外賣速遞</b> ${tt}<br>${M.indoor ? `送去：${M.indoor.tc} ${M.indoor.floor} 〈${M.indoor.name}〉${M.indoor.stage === 1 ? '・行入大廈' : '・送到指定樓層'}` : `送去：${to}`}` : M.type === 'taxi' ? (M.stage === 'pick' ? `<b>的士</b> ${tt}<br>接客：揸車去紅色「客」停低${M.hint ? '<br>' + M.hint : ''}` : `<b>的士</b> ${tt}<br>去：${to}，停車落客`) : `<b>追偷雞賊</b> ${tt}<br>揸車撞佢 3 次（${M.hits}/3）`;
     }
+    if (M.type && window.IND && IND.inside) box.innerHTML += `<br>${IND.hint()}`;
     box.innerHTML = misMin ? box.innerHTML.split('<br>')[0] + ' <span class="x">▸</span>' : '<span class="x">✕</span>' + box.innerHTML;
     // 小地圖：北向上，半徑 250 米
     const x = mctx, S = 150 / 250, cx = hero.x, cz = hero.z;
@@ -4066,7 +4125,8 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     for (const m of markers) dot(m.x, m.z, m.kind === 'food' ? '#e8702a' : m.kind === 'taxi' ? '#ff4040' : m.kind === 'gmb' ? '#2ee07a' : '#b07bff', 9);
     if (goal) dot(goal.x, goal.z, '#3cff8a', 11); if (pax) dot(pax.x, pax.z, '#ff4040', 11); if (villain) dot(villain.x, villain.z, '#ffe14a', 10);
     if (window.RIFT) RIFT.map(x, cx, cz, S);   // v43 時空裂縫：紫點 + 沙漏
-    if (window.LIB) LIB.map(x, cx, cz, S);   // 圖書館：出面「書」字，入面呢層平面
+    if (window.IND && IND.inside) IND.map(x, cx, cz);
+    else { if (window.LIB) LIB.map(x, cx, cz, S); if (window.IND) IND.map(x, cx, cz); }
     if (window.NET && NET.room) for (const q of NET.positions()) {   // BG 09-30「標埋所有 player 喺邊」：其他玩家（遠就貼住邊）+ 名
       if (q.hidden) continue; let dx = (q.x - cx) * S, dz = (q.z - cz) * S; const l = Math.hypot(dx, dz); if (l > 136) { dx *= 136 / l; dz *= 136 / l; }
       dot(q.x, q.z, q.col, 9); x.font = 'bold 20px sans-serif'; x.textAlign = dx > 60 ? 'right' : 'left'; x.lineWidth = 4; x.strokeStyle = '#000'; x.fillStyle = q.col;
@@ -4076,10 +4136,10 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     x.translate(150, 150); x.rotate(-(inCar ? car.h : hero.h) + Math.PI); x.fillStyle = '#fff'; x.beginPath(); x.moveTo(0, -12); x.lineTo(8, 9); x.lineTo(0, 4); x.lineTo(-8, 9); x.closePath(); x.fill();
     x.restore();
   }
-  function side(dt) { drvTick(); if (!(window.LIB && LIB.inside)) stepMission(dt); hud(); }   // freefight.js 打緊交：任務、錢、小地圖照行
+  function side(dt) { drvTick(); if (!(window.LIB && LIB.inside) || (window.IND && IND.inside)) stepMission(dt); hud(); }
   addEventListener('pointerdown', () => { if (active) lastDrag = performance.now(); });
   addEventListener('pointermove', (e) => { if (active && e.buttons) lastDrag = performance.now(); });
-  return { enter, exit, step, hero, car, onRoad: (x, z) => onRoad(x, z), drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, mission, startMission, solid, inWater, exits: EXS, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
+  return { enter, exit, step, hero, car, onRoad: (x, z) => onRoad(x, z), drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, beep, big, mission, startMission, solid, inWater, exits: EXS, stations: MTR.st, openMetro, closeMetro, ride, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
    
     carNear: () => !(!mission.type && nearExit(3.5)) && !!(nearestParked(4.5) || nearestTraffic(5)) };   // v41：打緊交（freefight.js）手機顯示「上車」掣用；同 act() 次序一樣（地鐵口優先）
 })();
@@ -7022,6 +7082,752 @@ window.LIB = (() => {
     // 測試用：直接去某層（唔使行）
     _goto(k) { if (!S.inside) { doEnter(); } if (k !== S.floor) doLift(k); }, _lifts: () => (FL[S.floor] || { lifts: [] }).lifts, _toW: toW, door: doorOut, floors: D.floors.length };
 })();
+</script><script src="hkcity_indoor.js"></script><script>
+window.IND = (() => {
+  const D = window.INDOOR, OPEN = window.OPEN;
+  if (!D || !OPEN) return null;
+  const $ = (id) => document.getElementById(id), CS = 0.4, FARE = 5;
+  const FONT = '"PingFang HK","PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif';
+  const S = { inside: false, busy: false, menu: false, state: null, data: null, groups: null, floor: null, root: null,
+    phase: null, t: 0, target: null, paid: false, goal: null, forceFood: false, notice: 0 };
+  const records = D.venues.map((v) => ({ v, data: null, promise: null, groups: null, entries: null, markers: null }));
+  const byId = new Map(records.map((r) => [r.v.id, r]));
+  const byEn = new Map(records.map((r) => [r.v.en, r]));
+  const ST = OPEN.stations || [];
+  const stationVenue = new Map();
+  ST.forEach((st, k) => {
+    const r = records.find((q) => q.v.en === st[1] + ' Station' || q.v.tc === st[0] + '站');
+    if (r) stationVenue.set(k, r);
+    else console.warn('IND: no indoor venue for MTR station', st[1]);
+  });
+  const isStation = (r) => !!r && / Station$/.test(r.v.en);
+  const clamp = THREE.MathUtils.clamp;
+  const point = (r) => { const a = []; for (let i = 0; i + 1 < r.length; i += 2) a.push([r[i], r[i + 1]]); if (a.length > 2 && Math.hypot(a[0][0] - a[a.length - 1][0], a[0][1] - a[a.length - 1][1]) < 0.001) a.pop(); return a; };
+  const ringsOf = (r) => !r || !r.length ? [] : typeof r[0] === 'number' ? [r] : r;
+  function insideRing(r, x, z) {
+    let yes = false; const p = point(r);
+    for (let i = 0, j = p.length - 1; i < p.length; j = i++) {
+      const [xi, zi] = p[i], [xj, zj] = p[j];
+      if ((zi > z) !== (zj > z) && x < (xj - xi) * (z - zi) / ((zj - zi) || 1e-12) + xi) yes = !yes;
+    }
+    return yes;
+  }
+  function insideShape(rings, x, z) {
+    const a = ringsOf(rings); return !!a.length && insideRing(a[0], x, z) && !a.slice(1).some((h) => insideRing(h, x, z));
+  }
+  const edgeDist = (x, z, a, b) => {
+    const dx = b[0] - a[0], dz = b[1] - a[1], t = clamp(((x - a[0]) * dx + (z - a[1]) * dz) / (dx * dx + dz * dz || 1), 0, 1);
+    const px = a[0] + t * dx, pz = a[1] + t * dz; return { d: Math.hypot(x - px, z - pz), x: px, z: pz, dx, dz };
+  };
+  function nearestEdge(x, z, allRings, interior) {
+    let best = null;
+    for (const ring of allRings) {
+      const p = point(ring); for (let i = 0; i < p.length; i++) {
+        const q = edgeDist(x, z, p[i], p[(i + 1) % p.length]);
+        if (!best || q.d < best.d) {
+          const len = Math.hypot(q.dx, q.dz) || 1, nx = -q.dz / len, nz = q.dx / len;
+          const aIn = interior(q.x + nx * 0.12, q.z + nz * 0.12), bIn = interior(q.x - nx * 0.12, q.z - nz * 0.12);
+          if (aIn && !bIn) { q.nx = -nx; q.nz = -nz; }
+          else if (!aIn && bIn) { q.nx = nx; q.nz = nz; }
+          else { q.nx = nx; q.nz = nz; }
+          best = q;
+        }
+      }
+    }
+    return best;
+  }
+  function midpoint(line) {
+    const p = point(line); if (!p.length) return null; let total = 0;
+    for (let i = 1; i < p.length; i++) total += Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+    let t = total / 2;
+    for (let i = 1; i < p.length; i++) {
+      const l = Math.hypot(p[i][0] - p[i - 1][0], p[i][1] - p[i - 1][1]);
+      if (t <= l || i === p.length - 1) { const f = l ? t / l : 0; return { x: p[i - 1][0] + (p[i][0] - p[i - 1][0]) * f, z: p[i - 1][1] + (p[i][1] - p[i - 1][1]) * f }; }
+      t -= l;
+    }
+    return { x: p[0][0], z: p[0][1] };
+  }
+  function makeGroups(data) {
+    const m = new Map();
+    data.levels.forEach((l, i) => {
+      let g = m.get(l.o); if (!g) { g = { o: l.o, levels: [], names: new Map(), polys: [], z: Infinity }; m.set(l.o, g); }
+      g.levels.push({ i, l }); g.names.set(l.n, (g.names.get(l.n) || 0) + 1); g.z = Math.min(g.z, l.z);
+      for (const p of l.p || []) g.polys.push(ringsOf(p));
+    });
+    const a = [...m.values()].sort((x, y) => x.o - y.o);
+    a.forEach((g, i) => {
+      g.name = [...g.names].sort((x, y) => y[1] - x[1])[0][0];
+      const next = a.find((q) => q.o > g.o); g.H = next ? clamp(next.z - g.z - 0.3, 2.6, 6) : 3.5;
+      g.units = data.units.filter((u) => data.levels[u[0]] && data.levels[u[0]].o === g.o);
+      g.doors = data.doors.filter((d) => data.levels[d[0]] && data.levels[d[0]].o === g.o);
+      g.pois = data.pois.filter((p) => data.levels[p[0]] && data.levels[p[0]].o === g.o);
+    });
+    return a;
+  }
+  const bboxDist = (bb, x, z) => Math.hypot(Math.max(bb[0] - x, 0, x - bb[2]), Math.max(bb[1] - z, 0, z - bb[3]));
+  function getEntries(r) {
+    if (r.entries) return r.entries;
+    const d = r.data, levelZero = d.levels.map((l, i) => l.o === 0 ? { l, i } : null).filter(Boolean);
+    const sources = d.foot || [], output = [];
+    for (const door of d.doors || []) {
+      const [li, code, line] = door, lev = d.levels[li]; if (!lev || lev.o !== 0 || code > 1) continue;
+      const mid = midpoint(line); if (!mid) continue;
+      const levelRings = levelZero.flatMap((q) => (q.l.p || []).flatMap((p) => ringsOf(p)));
+      const footRings = ringsOf(sources), rings = footRings.concat(levelRings);
+      const dist = nearestEdge(mid.x, mid.z, rings, (x, z) => {
+        return footRings.some((p) => insideShape(p, x, z)) || levelZero.some((q) => (q.l.p || []).some((p) => insideShape(ringsOf(p), x, z)));
+      });
+      if (!dist || dist.d > 1.5) continue;
+      let out = null;
+      for (let step = 1.5; step <= 6.01; step += 0.5) {
+        const x = mid.x + dist.nx * step, z = mid.z + dist.nz * step;
+        if (!OPEN.solid(x, z) && !OPEN.onRoad(x, z)) { out = { x, z }; break; }
+      }
+      if (!out) continue;
+      output.push({ mid, out, nx: dist.nx, nz: dist.nz, code, li, line });
+    }
+    output.sort((a, b) => b.code - a.code || Math.hypot(a.out.x - OPEN.hero.x, a.out.z - OPEN.hero.z) - Math.hypot(b.out.x - OPEN.hero.x, b.out.z - OPEN.hero.z));
+    r.entries = output.slice(0, 6);
+    return r.entries;
+  }
+  const owned = (o, layer) => o.traverse((q) => q.layers.set(layer));
+  function addMarkers(r) {
+    if (r.markers || isStation(r)) return;
+    const entries = getEntries(r); if (!entries.length) { r.markers = []; return; }
+    const c = document.createElement('canvas'); c.width = 512; c.height = 128;
+    const x = c.getContext('2d'); x.fillStyle = 'rgba(25,18,8,.84)'; x.fillRect(4, 5, 504, 118);
+    x.strokeStyle = '#ffd65c'; x.lineWidth = 5; x.strokeRect(5, 6, 502, 116);
+    x.fillStyle = '#fff5d2'; x.font = `900 54px ${FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(r.v.tc, 256, 65, 480);
+    const tex = new THREE.CanvasTexture(c); tex.anisotropy = 2;
+    r.markers = entries.map((e) => {
+      const g = new THREE.Group(), ring = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.12, 8, 28), new THREE.MeshBasicMaterial({ color: 0xffc52d, transparent: true, opacity: 0.92 }));
+      ring.rotation.x = Math.PI / 2; ring.position.y = 0.16; g.add(ring);
+      const glow = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.55, 28), new THREE.MeshBasicMaterial({ color: 0xffcf38, transparent: true, opacity: 0.19, side: THREE.DoubleSide, depthWrite: false }));
+      glow.rotation.x = -Math.PI / 2; glow.position.y = 0.08; g.add(glow);
+      const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false }));
+      label.scale.set(3.6, 0.9, 1); label.position.y = 2.7; label.renderOrder = 10; g.add(label);
+      g.position.set(e.out.x, 0, e.out.z); owned(g, 0); scene.add(g); return { g, ring, entry: e };
+    });
+  }
+  function load(r) {
+    if (r.data) return Promise.resolve(r.data);
+    if (r.promise) return r.promise;
+    r.promise = new Promise((resolve, reject) => {
+      const s = document.createElement('script'); s.src = r.v.file; s.async = true;
+      s.onload = () => {
+        r.data = window.INDOOR_V && window.INDOOR_V[r.v.id]; r.promise = null;
+        if (!r.data) { reject(new Error('IND: venue payload missing ' + r.v.id)); return; }
+        r.groups = makeGroups(r.data); addMarkers(r); resolve(r.data);
+      };
+      s.onerror = () => { r.promise = null; console.warn('IND: failed to load', r.v.file); reject(new Error('IND: failed to load ' + r.v.file)); };
+      document.head.appendChild(s);
+    });
+    return r.promise;
+  }
+  if (!window.__indoorCredit) {
+    const cr = $('credit'); if (cr) cr.textContent += '；室內地圖 © 香港特區政府地政總署「三維室內地圖」（CSDI 空間數據共享平台）';
+    window.__indoorCredit = true;
+  }
+  const style = document.createElement('style');
+  style.textContent = `
+#indLift,#indStair{position:fixed;left:50%;transform:translateX(-50%);z-index:8;width:min(340px,90vw);max-height:72vh;overflow:auto;padding:10px 12px;border-radius:14px;background:rgba(24,26,32,.96);border:1px solid #aeb8c2;color:#fff;pointer-events:auto;font-size:15px}
+#indLift{top:50%;transform:translate(-50%,-50%)}#indStair{bottom:calc(82px + env(safe-area-inset-bottom));display:flex;gap:8px;align-items:center;justify-content:center}
+#indLift .mh{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-weight:900}#indLift .mh span{cursor:pointer;padding:4px 8px}
+#indLift .lb{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+#indLift button,#indStair button{min-height:42px;border-radius:22px;border:2px solid #9aa1a8;background:#3a3f46;color:#fff;font:900 16px ${FONT};padding:6px 12px}
+#indLift button small{display:block;font-size:11px;font-weight:600;opacity:.8}
+#indStair b{font-size:13px}
+`;
+  document.head.appendChild(style);
+  $('oui').insertAdjacentHTML('beforeend', '<div id="indLift" hidden><div class="mh"><b>升降機</b><span id="indLiftX">✕</span></div><div class="lb" id="indLiftL"></div></div><div id="indStair" hidden><b id="indStairT">樓梯</b><button id="indDown">↓ 落一層</button><button id="indUp">↑ 上一層</button></div>');
+  $('indLift').addEventListener('pointerdown', (e) => e.stopPropagation());
+  $('indStair').addEventListener('pointerdown', (e) => e.stopPropagation());
+  $('indLiftX').onclick = () => { S.menu = false; S.busy = false; $('indLift').hidden = true; };
+  const C3 = new THREE.Color();
+  const color = (hex, k = 1) => { C3.set(hex); return [C3.r * k, C3.g * k, C3.b * k]; };
+  let M = null;
+  function init() {
+    M = { v: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false }),
+      line2: new THREE.LineBasicMaterial({ color: 0x45bfff, transparent: true, opacity: 0.9 }),
+      line3: new THREE.LineDashedMaterial({ color: 0xffa52c, dashSize: 1.2, gapSize: 0.8, transparent: true, opacity: 0.95 }) };
+    OPEN.hero.root.traverse((o) => o.layers.enable(1));
+    S.root = new THREE.Group(); S.root.visible = false;
+    S.root.add(new THREE.HemisphereLight(0xddeaff, 0x686775, 0.9));
+    const sun = new THREE.DirectionalLight(0xffe6c4, 0.32); sun.position.set(8, 12, 5); S.root.add(sun, sun.target);
+    owned(S.root, 1);
+    scene.add(S.root);
+  }
+  function vbNew() {
+    const P = [], N = [], C = [], a = new THREE.Vector3(), b = new THREE.Vector3();
+    const tri = (A, B, Cc, ca, cb, cc) => {
+      a.set(B[0] - A[0], B[1] - A[1], B[2] - A[2]); b.set(Cc[0] - A[0], Cc[1] - A[1], Cc[2] - A[2]); a.cross(b).normalize();
+      for (const [p, c] of [[A, ca], [B, cb], [Cc, cc]]) { P.push(...p); N.push(a.x, a.y, a.z); C.push(...c); }
+    };
+    return { tri, quad: (a, b, c, d, ca, cb = ca, cc = cb, cd = ca) => { tri(a, b, c, ca, cb, cc); tri(a, c, d, ca, cc, cd); },
+      flat(rings, y, c, up = true) {
+        const rr = ringsOf(rings); if (!rr.length) return;
+        const outer = point(rr[0]).map(([x, z]) => new THREE.Vector2(x, z)), holes = rr.slice(1).map((r) => point(r).map(([x, z]) => new THREE.Vector2(x, z)));
+        const all = outer.concat(...holes);
+        for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(outer, holes)) {
+          const A = all[i], B = all[j], Cc = all[k], cr = (B.x - A.x) * (Cc.y - A.y) - (B.y - A.y) * (Cc.x - A.x);
+          const p = [[A.x, y, A.y], [B.x, y, B.y], [Cc.x, y, Cc.y]];
+          if ((cr < 0) === up) tri(p[0], p[1], p[2], c, c, c); else tri(p[0], p[2], p[1], c, c, c);
+        }
+      },
+      geo() { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); return g; },
+      get triangles() { return P.length / 9; } };
+  }
+  const NO_WALL = new Set(['walkway', 'lobby', 'parking', 'road', 'platform', 'opentobelow', 'unspecified', 'vegetation']);
+  const NO_WALK = new Set(['opentobelow', 'elevator', 'vegetation']);
+  const UNIT_COLOR = { walkway: '#989ca3', lobby: '#b3a78f', room: '#887e72', platform: '#438865', elevator: '#858a95',
+    escalator: '#a58e63', stairs: '#a9956c', opentobelow: '#272b34', vegetation: '#47634a', parking: '#555860',
+    road: '#44474d', foodservice: '#c78957', 'restroom.female': '#b57496', 'restroom.male': '#6289b0',
+    'restroom.unisex': '#8a78ae', 'restroom.wheelchair': '#538fa0' };
+  const unitRings = (u) => ringsOf(u[4]);
+  const centroid = (rings) => { const p = point(ringsOf(rings)[0] || []); if (!p.length) return { x: 0, z: 0 }; return { x: p.reduce((s, q) => s + q[0], 0) / p.length, z: p.reduce((s, q) => s + q[1], 0) / p.length }; };
+  function linesOf(flat) { const p = point(flat), out = []; for (let i = 1; i < p.length; i++) out.push([p[i - 1], p[i]]); return out; }
+  const distToSeg = (x, z, a, b) => edgeDist(x, z, a, b).d;
+  function wallBuild(vb, ring, H, c, doors, walls) {
+    const p = point(ring);
+    for (let i = 0; i < p.length; i++) {
+      const A = p[i], B = p[(i + 1) % p.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < 0.02) continue;
+      const n = Math.max(1, Math.ceil(L / 0.25));
+      for (let j = 0; j < n; j++) {
+        const t0 = j / n, t1 = (j + 1) / n, x0 = A[0] + (B[0] - A[0]) * t0, z0 = A[1] + (B[1] - A[1]) * t0, x1 = A[0] + (B[0] - A[0]) * t1, z1 = A[1] + (B[1] - A[1]) * t1;
+        const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
+        if (doors.some((q) => q.some((s) => distToSeg(mx, mz, s[0], s[1]) < 0.6))) continue;
+        const dim = c.map((v) => v * 0.78);
+        vb.quad([x0, 0, z0], [x1, 0, z1], [x1, H, z1], [x0, H, z0], dim, dim, c, c);
+        walls.push([x0, z0, x1, z1]);
+      }
+    }
+  }
+  function routeFloor(data, y) {
+    let best = null, bd = Infinity;
+    for (const l of data.levels) { const d = Math.abs(l.z - y); if (d < bd) { bd = d; best = l.o; } }
+    return best;
+  }
+  function makeGrid(r, g, wallSegments) {
+    const pts = g.polys.flatMap((rings) => point(rings[0] || [])); if (!pts.length) return null;
+    const x0 = Math.floor(Math.min(...pts.map((p) => p[0])) / CS) * CS - CS, x1 = Math.ceil(Math.max(...pts.map((p) => p[0])) / CS) * CS + CS;
+    const z0 = Math.floor(Math.min(...pts.map((p) => p[1])) / CS) * CS - CS, z1 = Math.ceil(Math.max(...pts.map((p) => p[1])) / CS) * CS + CS;
+    const nx = Math.ceil((x1 - x0) / CS), nz = Math.ceil((z1 - z0) / CS), n = nx * nz;
+    const walkable = new Uint8Array(n), paid = new Uint8Array(n);
+    const idxAt = (x, z) => { const i = Math.floor((x - x0) / CS), j = Math.floor((z - z0) / CS); return i < 0 || j < 0 || i >= nx || j >= nz ? -1 : j * nx + i; };
+    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
+      const x = x0 + (i + 0.5) * CS, z = z0 + (j + 0.5) * CS, k = j * nx + i;
+      if (g.polys.some((p) => insideShape(p, x, z))) walkable[k] = 1;
+    }
+    for (const u of g.units) {
+      const cat = r.data.cats[u[1]] || '';
+      if (!NO_WALK.has(cat)) continue;
+      const B = unitRings(u), p = point(B[0] || []); if (!p.length) continue;
+      const ax = Math.min(...p.map((q) => q[0])), bx = Math.max(...p.map((q) => q[0])), az = Math.min(...p.map((q) => q[1])), bz = Math.max(...p.map((q) => q[1]));
+      for (let j = Math.max(0, Math.floor((az - z0) / CS)); j <= Math.min(nz - 1, Math.ceil((bz - z0) / CS)); j++)
+        for (let i = Math.max(0, Math.floor((ax - x0) / CS)); i <= Math.min(nx - 1, Math.ceil((bx - x0) / CS)); i++) {
+          const k = j * nx + i; if (walkable[k] && insideShape(B, x0 + (i + 0.5) * CS, z0 + (j + 0.5) * CS)) walkable[k] = 0;
+        }
+    }
+    for (const [ax, az, bx, bz] of wallSegments) {
+      const minx = Math.max(0, Math.floor((Math.min(ax, bx) - 0.25 - x0) / CS)), maxx = Math.min(nx - 1, Math.ceil((Math.max(ax, bx) + 0.25 - x0) / CS));
+      const minz = Math.max(0, Math.floor((Math.min(az, bz) - 0.25 - z0) / CS)), maxz = Math.min(nz - 1, Math.ceil((Math.max(az, bz) + 0.25 - z0) / CS));
+      for (let j = minz; j <= maxz; j++) for (let i = minx; i <= maxx; i++) {
+        const k = j * nx + i; if (walkable[k] && distToSeg(x0 + (i + 0.5) * CS, z0 + (j + 0.5) * CS, [ax, az], [bx, bz]) <= 0.22) walkable[k] = 0;
+      }
+    }
+    const net = r.data.net;
+    if (net) {
+      const best = new Float32Array(n); best.fill(2.5);
+      for (const route of net.r) {
+        const loc = route[1]; if (loc !== 2 && loc !== 3) continue;
+        const a = route[4];
+        for (let k = 0; k + 5 < a.length; k += 3) {
+          const ay = (a[k + 1] + a[k + 4]) / 2; if (routeFloor(r.data, ay) !== g.o) continue;
+          const A = [a[k], a[k + 2]], B = [a[k + 3], a[k + 5]];
+          const minx = Math.max(0, Math.floor((Math.min(A[0], B[0]) - 2.5 - x0) / CS)), maxx = Math.min(nx - 1, Math.ceil((Math.max(A[0], B[0]) + 2.5 - x0) / CS));
+          const minz = Math.max(0, Math.floor((Math.min(A[1], B[1]) - 2.5 - z0) / CS)), maxz = Math.min(nz - 1, Math.ceil((Math.max(A[1], B[1]) + 2.5 - z0) / CS));
+          for (let j = minz; j <= maxz; j++) for (let i = minx; i <= maxx; i++) {
+            const k0 = j * nx + i, d = distToSeg(x0 + (i + 0.5) * CS, z0 + (j + 0.5) * CS, A, B);
+            if (d <= 2.5 && d < best[k0]) { best[k0] = d; paid[k0] = loc === 3 ? 1 : 0; }
+          }
+        }
+      }
+    }
+    return { x0, z0, nx, nz, walkable, paid, idxAt };
+  }
+  function nearestCell(grid, x, z) {
+    if (!grid) return null;
+    const k = grid.idxAt(x, z), n = grid.nx * grid.nz;
+    if (k >= 0 && grid.walkable[k]) return { x: grid.x0 + ((k % grid.nx) + 0.5) * CS, z: grid.z0 + (Math.floor(k / grid.nx) + 0.5) * CS, index: k };
+    const i0 = clamp(Math.floor((x - grid.x0) / CS), 0, grid.nx - 1), j0 = clamp(Math.floor((z - grid.z0) / CS), 0, grid.nz - 1), start = j0 * grid.nx + i0;
+    const seen = new Uint8Array(n), queue = new Int32Array(n); let head = 0, tail = 0; queue[tail++] = start; seen[start] = 1;
+    while (head < tail) {
+      const k0 = queue[head++], i = k0 % grid.nx, j = Math.floor(k0 / grid.nx);
+      if (grid.walkable[k0]) return { x: grid.x0 + (i + 0.5) * CS, z: grid.z0 + (j + 0.5) * CS, index: k0 };
+      for (const q of [i ? k0 - 1 : -1, i + 1 < grid.nx ? k0 + 1 : -1, j ? k0 - grid.nx : -1, j + 1 < grid.nz ? k0 + grid.nx : -1]) if (q >= 0 && !seen[q]) { seen[q] = 1; queue[tail++] = q; }
+    }
+    return null;
+  }
+  function unitKind(u) { return S.data.cats[u[1]] || ''; }
+  function unitNodes(g, kind) { return g.units.filter((u) => unitKind(u) === kind).map((u) => ({ u, pos: centroid(unitRings(u)), cat: unitKind(u) })); }
+  function categoryLabel(cat) { return cat === 'elevator' ? '升降機' : cat === 'escalator' ? '扶手電梯' : cat === 'stairs' ? '樓梯' : cat.startsWith('restroom.') ? '洗手間' : ''; }
+  function addLabels(root, g, data) {
+    const items = [];
+    for (const p of g.pois.slice(0, 80)) if (p[2]) items.push({ x: p[3], z: p[4], text: p[2] });
+    for (const u of g.units) { const text = categoryLabel(unitKind(u)); if (text) { const c = centroid(unitRings(u)); items.push({ x: c.x, z: c.z, text }); } }
+    const list = items.slice(0, 180); if (!list.length) return null;
+    const cw = 256, ch = 64, cols = 4, rows = Math.ceil(list.length / cols), cv = document.createElement('canvas'); cv.width = cw * cols; cv.height = ch * rows;
+    const ctx = cv.getContext('2d');
+    list.forEach((it, i) => {
+      const x = i % cols * cw, y = Math.floor(i / cols) * ch;
+      ctx.fillStyle = 'rgba(12,18,30,.82)'; ctx.fillRect(x + 4, y + 4, cw - 8, ch - 8); ctx.strokeStyle = '#d5c799'; ctx.lineWidth = 2; ctx.strokeRect(x + 5, y + 5, cw - 10, ch - 10);
+      ctx.fillStyle = '#fff4d1'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 23px ${FONT}`; ctx.fillText(it.text, x + cw / 2, y + ch / 2, cw - 18);
+    });
+    const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 2;
+    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const listGroup = new THREE.Group(); listGroup.userData.labels = [];
+    list.forEach((it, i) => {
+      const col = i % cols, row = Math.floor(i / cols), geom = new THREE.PlaneGeometry(it.text.length > 10 ? 3.2 : 2.6, 0.62), uv = geom.attributes.uv;
+      const u0 = col / cols, u1 = (col + 1) / cols, v1 = 1 - row / rows, v0 = 1 - (row + 1) / rows;
+      for (let k = 0; k < uv.count; k++) uv.setXY(k, u0 + uv.getX(k) * (u1 - u0), v0 + uv.getY(k) * (v1 - v0));
+      const mesh = new THREE.Mesh(geom, mat); mesh.position.set(it.x, 2.6, it.z); mesh.renderOrder = 5; listGroup.add(mesh); listGroup.userData.labels.push(mesh);
+    });
+    owned(listGroup, 1); root.add(listGroup); root.userData.ownedTextures = (root.userData.ownedTextures || []).concat(tex);
+    root.userData.ownedMaterials = (root.userData.ownedMaterials || []).concat(mat);
+    return listGroup;
+  }
+  function addRoutes(root, g, data) {
+    if (!data.net) return;
+    for (const loc of [2, 3]) {
+      const P = [];
+      for (const route of data.net.r) {
+        if (route[1] !== loc) continue;
+        const a = route[4];
+        for (let k = 0; k + 5 < a.length; k += 3) {
+          if (routeFloor(data, (a[k + 1] + a[k + 4]) / 2) !== g.o) continue;
+          P.push(a[k], 0.055, a[k + 2], a[k + 3], 0.055, a[k + 5]);
+        }
+      }
+      if (!P.length) continue;
+      const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(P, 3));
+      const line = new THREE.LineSegments(geo, loc === 3 ? M.line3 : M.line2); if (loc === 3) line.computeLineDistances(); line.frustumCulled = false; root.add(line);
+    }
+  }
+  function buildFloor(r, g) {
+    if (!M) init();
+    const t0 = performance.now(), root = new THREE.Group(), vb = vbNew(), doors = g.doors.map((d) => linesOf(d[2])), walls = [], unitPoints = [];
+    for (const rings of g.polys) vb.flat(rings, 0, color('#c1c1c1'), true);
+    for (const u of g.units) {
+      const cat = unitKind(u), rings = unitRings(u), cc = UNIT_COLOR[cat] || '#9a9286';
+      vb.flat(rings, 0.01, color(cat === 'platform' ? '#438865' : cc), true);
+      if (!NO_WALL.has(cat)) for (const ring of rings) wallBuild(vb, ring, Math.min(g.H, 3), color(cc), doors, walls);
+      const cp = centroid(rings); unitPoints.push({ u, cat, pos: cp });
+    }
+    for (const rings of g.polys) for (const ring of rings) wallBuild(vb, ring, g.H, color('#aaa79f'), doors, walls);
+    for (const rings of g.polys) vb.flat(rings, g.H, color('#8a8d93'), false);
+    const mesh = new THREE.Mesh(vb.geo(), M.v); mesh.frustumCulled = false; root.add(mesh);
+    root.traverse((o) => o.layers.set(1)); S.root.add(root);
+    const grid = makeGrid(r, g, walls), labels = addLabels(root, g, r.data); addRoutes(root, g, r.data);
+    root.traverse((o) => o.layers.set(1));
+    let tris = 0; root.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.attributes.position) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
+    return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), buildMs: performance.now() - t0, group: g };
+  }
+  function disposeFloor() {
+    if (!S.floor) return;
+    S.root.remove(S.floor.root);
+    const geos = new Set(), mats = new Set();
+    S.floor.root.traverse((o) => { if (o.geometry) geos.add(o.geometry); });
+    for (const g of geos) g.dispose();
+    for (const m of S.floor.root.userData.ownedMaterials || []) mats.add(m);
+    mats.forEach((m) => m.dispose());
+    for (const t of S.floor.root.userData.ownedTextures || []) t.dispose();
+    S.floor = null; S.goalObj = null;
+  }
+  function clearGoal() {
+    if (S.goalObj) {
+      const mats = new Set();
+      S.goalObj.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (Array.isArray(o.material)) o.material.forEach((m) => mats.add(m)); else if (o.material) mats.add(o.material); });
+      mats.forEach((m) => m.dispose());
+      if (S.floor) S.floor.root.userData.ownedMaterials = (S.floor.root.userData.ownedMaterials || []).filter((m) => !mats.has(m));
+      if (S.goalObj.parent) S.goalObj.parent.remove(S.goalObj);
+    }
+    S.goalObj = null; S.goal = null;
+  }
+  function addGoal() {
+    if (!S.floor || !S.goal || S.goal.venue !== S.state.v.id || S.goal.o !== S.floor.group.o || S.goalObj) return;
+    const g = new THREE.Group(), bm = new THREE.MeshBasicMaterial({ color: 0x3cff8a, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }), rm = new THREE.MeshBasicMaterial({ color: 0x3cff8a });
+    const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 4, 12, 1, true), bm);
+    beam.position.y = 2; g.add(beam);
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.1, 8, 24), rm);
+    ring.rotation.x = Math.PI / 2; ring.position.y = 0.08; g.add(ring); g.position.set(S.goal.x, 0, S.goal.z); owned(g, 1); S.floor.root.add(g); S.goalObj = g;
+    S.floor.root.userData.ownedMaterials = (S.floor.root.userData.ownedMaterials || []).concat(bm, rm);
+  }
+  function showFloor(r, g, x, z, h = Number.isFinite(OPEN.hero.h) ? OPEN.hero.h : 0) {
+    disposeFloor(); S.state = r; S.data = r.data; S.groups = r.groups;
+    S.floor = buildFloor(r, g); S.root.visible = true; addGoal();
+    const p = nearestCell(S.floor.grid, x, z) || { x: x, z: z };
+    place(p.x, p.z, h); S.paid = paidAt(p.x, p.z);
+    return { ...p, walkable: !!(S.floor.grid && S.floor.grid.walkable[S.floor.grid.idxAt(p.x, p.z)]), buildMs: S.floor.buildMs, triangles: S.floor.triangles };
+  }
+  function place(x, z, h = OPEN.hero.h) {
+    const H = OPEN.hero; H.x = x; H.z = z; H.y = 0; H.vy = 0; H.h = h;
+    H.root.position.set(x, 0, z); H.root.rotation.y = h;
+    cam.wx = x; cam.wz = z; cam.wyaw = h + Math.PI; cam.wpitch = 0.3;
+  }
+  function cameraLayers(on) { camera.layers.set(on ? 1 : 0); camera.near = on ? 0.1 : 0.5; camera.far = on ? 300 : 12000; camera.updateProjectionMatrix(); }
+  function stationExit(k, x, z) {
+    const list = OPEN.exits.filter((e) => e.e[0] === k); if (!list.length) return null;
+    const X = x === undefined ? OPEN.hero.x : x, Z = z === undefined ? OPEN.hero.z : z;
+    return list.reduce((best, e) => !best || Math.hypot(e.fx - X, e.fz - Z) < Math.hypot(best.fx - X, best.fz - Z) ? e : best, null);
+  }
+  function floorByOrdinal(r, o) { return r.groups.find((g) => g.o === o); }
+  function floorByElevation(r, y) {
+    const delta = (g) => Math.min(...g.levels.map((q) => Math.abs(q.l.z - y)));
+    return r.groups.reduce((a, b) => delta(b) < delta(a) ? b : a);
+  }
+  function paidAt(x, z) {
+    if (!S.floor || !isStation(S.state)) return false;
+    const i = S.floor.grid.idxAt(x, z); return i >= 0 && !!S.floor.grid.paid[i];
+  }
+  function canMove(x, z) {
+    if (!S.inside || !S.floor) return false;
+    const i = S.floor.grid.idxAt(x, z);
+    if (i < 0 || !S.floor.grid.walkable[i]) return true;
+    if (isStation(S.state)) {
+      const toPaid = !!S.floor.grid.paid[i];
+      if (!S.paid && toPaid) {
+        if (OPEN.money < FARE) {
+          if (performance.now() - S.notice > 1100) { S.notice = performance.now(); OPEN.big('八達通唔夠錢（要 $5）', '#ff765e'); }
+          return true;
+        }
+        OPEN.addMoney(-FARE, 'mtr'); S.paid = true; OPEN.big('嘟！八達通 −$5', '#ffd23f');
+      } else if (S.paid && !toPaid) S.paid = false;
+    }
+    return false;
+  }
+  function walk(x, z) {
+    if (!S.inside || !S.floor) return OPEN.solid(x, z);
+    const i = S.floor.grid.idxAt(x, z); return i < 0 || !S.floor.grid.walkable[i];
+  }
+  function foot(x, z) { return S.inside ? walk(x, z) : OPEN.solid(x, z); }
+  function gridWalkable(x, z) { const i = S.floor && S.floor.grid.idxAt(x, z); return !!(i >= 0 && S.floor.grid.walkable[i]); }
+  function nearestDoorEntry(r, x, z) {
+    let best = null, bd = Infinity; for (const e of getEntries(r)) { const d = Math.hypot(x - e.out.x, z - e.out.z); if (d < bd) { bd = d; best = e; } }
+    return best ? { entry: best, d: bd } : null;
+  }
+  function nearUnit(types, limit = 1.2) {
+    if (!S.floor) return null; let best = null, bd = limit;
+    for (const v of S.floor.unitPoints) {
+      if (!types.includes(v.cat)) continue;
+      const inside = insideShape(unitRings(v.u), OPEN.hero.x, OPEN.hero.z), d = Math.hypot(v.pos.x - OPEN.hero.x, v.pos.z - OPEN.hero.z);
+      if (inside || d < bd) { bd = inside ? 0 : d; best = v; }
+    }
+    return best;
+  }
+  function nearPlatform() {
+    if (!S.floor || !S.paid) return false;
+    return S.floor.unitPoints.some((v) => v.cat === 'platform' && (insideShape(unitRings(v.u), OPEN.hero.x, OPEN.hero.z) || Math.hypot(v.pos.x - OPEN.hero.x, v.pos.z - OPEN.hero.z) < 1.2));
+  }
+  function currentNear() {
+    if (!S.inside) {
+      let best = null, bd = 2.5;
+      for (const r of records) if (!isStation(r) && r.data) {
+        const q = nearestDoorEntry(r, OPEN.hero.x, OPEN.hero.z);
+        if (q && q.d < bd) { best = { type: 'enter', r, entry: q.entry }; bd = q.d; }
+      }
+      const mission = OPEN.mission;
+      if (best && mission && mission.indoor && mission.indoor.venue !== best.r.v.id) return null;
+      return best;
+    }
+    const o = S.floor.group.o, max = Math.max(...S.groups.map((g) => g.o));
+    if (isStation(S.state) && o === max && !S.paid && nearUnit(['stairs', 'escalator', 'elevator'])) return { type: 'stationExit' };
+    if (nearPlatform()) return { type: 'board' };
+    if (o === 0) {
+      let best = null, bd = 1.5;
+      for (const e of getEntries(S.state)) {
+        const x = e.mid.x - e.nx * 0.8, z = e.mid.z - e.nz * 0.8, d = Math.hypot(OPEN.hero.x - x, OPEN.hero.z - z);
+        if (d < bd) { best = e; bd = d; }
+      }
+      if (best) return { type: 'leave', entry: best };
+    }
+    const lift = nearUnit(['elevator']); if (lift) return { type: 'lift', unit: lift };
+    const stairs = nearUnit(['stairs', 'escalator']); if (stairs) return { type: 'stairs', unit: stairs };
+    return null;
+  }
+  function prompt() {
+    if (S.busy) return null; const n = currentNear(); if (!n) return null;
+    if (n.type === 'enter') return [TOUCH ? `撳「入去」：入${n.r.v.tc}` : `E 入${n.r.v.tc}`, '入去'];
+    if (n.type === 'leave') return [TOUCH ? '撳「出去」' : 'E 出去', '出去'];
+    if (n.type === 'lift') return [TOUCH ? '撳「升降機」揀樓層' : 'E 搭升降機', '升降機'];
+    if (n.type === 'stairs') return [TOUCH ? '撳「樓梯」上落一層' : 'E 上落樓層', '樓梯'];
+    if (n.type === 'board') return [TOUCH ? '撳「搭地鐵」' : 'E 搭地鐵', '搭地鐵'];
+    return [TOUCH ? '撳「出站」' : 'E 出站', '出站'];
+  }
+  const fade = (v) => { $('ofade').style.opacity = v ? 1 : 0; };
+  function begin(type, target) { S.busy = true; S.phase = type; S.target = target; S.t = 0.28; fade(1); OPEN.beep(720, 0.1); }
+  function doEnter(r, entry) {
+    const zero = floorByOrdinal(r, 0) || r.groups[0]; if (!zero) return;
+    if (!S.root) init();
+    S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; cameraLayers(true); S.root.visible = true;
+    showFloor(r, zero, entry.mid.x - entry.nx * 4.2, entry.mid.z - entry.nz * 4.2, Math.atan2(-entry.nx, -entry.nz));
+    S.paid = false; OPEN.big(`${r.v.tc} ${zero.name}`, '#ffd98a');
+  }
+  function networkSpawn(r, e) {
+    let best = null, bd = Infinity;
+    const ex = e.e[2] - D.origin[0], ez = D.origin[1] - e.e[3];
+    for (const q of (r.data.net && r.data.net.r) || []) if (q[1] === 2) {
+      const a = q[4]; for (let i = 0; i + 2 < a.length; i += 3) {
+        const d = Math.hypot(a[i] - ex, a[i + 2] - ez);
+        if (d < bd) {
+          bd = d;
+          const neighbors = [i - 3, i + 3].filter((j) => j >= 0 && j + 2 < a.length).sort((j, k) => Math.hypot(a[k] - ex, a[k + 2] - ez) - Math.hypot(a[j] - ex, a[j + 2] - ez));
+          const j = neighbors[0] === undefined ? i : neighbors[0];
+          best = { x: a[i], y: a[i + 1], z: a[i + 2], h: Math.atan2(a[j] - a[i], a[j + 2] - a[i + 2]) };
+        }
+      }
+    }
+    return best;
+  }
+  function doStationEntry(r, e) {
+    const p = networkSpawn(r, e); if (!p) { OPEN.big('搵唔到站內通道', '#ff765e'); return; }
+    const g = floorByElevation(r, p.y); if (!g) return;
+    if (!S.root) init();
+    S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; cameraLayers(true); S.root.visible = true;
+    showFloor(r, g, p.x, p.z, p.h); S.paid = false; OPEN.big(`${r.v.tc} ${g.name}`, '#ffd98a');
+  }
+  function doLeave(entry) {
+    clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.paid = false; S.root.visible = false; cameraLayers(false); $('indLift').hidden = true; $('indStair').hidden = true; S.menu = false;
+    if (entry) place(entry.out.x, entry.out.z, Math.atan2(entry.nx, entry.nz));
+    else { const q = S.target && S.target.entry; if (q) place(q.out.x, q.out.z, Math.atan2(q.nx, q.nz)); }
+    fade(0);
+  }
+  function doFloor(target) {
+    if (!target || !S.state) return;
+    const g = floorByOrdinal(S.state, target.o); if (!g) return;
+    showFloor(S.state, g, target.x, target.z); OPEN.big(`${S.state.v.tc} ${g.name}`, '#ffd98a'); OPEN.beep(1180, 0.22);
+  }
+  function step(dt) {
+    if (!S.inside) {
+      const x = OPEN.hero.x, z = OPEN.hero.z;
+      for (const r of records) if (!r.data && bboxDist(r.v.bb, x, z) <= 150) load(r).catch(() => {});
+    }
+    if (!S.phase) { refreshPanels(); return; }
+    if ((S.t -= dt) > 0) return;
+    const phase = S.phase, target = S.target; S.phase = null;
+    if (phase === 'enter') doEnter(target.r, target.entry);
+    else if (phase === 'station') doStationEntry(target.r, target.exit);
+    else if (phase === 'floor') doFloor(target);
+    else if (phase === 'leave') doLeave(target.entry);
+    fade(0); S.busy = false; S.target = null; refreshPanels();
+  }
+  function refreshPanels() {
+    if (!S.inside || S.busy || !S.floor) { $('indStair').hidden = true; return; }
+    const q = nearUnit(['stairs', 'escalator']), lift = nearUnit(['elevator']);
+    $('indStair').hidden = !q;
+    if (q) {
+      $('indStairT').textContent = q.cat === 'escalator' ? '扶手電梯' : '樓梯';
+      const o = S.floor.group.o, canDown = !!floorByOrdinal(S.state, o - 1), canUp = !!floorByOrdinal(S.state, o + 1);
+      $('indDown').hidden = !canDown; $('indUp').hidden = !canUp;
+      $('indDown').onclick = () => changeByUnit(q, o - 1); $('indUp').onclick = () => changeByUnit(q, o + 1);
+    }
+    if (!lift && !S.menu) $('indLift').hidden = true;
+  }
+  function changeByUnit(source, ordinal) {
+    const g = floorByOrdinal(S.state, ordinal); if (!g) return;
+    const options = g.units.filter((u) => ['stairs', 'escalator'].includes(unitKind(u))).map((u) => ({ u, p: centroid(unitRings(u)) }));
+    let p = options.sort((a, b) => Math.hypot(a.p.x - source.pos.x, a.p.z - source.pos.z) - Math.hypot(b.p.x - source.pos.x, b.p.z - source.pos.z))[0];
+    if (!p) p = { p: { x: OPEN.hero.x, z: OPEN.hero.z } };
+    $('indStair').hidden = true; begin('floor', { o: ordinal, x: p.p.x, z: p.p.z });
+  }
+  function openLift(unit) {
+    const floors = [];
+    for (const g of S.groups) {
+      const lifts = g.units.filter((u) => unitKind(u) === 'elevator').map((u) => centroid(unitRings(u)));
+      if (lifts.some((p) => Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) <= 3)) floors.push(g);
+    }
+    const list = floors.length ? floors : S.groups;
+    $('indLiftL').innerHTML = list.slice().sort((a, b) => b.o - a.o).map((g) => `<button data-o="${g.o}" class="${g.o === S.floor.group.o ? 'here' : ''}">${g.name}<small>${g.o === 0 ? 'G/F・出入口' : `樓層 ${g.o}`}</small></button>`).join('');
+    for (const b of $('indLiftL').querySelectorAll('button')) b.onclick = () => {
+      const o = +b.dataset.o; if (o === S.floor.group.o) return;
+      const g = floorByOrdinal(S.state, o), u = g.units.filter((q) => unitKind(q) === 'elevator').map((q) => centroid(unitRings(q))).sort((a, c) => Math.hypot(a.x - unit.pos.x, a.z - unit.pos.z) - Math.hypot(c.x - unit.pos.x, c.z - unit.pos.z))[0];
+      const p = u || unit.pos; $('indLift').hidden = true; S.menu = false; begin('floor', { o, x: p.x, z: p.z });
+    };
+    S.menu = true; S.busy = true; $('indLift').hidden = false; $('oprompt').hidden = true;
+  }
+  function act() {
+    if (S.busy) return true;
+    const n = currentNear(); if (!n) return false;
+    if (n.type === 'enter') { begin('enter', { r: n.r, entry: n.entry }); return true; }
+    if (n.type === 'leave') { begin('leave', { entry: n.entry }); return true; }
+    if (n.type === 'lift') { openLift(n.unit); return true; }
+    if (n.type === 'stairs') { refreshPanels(); return true; }
+    if (n.type === 'board') {
+      const k = [...stationVenue].find(([, r]) => r === S.state); const exit = k && stationExit(k[0], OPEN.hero.x, OPEN.hero.z);
+      if (exit) OPEN.openMetro(exit, true, true); return true;
+    }
+    if (n.type === 'stationExit') {
+      const k = [...stationVenue].find(([, r]) => r === S.state), exit = k && stationExit(k[0], OPEN.hero.x, OPEN.hero.z);
+      if (exit) OPEN.ride(exit, true, true); return true;
+    }
+    return false;
+  }
+  function forceLeave() {
+    if (!S.inside) return;
+    if (isStation(S.state)) {
+      const highest = Math.max(...S.groups.map((g) => g.o));
+      if (S.floor.group.o !== highest || S.paid || !nearUnit(['stairs', 'escalator', 'elevator'])) { OPEN.big('請到最高層未付費通道出站', '#ffca54'); return; }
+      const k = [...stationVenue].find(([, r]) => r === S.state), exit = k && stationExit(k[0], OPEN.hero.x, OPEN.hero.z);
+      if (exit) { OPEN.ride(exit, true, true); return; }
+      OPEN.big('搵唔到車站出口', '#ff765e'); return;
+    }
+    const entries = getEntries(S.state), e = entries.reduce((best, q) => !best || Math.hypot(q.out.x - OPEN.hero.x, q.out.z - OPEN.hero.z) < Math.hypot(best.out.x - OPEN.hero.x, best.out.z - OPEN.hero.z) ? q : best, null);
+    if (e) { $('indLift').hidden = true; $('indStair').hidden = true; begin('leave', { entry: e }); }
+    else OPEN.big('暫時搵唔到可用出口', '#ff765e');
+  }
+  function leave(hard = false) {
+    if (!S.inside && !S.phase) return;
+    if (hard) {
+      clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.phase = null; S.busy = false; S.menu = false;
+      if (S.root) S.root.visible = false; $('indLift').hidden = true; $('indStair').hidden = true; fade(0); cameraLayers(false); return;
+    }
+    forceLeave();
+  }
+  function camera3(pitch) {
+    if (!S.floor) return;
+    const p = clamp(pitch, -0.1, 0.62), d = innerWidth < innerHeight ? 3.6 : 3.2, hy = 1.55, fx = Math.sin(cam.wyaw) * Math.cos(p), fz = Math.cos(cam.wyaw) * Math.cos(p), fy = Math.sin(p);
+    let t = d;
+    for (let k = 1; k <= 18; k++) { const s = d * k / 18, y = hy + fy * s; if (y > S.floor.H - 0.2 || walk(OPEN.hero.x + fx * s, OPEN.hero.z + fz * s)) { t = d * (k - 1) / 18; break; } }
+    t = Math.max(0.35, t); camera.position.set(OPEN.hero.x + fx * t, hy + fy * t, OPEN.hero.z + fz * t); camera.lookAt(OPEN.hero.x, hy, OPEN.hero.z);
+    if (S.floor.labels) for (const q of S.floor.labels.userData.labels) q.rotation.y = cam.wyaw;
+  }
+  function label() { return S.inside && S.floor ? `📍 ${S.state.v.tc} ${S.floor.group.name}<small>${S.state.v.en}</small>` : ''; }
+  function hint() {
+    if (S.inside) return `<b>${S.state.v.tc} ${S.floor.group.name}</b><br>${S.state.v.en}<br>行去升降機／樓梯轉樓層<br><span class="ogo ind-ogo">🚪 出返街</span>`;
+    let best = null, bd = 1e9;
+    for (const r of records) if (r.data && !isStation(r)) { const q = nearestDoorEntry(r, OPEN.hero.x, OPEN.hero.z); if (q && q.d < bd) { best = { r, q }; bd = q.d; } }
+    return best ? `<br>🏢 ${best.r.v.tc}（${Math.round(bd)} 米）` : '';
+  }
+  document.addEventListener('pointerdown', (e) => {
+    const t = e.target.closest && e.target.closest('.ind-ogo'); if (!t || !OPEN.active || OPEN.inCar) return;
+    e.stopPropagation(); e.preventDefault(); if (S.inside) forceLeave();
+    else { const n = currentNear(); if (n && n.type === 'enter') act(); }
+  }, true);
+  function map(ctx, cx, cz) {
+    if (!S.inside || !S.floor) {
+      let best = null, bd = Infinity;
+      for (const r of records) if (r.data && !isStation(r)) for (const m of r.markers || []) { const d = Math.hypot(m.entry.out.x - cx, m.entry.out.z - cz); if (d < bd) { bd = d; best = m.entry; } }
+      if (best) { let dx = (best.out.x - cx) * (150 / 250), dz = (best.out.z - cz) * (150 / 250), l = Math.hypot(dx, dz); if (l > 136) { dx *= 136 / l; dz *= 136 / l; }
+        ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(150 + dx, 150 + dz, 8, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.stroke(); }
+      return;
+    }
+    const K = 150 / 70, P = (x, z) => [150 + (x - cx) * K, 150 + (z - cz) * K];
+    ctx.fillStyle = '#191b20'; ctx.fillRect(0, 0, 300, 300);
+    const shape = (rings, fill, stroke) => {
+      const rs = ringsOf(rings); if (!rs.length) return; ctx.beginPath();
+      rs.forEach((rr) => { const p = point(rr); p.forEach((q, i) => { const [x, z] = P(q[0], q[1]); i ? ctx.lineTo(x, z) : ctx.moveTo(x, z); }); ctx.closePath(); });
+      if (fill) { ctx.fillStyle = fill; ctx.fill('evenodd'); } if (stroke) { ctx.strokeStyle = stroke; ctx.lineWidth = 1; ctx.stroke(); }
+    };
+    for (const p of S.floor.group.polys) shape(p, '#4b515e', '#89909a');
+    for (const v of S.floor.unitPoints) {
+      if (v.cat === 'room' || v.cat === 'foodservice') shape(unitRings(v.u), 'rgba(28,31,39,.66)');
+      if (v.cat === 'platform') shape(unitRings(v.u), 'rgba(44,150,92,.64)');
+      const [x, z] = P(v.pos.x, v.pos.z);
+      if (v.cat === 'elevator') { ctx.fillStyle = '#47ff98'; ctx.fillRect(x - 4, z - 4, 8, 8); }
+      if (v.cat === 'stairs' || v.cat === 'escalator') { ctx.fillStyle = '#ffd43b'; ctx.fillRect(x - 3, z - 3, 6, 6); }
+    }
+    if (!isStation(S.state) && S.floor.group.o === 0) for (const e of getEntries(S.state)) {
+      const [x, z] = P(e.out.x, e.out.z); ctx.fillStyle = '#ffd23f'; ctx.beginPath(); ctx.arc(x, z, 4, 0, 7); ctx.fill();
+    }
+    if (S.data.net) {
+      for (const route of S.data.net.r) {
+        const p = route[4]; ctx.beginPath();
+        for (let i = 0; i + 5 < p.length; i += 3) if (routeFloor(S.data, (p[i + 1] + p[i + 4]) / 2) === S.floor.group.o) {
+          const a = P(p[i], p[i + 2]), b = P(p[i + 3], p[i + 5]); ctx.moveTo(...a); ctx.lineTo(...b);
+        }
+        ctx.strokeStyle = route[1] === 3 ? '#ff9f2e' : '#36baff'; ctx.lineWidth = 1.5; ctx.setLineDash(route[1] === 3 ? [4, 3] : []); ctx.stroke();
+      }
+      ctx.setLineDash([]);
+    }
+    if (S.goal && S.goal.venue === S.state.v.id && S.goal.o === S.floor.group.o) {
+      const [x, z] = P(S.goal.x, S.goal.z); ctx.fillStyle = '#3cff8a'; ctx.beginPath(); ctx.arc(x, z, 5, 0, 7); ctx.fill(); ctx.strokeStyle = '#fff'; ctx.stroke();
+    }
+  }
+  function setGoal(p) {
+    if (!p) { clearGoal(); return; }
+    clearGoal(); S.goal = p; addGoal();
+  }
+  function stationForIndex(k) { return stationVenue.get(k) || null; }
+  function hasStation(k) { return !!stationForIndex(k); }
+  async function enterStation(exit) {
+    if (window.FREEFIGHT && FREEFIGHT.stars) { FREEFIGHT.noMetro(); return false; }
+    const r = stationForIndex(exit.e[0]); if (!r) return false;
+    try { await load(r); } catch (e) { return false; }
+    OPEN.closeMetro(); begin('station', { r, exit }); return true;
+  }
+  async function pickDelivery(from) {
+    const choices = records.map((r) => {
+      const c = r.v.outline && r.v.outline.length ? centroid(r.v.outline) : { x: (r.v.bb[0] + r.v.bb[2]) / 2, z: (r.v.bb[1] + r.v.bb[3]) / 2 };
+      return { r, d: Math.hypot(c.x - from.x, c.z - from.z) };
+    }).filter((q) => q.d >= 150 && q.d <= 700).sort(() => Math.random() - 0.5);
+    for (const q of choices) {
+      const r = q.r; try { await load(r); } catch (e) { continue; }
+      if (!r.data.pois.length) continue;
+      const entries = isStation(r) ? null : getEntries(r);
+      const station = isStation(r) ? [...stationVenue].find(([, v]) => v === r) : null;
+      const outside = isStation(r) ? station && stationExit(station[0], from.x, from.z) : entries && entries.reduce((a, b) => !a || Math.hypot(b.out.x - from.x, b.out.z - from.z) < Math.hypot(a.out.x - from.x, a.out.z - from.z) ? b : a, null);
+      if (!outside) continue;
+      const named = r.data.pois.filter((p) => p[2] && !['商店', '餐廳', '電影院', '熟食檔', 'empty'].includes(p[2]));
+      if (!named.length && r.v.en !== 'Pioneer Centre') continue;
+      const list = named.length ? named : r.data.pois.filter((p) => p[2] && p[2] !== 'empty');
+      if (!list.length) continue;
+      const poi = list[Math.floor(Math.random() * list.length)], l = r.data.levels[poi[0]], group = floorByOrdinal(r, l.o);
+      if (!group) continue;
+      const x = isStation(r) ? outside.fx : outside.out.x, z = isStation(r) ? outside.fz : outside.out.z;
+      return { venue: r, poi, o: l.o, floor: group.name, x: poi[3], z: poi[4], outside: { x, z }, stationExit: isStation(r) ? outside : null, distance: q.d };
+    }
+    return null;
+  }
+  function setForceFood() { S.forceFood = true; }
+  function testGoto(id, o) {
+    const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id);
+    if (!r) throw new Error('IND test venue not found: ' + id);
+    return load(r).then(() => {
+      if (!S.root) init();
+      if (S.inside) { disposeFloor(); S.root.visible = false; }
+      S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; cameraLayers(true);
+      const g = floorByOrdinal(r, o); if (!g) throw new Error('IND test floor not found: ' + o);
+      const target = r.v.bb, p = showFloor(r, g, (target[0] + target[2]) / 2, (target[1] + target[3]) / 2);
+      S.paid = paidAt(p.x, p.z);
+      return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: p.walkable, buildMs: p.buildMs, triangles: p.triangles, floors: r.groups.length };
+    });
+  }
+  function testStats() {
+    return records.filter((r) => r.data).map((r) => ({ id: r.v.id, venue: r.v.en, floors: r.groups.length, ordinals: r.groups.map((g) => g.o) }));
+  }
+  function testGatePairs() {
+    if (!S.floor || !isStation(S.state)) return [];
+    const { grid } = S.floor, out = [];
+    for (let j = 0; j < grid.nz && out.length < 16; j++) for (let i = 0; i < grid.nx && out.length < 16; i++) {
+      const k = j * grid.nx + i; if (!grid.walkable[k]) continue;
+      for (const n of [i + 1 < grid.nx ? k + 1 : -1, j + 1 < grid.nz ? k + grid.nx : -1]) {
+        if (n < 0 || !grid.walkable[n] || grid.paid[k] === grid.paid[n]) continue;
+        const xy = (q) => ({ x: grid.x0 + ((q % grid.nx) + 0.5) * CS, z: grid.z0 + (Math.floor(q / grid.nx) + 0.5) * CS });
+        out.push({ unpaid: xy(grid.paid[k] ? n : k), paid: xy(grid.paid[k] ? k : n) });
+      }
+    }
+    return out;
+  }
+  function nearOutside() { return currentNear(); }
+  return { walk, foot, prompt, act, leave, step, camera: camera3, label, hint, map,
+    get inside() { return S.inside; }, get busy() { return S.busy; }, get menu() { return S.menu; }, get fading() { return !!S.phase; },
+    get venue() { return S.state && S.state.v; }, get floor() { return S.floor && S.floor.group.o; }, get paid() { return S.paid; },
+    canMove, setGoal, hasStation, stationVenueId: (k) => stationForIndex(k)?.v.id || null, enterStation, pickDelivery, setForceFood, consumeForceFood: () => { const q = S.forceFood; S.forceFood = false; return q; }, nearOutside,
+    _load: (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); return r && load(r); },
+    _goto: testGoto, _stats: testStats, _walkable: gridWalkable,
+    _entries: async (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); if (!r) return []; await load(r); return getEntries(r).map((e) => ({ mid: e.mid, out: e.out, nx: e.nx, nz: e.nz, code: e.code })); },
+    _gatePairs: testGatePairs, _setPaid: (v) => { S.paid = !!v; },
+    _triangleCount: () => S.floor ? S.floor.triangles : 0 };
+})();
 </script><script>window.BOOT && BOOT(0.993)</script>
 <script>// ============ 街頭打鬥 + 惡名星（v39-C，BG：好似「臺北GTA」咁，開放世界隨街打交 + 通緝星）============
 // 唔係第二套打鬥：用返紳士風暴嘅 engine（storm_engine.js 嘅 BRAWL）——同一個特工骨架、收埋嘅遮、連招、閃避、風暴大招、幫會 AI。
@@ -7069,7 +7875,7 @@ body.ff-fight.touch #omis{max-height:24px;line-height:24px;overflow:hidden}
   // ---------- 小工具 ----------
   function big(t, col = '#fff') { const b = $('obig'); if (!b) return; b.textContent = t; b.style.color = col; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); }
   function payPop(v) { const e = $('ffpay'); e.textContent = `+$${v}`; e.classList.remove('show'); void e.offsetWidth; e.classList.add('show'); }
-  const solidFn = (x, z) => (window.LIB ? LIB.foot(x, z) : OPEN.solid(x, z));   // 同 open.js 行路一樣：樓、海、地鐵出口、理大平台
+  const solidFn = (x, z) => window.IND && IND.inside ? IND.foot(x, z) : window.LIB ? LIB.foot(x, z) : OPEN.solid(x, z);
   function gyFn(x, z) {   // 行人路面 0.16 米（BG 09-30「腳插咗落路面」）；0.5 米一格記住，唔使每格計多邊形
     const k = Math.round(x * 2) * 100000 + Math.round(z * 2); let v = F.gyC.get(k);
     if (v === undefined) { if (F.gyC.size > 4000) F.gyC.clear(); v = window.__peds && __peds.onFoot(x, z) ? 0.16 : 0; F.gyC.set(k, v); }
@@ -7077,7 +7883,7 @@ body.ff-fight.touch #omis{max-height:24px;line-height:24px;overflow:hidden}
   }
   const alive = () => { let n = 0; if (A) for (let i = 0; i < A.S.alive.length; i++) n += A.S.alive[i]; return n; };
   const target = () => (OPEN.inCar ? OPEN.car : F.fight ? A.player : OPEN.hero);   // 幫會追緊嘅嘢
-  const libIn = () => !!(window.LIB && (LIB.inside || LIB.busy));
+  const libIn = () => !!((window.LIB && (LIB.inside || LIB.busy)) || (window.IND && (IND.inside || IND.busy)));
   const onScreen = (x, z) => { const v = new THREE.Vector3(x, 1.2, z).project(camera); return v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05; };
 
   // ---------- engine：入開放世界嗰下預先整好（create + shader compile），第一拳唔卡 ----------
@@ -8105,7 +8911,7 @@ body.touch.ff-fight.vend-near #obE{display:flex!important;bottom:124px}   /* 手
   function step(dt) {
     if (S.cd > 0 && (S.cd -= dt) <= 0 && S.open) draw();
     wrapStart();
-    const mode = cam.mode, ok = window.OPEN && OPEN.active && !OPEN.inCar && (mode === 'open' || mode === 'brawl') && !(window.LIB && (LIB.inside || LIB.busy)) && $('omtr').hidden;
+    const mode = cam.mode, ok = window.OPEN && OPEN.active && !OPEN.inCar && (mode === 'open' || mode === 'brawl') && !(window.LIB && (LIB.inside || LIB.busy)) && !(window.IND && (IND.inside || IND.busy)) && $('omtr').hidden;
     let nb = null;
     if (ok) { const H = OPEN.hero; let bd = NEAR; near(H.x, H.z, 2, (m) => { const d = Math.hypot(H.x - (m.x + m.ox * 0.55), H.z - (m.z + m.oz * 0.55)); if (d < bd) { bd = d; nb = m; } }); }
     if (nb !== S.near) { S.near = nb; document.body.classList.toggle('vend-near', !!nb); if (!nb) close(); }
@@ -8144,9 +8950,9 @@ window.COPCAR = (() => {
   const D = { t: 0, cop: -1, drags: 0, last: null, stillT: 0, spawnT: 0 };
   const PC = { car: null, st: '', t: 0, cool: 3, tx: 0, tz: 0, L0: null, s0: 0, n: 0, log: [], v0: 0, stuckT: 0, deployed: 0 };
   const big = (t, col) => { const b = $('obig'); if (!b) return; b.textContent = t; b.style.color = col; b.classList.remove('show'); void b.offsetWidth; b.classList.add('show'); };
-  const libIn = () => !!(window.LIB && (LIB.inside || LIB.busy));
+  const libIn = () => !!((window.LIB && (LIB.inside || LIB.busy)) || (window.IND && (IND.inside || IND.busy)));
   const onScreen = (x, z) => { const v = new THREE.Vector3(x, 1.2, z).project(camera); return v.z < 1 && Math.abs(v.x) < 1.05 && Math.abs(v.y) < 1.05; };
-  const solidFn = (x, z) => (window.LIB ? LIB.foot(x, z) : OPEN.solid(x, z));
+  const solidFn = (x, z) => window.IND && IND.inside ? IND.foot(x, z) : window.LIB ? LIB.foot(x, z) : OPEN.solid(x, z);
 
   // ---------- ① 拉落車 ----------
   function door(c, out) {   // 司機位車門外面（右軚：車右邊，前座）
