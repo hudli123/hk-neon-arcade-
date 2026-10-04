@@ -910,14 +910,35 @@ window.DS_LOAD = () => {
   const s = document.createElement('script'); s.src = 'hkcity_ds.js'; s.onload = () => {
     const D = window.DSIGN, P = [], UV = [], posts = [], o = new THREE.Object3D(), uo = TOUCH ? 13 : 9;
     for (const d of D) {
-      const [x, z, fx, fz, y00, w, h, kind, el] = d, c = d.slice(uo, uo + 4);
-      let b = 0; if (el && window.ELEV) { const q = ELEV.surf(x, z, 200, 0, 'r'); if (q > 0) b = q; }
+      let [x, z, fx, fz, y00, w, h, kind, el] = d; const c = d.slice(uo, uo + 4);
+      let b = 0;
+      if (el && window.ELEV) {   // 高架牌：揾 8 m 內中心同兩支柱腳都喺橋面嘅位，冇就留喺地面
+        const S = (u, v) => ELEV.surf(u, v, 200, 0, 'r'), kk = kind ? (w / 2 + 0.6) / (w / 2) : 0.6, ex = fz * w / 2 * kk, ez = -fx * w / 2 * kk;
+        found: for (let r = 0; r <= 8; r++) for (let a = 0; a < (r ? 12 : 1); a++) {
+          const u = x + Math.cos(a * .5236) * r, v = z + Math.sin(a * .5236) * r, q = S(u, v);
+          if (q > 0 && S(u + ex, v + ez) > 0 && S(u - ex, v - ez) > 0) { x = u; z = v; b = q; break found; }
+        }
+        if (!b && kind) b = S(x, z);   // 闊門架橫跨成條橋：中心喺橋面就照用
+      }
+      const RD = window.OPEN && OPEN.onRoad, SO = window.OPEN && OPEN.solid, kk0 = kind ? (w / 2 + 0.6) / (w / 2) : 0.6, sx = fz * w / 2 * kk0, sz = -fx * w / 2 * kk0;
+      if (!b && !kind && RD) {   // 路邊牌：中心或者柱腳喺車路上，就搬去 12 m 內最近嘅路邊
+        const ok = (u, v) => [[u, v], [u + sx, v + sz], [u - sx, v - sz]].every(([p, q]) => !RD(p, q) && !(SO && SO(p, q)));
+        if (!ok(x, z)) found2: for (let r = 0.5; r <= 12; r += 0.5) for (let a = 0; a < 16; a++) {
+          const u = x + Math.cos(a * .3927) * r, v = z + Math.sin(a * .3927) * r;
+          if (ok(u, v)) { x = u; z = v; break found2; }
+        }
+      }
+      const ft = [-1, 1].map((sg) => {   // 門架柱腳：喺車路上就向外推，推到路邊（最多 20 m）
+        let t = 1; const ux = sx / kk0 * sg, uz = sz / kk0 * sg;
+        if (kind && !b && RD) while (t < 1 + 40 / w && RD(x + ux * kk0 * t, z + uz * kk0 * t) && !(SO && SO(x + ux * kk0 * (t + 1 / w), z + uz * kk0 * (t + 1 / w)))) t += 1 / w;
+        return [x + ux * kk0 * t, z + uz * kk0 * t];
+      });
       const y0 = b + y00, cx = x + fx * 0.08, cz = z + fz * 0.08, rx = fz * w / 2, rz = -fx * w / 2;
       const A = [cx - rx, y0, cz - rz], B = [cx + rx, y0, cz + rz], C = [cx + rx, y0 + h, cz + rz], E = [cx - rx, y0 + h, cz - rz];
       P.push(...A, ...B, ...C, ...A, ...C, ...E); UV.push(c[0], c[1], c[2], c[1], c[2], c[3], c[0], c[1], c[2], c[3], c[0], c[3]);
       const k = kind ? (w / 2 + 0.6) / (w / 2) : 0.6, top = y0 + h * (kind ? 1.04 : 0.9);
-      for (const sg of [-1, 1]) posts.push([x + rx * k * sg, b, z + rz * k * sg, 0.16, top - b, 0.16]);   // 支柱
-      if (kind) posts.push([x - fx * 0.15, y0 + h + 0.2, z - fz * 0.15, w + 1.4, 0.35, 0.35, Math.atan2(fz, -fx)]);   // 門架橫樑
+      for (const [px, pz] of ft) { const fb = b && el ? ELEV.surf(px, pz, b + 1, 0, 'r') : b; posts.push([px, fb, pz, 0.16, top - fb, 0.16]); }   // 柱腳唔喺橋面就落到地   // 支柱
+      if (kind) { const [[ax, az], [bx, bz]] = ft; posts.push([(ax + bx) / 2 - fx * 0.15, y0 + h + 0.2, (az + bz) / 2 - fz * 0.15, Math.hypot(bx - ax, bz - az) + 0.2, 0.35, 0.35, Math.atan2(fx, fz)]); }   // 門架橫樑
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.computeVertexNormals();
     const tex = new THREE.TextureLoader().load(TOUCH ? 'hkcity_ds_m.png' : 'hkcity_ds.png'); tex.anisotropy = 4;
@@ -926,7 +947,7 @@ window.DS_LOAD = () => {
     const m = new THREE.Mesh(g, mat); m.frustumCulled = false; scene.add(m);
     const pm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x8a8d90 }), posts.length);
     posts.forEach((q, i) => { o.position.set(q[0], q[1] + (q.length === 7 ? 0 : q[4] / 2), q[2]); o.rotation.set(0, q[6] || 0, 0); o.scale.set(q[3], q[4], q[5]); o.updateMatrix(); pm.setMatrixAt(i, o.matrix); });
-    pm.frustumCulled = false; scene.add(pm); window.__dsigns = D.length; window.DSMESH = m;
+    pm.frustumCulled = false; scene.add(pm); window.__dsigns = D.length; window.DSMESH = m; window.DSPM = pm;
   }; document.head.appendChild(s);
 };
 if (!TOUCH) setTimeout(window.DS_LOAD, 4000);
