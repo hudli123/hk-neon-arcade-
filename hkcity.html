@@ -924,7 +924,7 @@ window.DS_LOAD = () => {
       const A = [cx - rx, y0, cz - rz], B = [cx + rx, y0, cz + rz], C = [cx + rx, y0 + h, cz + rz], E = [cx - rx, y0 + h, cz - rz];
       P.push(...A, ...B, ...C, ...A, ...C, ...E); UV.push(c[0], c[1], c[2], c[1], c[2], c[3], c[0], c[1], c[2], c[3], c[0], c[3]);
       const k = kind ? (w / 2 + 0.6) / (w / 2) : 0.6, top = y0 + h * (kind ? 1.04 : 0.9);
-      for (const sg of [-1, 1]) posts.push([x + rx * k * sg, b, z + rz * k * sg, 0.16, top - b, 0.16]);   // 支柱
+      for (const sg of [-1, 1]) { const px = x + rx * k * sg, pz = z + rz * k * sg, fb = b && el ? ELEV.surf(px, pz, b + 1, 0, 'r') : b; posts.push([px, fb, pz, 0.16, top - fb, 0.16]); }   // 柱腳唔喺橋面就落到地   // 支柱
       if (kind) posts.push([x - fx * 0.15, y0 + h + 0.2, z - fz * 0.15, w + 1.4, 0.35, 0.35, Math.atan2(fx, fz)]);   // 門架橫樑
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.computeVertexNormals();
