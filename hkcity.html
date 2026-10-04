@@ -911,7 +911,7 @@ window.DS_LOAD = () => {
     const D = window.DSIGN, P = [], UV = [], posts = [], o = new THREE.Object3D(), uo = TOUCH ? 13 : 9;
     for (const d of D) {
       const [x, z, fx, fz, y00, w, h, kind, el] = d, c = d.slice(uo, uo + 4);
-      let b = 0; if (el && window.ELEV) { const q = ELEV.surf(x, z, 200, 0, 'r'); if (q > 0) b = q; }
+      let b = 0; if (el && window.ELEV) { let q = ELEV.surf(x, z, 200, 0, 'r'); for (let r = 2; r <= 18 && !(q > 0); r += 2) for (let a = 0; a < 12 && !(q > 0); a++) q = ELEV.surf(x + Math.cos(a * .5236) * r, z + Math.sin(a * .5236) * r, 200, 0, 'r'); if (q > 0) b = q; }
       const y0 = b + y00, cx = x + fx * 0.08, cz = z + fz * 0.08, rx = fz * w / 2, rz = -fx * w / 2;
       const A = [cx - rx, y0, cz - rz], B = [cx + rx, y0, cz + rz], C = [cx + rx, y0 + h, cz + rz], E = [cx - rx, y0 + h, cz - rz];
       P.push(...A, ...B, ...C, ...A, ...C, ...E); UV.push(c[0], c[1], c[2], c[1], c[2], c[3], c[0], c[1], c[2], c[3], c[0], c[3]);
