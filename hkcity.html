@@ -943,7 +943,7 @@ window.DS_LOAD = () => {
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.computeVertexNormals();
     const tex = new THREE.TextureLoader().load(TOUCH ? 'hkcity_ds_m.png' : 'hkcity_ds.png'); tex.anisotropy = 4;
     const mat = new THREE.MeshLambertMaterial({ map: tex, emissiveMap: tex, emissive: 0x666666, alphaTest: 0.5, side: THREE.DoubleSide });   // 反光牌：夜晚都睇到
-    mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.42, 0.43, 0.45);'); };
+    mat.onBeforeCompile = (sh) => { sh.fragmentShader = sh.fragmentShader.replace('#include <map_fragment>', '#include <map_fragment>\n if (!gl_FrontFacing) diffuseColor.rgb = vec3(0.42, 0.43, 0.45);').replace('#include <emissivemap_fragment>', '#include <emissivemap_fragment>\n if (!gl_FrontFacing) totalEmissiveRadiance = vec3(0.06);'); };   // v57：牌背唔發光（之前由後面見到反轉嘅字）
     const m = new THREE.Mesh(g, mat); m.frustumCulled = false; scene.add(m);
     const pm = new THREE.InstancedMesh(new THREE.BoxGeometry(1, 1, 1), new THREE.MeshLambertMaterial({ color: 0x8a8d90 }), posts.length);
     posts.forEach((q, i) => { o.position.set(q[0], q[1] + (q.length === 7 ? 0 : q[4] / 2), q[2]); o.rotation.set(0, q[6] || 0, 0); o.scale.set(q[3], q[4], q[5]); o.updateMatrix(); pm.setMatrixAt(i, o.matrix); });
@@ -2378,13 +2378,13 @@ const PEOPLE = (() => {
       if (!low) { if (c.on) { c.on = false; c.p.root.visible = false; } continue; }
       if (!c.on || (c.x - cx) ** 2 + (c.z - cz) ** 2 > 25600) { if (!spawn(c, cx, cz, fa)) continue; }
       if (c.down > 0) {   // 俾車撞：向後飛、跌低、躺一陣再起身
-        c.down -= dt; c.kx *= Math.exp(-3 * dt); c.kz *= Math.exp(-3 * dt);
+        c.down -= dt; const air = c.ay > 0; if (air) { c.vy -= 16 * dt; c.ay += c.vy * dt; if (c.ay <= 0) { c.ay = 0; c.kx *= 0.45; c.kz *= 0.45; } } const kd = Math.exp(-(air ? 0.4 : 3) * dt); c.kx *= kd; c.kz *= kd;
         const nx = c.x + c.kx * dt, nz = c.z + c.kz * dt; if (!blocked(nx, nz) && !SHOPF.zone(nx, nz, 0) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } else { c.kx = c.kz = 0; }
         const t = c.downT - c.down;   // 已經過咗幾耐
-        c.tilt = t < 0.35 ? -Math.PI / 2 * (t / 0.35) : c.down < 0.6 ? -Math.PI / 2 * (c.down / 0.6) : -Math.PI / 2;   // 跌低 → 躺 → 起身
-        c.hop = t < 0.35 ? Math.sin(t / 0.35 * Math.PI) * 0.6 : 0;
-        if (c.ko && c.down < 0.6) { c.ko = false; c.down = 0; c.tilt = 0; c.on = false; c.p.root.visible = false; continue; }   // v50 KO：唔起身，收埋（下格喺第二度生返）
-        if (c.down <= 0) { c.down = 0; c.tilt = 0; c.flee = 3; c.idle = false; c.tx = c.fx; c.tz = c.fz; anim(c, 'run'); }
+        c.tilt = air ? -Math.min(Math.PI / 2, t * 3.5) : t < 0.35 ? -Math.PI / 2 * (t / 0.35) : c.down < 0.6 ? -Math.PI / 2 * (c.down / 0.6) : -Math.PI / 2;   // 跌低 → 躺 → 起身
+        c.hop = c.ay || 0;
+        if (c.ko && c.down < 0.6) { if (window.BRK && BRK.puff) BRK.puff(c.x, c.gs || 0, c.z); c.ko = false; c.ay = 0; c.down = 0; c.tilt = 0; c.on = false; c.p.root.visible = false; continue; }   // v50 KO：唔起身，收埋（下格喺第二度生返）
+        if (c.down <= 0) { c.down = 0; c.tilt = 0; c.ay = 0; c.flee = 3; c.idle = false; c.tx = c.fx; c.tz = c.fz; anim(c, 'run'); }
         continue;
       }
       if (c.flee > 0) {   // 驚：跑開（Sprint 動畫）
@@ -2471,7 +2471,7 @@ const PEOPLE = (() => {
     m.instanceMatrix.needsUpdate = true;
   }
   function knock(c, dx, dz, speed, ko) {   // 俾車撞：(dx, dz) = 車行緊嘅方向；ko（v50，玩家快車撞）= 瞓低唔起身，之後喺第二度補返
-    if (c.down > 0) return; const s = Math.min(9, 2 + speed * 0.45); c.ko = !!ko;
+    if (c.down > 0) return; const s = ko ? Math.min(12, 2 + speed * 0.6) : Math.min(9, 2 + speed * 0.45); c.ko = !!ko; c.vy = ko ? Math.min(7, 2.5 + speed * 0.3) : 2.2; c.ay = 0.01;   // v57：先飛起，跌落地先碌
     c.kx = dx * s; c.kz = dz * s; c.tx = -dx; c.tz = -dz; c.fx = dx; c.fz = dz;   // 面向架車、向後飛；起身之後向車行嘅方向走開
     c.downT = c.down = ko ? 4.5 : 2.6 + Math.random(); c.flee = 0;
   }
@@ -3482,7 +3482,7 @@ window.OPEN = (() => {
   const clamp = THREE.MathUtils.clamp, wrapA = (a) => Math.atan2(Math.sin(a), Math.cos(a));
   document.head.insertAdjacentHTML('beforeend', `<style>
 #oui{position:fixed;inset:0;pointer-events:none}
-#ospd{position:fixed;right:14px;bottom:150px;font:italic 900 30px/1 inherit;font-family:inherit;color:#fff;text-shadow:0 0 8px #000,0 0 2px #000;pointer-events:none;z-index:5}#ospd small{font-size:14px;color:#ffd23f}body.touch #ospd{right:auto;left:50%;transform:translateX(-50%);bottom:auto;top:56px;font-size:24px}
+#ospd{position:fixed;right:14px;bottom:150px;width:170px;height:170px;pointer-events:none;z-index:5}#ospd canvas{width:100%;height:100%;display:block}#ospd small{font-size:14px;color:#ffd23f}body.touch #ospd{right:6px;bottom:auto;top:176px;width:104px;height:104px}
 #omoney{position:fixed;left:50%;top:10px;transform:translateX(-50%);font:900 24px/1 inherit;font-family:inherit;color:#7dff6a;text-shadow:0 0 8px #000,0 0 2px #000}
 #omis{position:fixed;left:12px;top:64px;max-width:min(360px,56vw);padding:8px 12px;border-radius:12px;background:rgba(14,18,48,.72);border:1px solid rgba(140,160,255,.35);font-size:14px;line-height:1.5;text-shadow:0 1px 3px #000}
 #omis{pointer-events:auto;cursor:pointer}#omis .x{float:right;margin:-3px -6px 0 10px;padding:0 6px;font-size:17px;color:#fff;opacity:.85}
@@ -3508,7 +3508,7 @@ body.open #modes,body.open #time,body.open #help{display:none}
 body.open #hud{top:auto;bottom:10px;left:12px}
 body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);text-align:center}
 </style>`);
-  document.body.insertAdjacentHTML('beforeend', `<div id="oui" hidden><div id="omoney"></div><div id="ospd" hidden></div><div id="omis" hidden></div><div id="oprompt" hidden></div>
+  document.body.insertAdjacentHTML('beforeend', `<div id="oui" hidden><div id="omoney"></div><div id="ospd" hidden><canvas id="ospdc" width="220" height="220"></canvas></div><div id="omis" hidden></div><div id="oprompt" hidden></div>
 <canvas id="omap" width="300" height="300"></canvas><div id="ox">✕</div><div id="oq">❓</div><div id="omu">🎵</div><div id="obig"></div>
 <div id="ofade"></div><div id="omtr" hidden><div class="mh"><b>🚇 搭地鐵去邊度？揀出口</b><span id="omtrx">✕</span></div><div id="omtrl"></div></div>
 <div class="ob" id="obE">上車</div><div class="ob" id="obJ">跳</div><div class="ob" id="obR">衝</div></div>`);
@@ -3950,7 +3950,17 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       car.h += rate * dt; car.slip += ((hand && Math.abs(car.v) > 10 ? Math.sign(steerIn) * 0.45 : 0) - car.slip) * Math.min(1, 6 * dt); if (hand) car.v *= Math.exp(-0.6 * dt);
       const nx = car.x + Math.sin(car.h) * car.v * dt, nz = car.z + Math.cos(car.h) * car.v * dt;
       const hit = (x, z) => { const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = fz, rz = -fx; for (const [a, b] of bus ? [[5.6, 1.1], [5.6, -1.1], [-5.6, 1.1], [-5.6, -1.1], [0, 1.1], [0, -1.1]] : car.big ? [[3.7, 1.05], [3.7, -1.05], [-3.7, 1.05], [-3.7, -1.05], [0, 1.05], [0, -1.05]] : [[2.1, 0.8], [2.1, -0.8], [-2.1, 0.8], [-2.1, -0.8]]) if (solid(x + fx * a + rx * b, z + fz * a + rz * b)) return true; return false; };
-      if (hit(nx, nz) || ELEV.edge(nx, nz, car.y, 1.6, 'r')) { if (Math.abs(car.v) > 8) bump(); car.v *= -0.3; } else { car.x = nx; car.z = nz; }   // 高架路邊 = 石壆
+      const blk = (x, z) => hit(x, z) || ELEV.edge(x, z, car.y, 1.6, 'r');
+      if (blk(nx, nz)) { const sp = Math.abs(car.v); if (sp > 8) bump();   // v57（BG「撞牆會反彈轉頭」）：搵牆嘅法線，斜撞 = 車頭轉去反彈方向；正面撞 = 彈返轉少少
+        let wx = 0, wz = 0; for (const rr of [2.2, 3.2]) for (let k = 0; k < 12; k++) { const a = k * 0.5236, px = Math.sin(a), pz = Math.cos(a), qx = car.x + px * rr, qz = car.z + pz * rr; if (solid(qx, qz) || ELEV.edge(qx, qz, car.y, 1.6, 'r')) { wx -= px; wz -= pz; } }   // 薄牆：近啲都探
+        const wl = Math.hypot(wx, wz), sg = Math.sign(car.v) || 1, dx = Math.sin(car.h) * sg, dz = Math.cos(car.h) * sg;
+        if (wl > 0.01 && sp > 3) { const n0 = wx / wl, n1 = wz / wl, dn = dx * n0 + dz * n1;
+          if (dn < -0.85) { car.v *= -0.35; car.spin = (Math.random() < 0.5 ? -1 : 1) * Math.min(2.5, sp * 0.12); }
+          else { const rx = dx - 2 * dn * n0, rz = dz - 2 * dn * n1; car.spin = wrapA(Math.atan2(rx * sg, rz * sg) - car.h) * 3; car.v *= 0.55; }
+          const px = car.x + n0 * 0.25, pz = car.z + n1 * 0.25; if (!blk(px, pz)) { car.x = px; car.z = pz; } }
+        else { car.v *= -0.3; if (sp > 3) car.spin = (Math.random() < 0.5 ? -1 : 1) * Math.min(2, sp * 0.1); } }
+      else { car.x = nx; car.z = nz; }
+      if (car.spin) { car.h += car.spin * dt; car.spin *= Math.exp(-4 * dt); if (Math.abs(car.spin) < 0.05) car.spin = 0; }   // 高架路邊 = 石壆
       car.y = ELEV.surf(car.x, car.z, car.y, 1.6, 'r');
       { const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = fz, rz = -fx; car.cd = (car.cd || 0) - dt;
         for (const c of TRAFFIC.cars) {   // 撞街車：用車身長方形（唔係圓形），側邊擦過只會推開，正面撞先減速
@@ -4024,7 +4034,13 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   const mctx = $('omap').getContext('2d'); let moneyTxt = '', spdTxt = '';
   function hud() {
     const mt = `$ ${money.toLocaleString()}` + (window.FREEFIGHT ? FREEFIGHT.starHTML() : ''); if (mt !== moneyTxt) { moneyTxt = mt; $('omoney').innerHTML = mt; }
-    const st = inCar ? `${Math.round(Math.abs(car.v) * 3.6)}<small> km/h</small>` : ''; if (st !== spdTxt) { spdTxt = st; $('ospd').hidden = !st; $('ospd').innerHTML = st; }   // v54：揸車速度錶（BG）   // 錢 + 惡名 ★（freefight.js）
+    const st = inCar ? Math.round(Math.abs(car.v) * 3.6) : -1; if (st !== spdTxt) { spdTxt = st; $('ospd').hidden = st < 0; if (st >= 0) (window.__odial || (window.__odial = (() => { const x = $('ospdc').getContext('2d'), cx = 110, cy = 116, r = 86, a0 = Math.PI * 0.75, a1 = Math.PI * 2.25, mx = 160;   // v57：圓形咪錶（同賽車 game 一樣款，BG）
+      return (k) => { const a = a0 + (a1 - a0) * Math.min(k, mx) / mx; x.clearRect(0, 0, 220, 220); x.fillStyle = 'rgba(10,14,40,.55)'; x.beginPath(); x.arc(cx, cy, r + 14, 0, Math.PI * 2); x.fill();
+        x.lineCap = 'round'; x.lineWidth = 12; x.strokeStyle = 'rgba(255,255,255,.12)'; x.beginPath(); x.arc(cx, cy, r, a0, a1); x.stroke();
+        const g = x.createLinearGradient(30, 190, 190, 30); g.addColorStop(0, '#5fe0c0'); g.addColorStop(0.6, '#ffd23f'); g.addColorStop(1, '#ff5a3c'); x.strokeStyle = g; x.beginPath(); x.arc(cx, cy, r, a0, Math.max(a0 + 0.01, a)); x.stroke();
+        x.fillStyle = 'rgba(255,255,255,.8)'; x.font = 'italic 700 13px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; for (let v = 0; v <= mx; v += 40) { const aa = a0 + (a1 - a0) * v / mx; x.fillText(v, cx + Math.cos(aa) * (r - 24), cy + Math.sin(aa) * (r - 24)); }
+        x.strokeStyle = '#ff5a3c'; x.lineWidth = 4; x.beginPath(); x.moveTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18); x.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6)); x.stroke();
+        x.shadowColor = '#000'; x.shadowBlur = 8; x.fillStyle = '#fff'; x.font = 'italic 900 46px sans-serif'; x.fillText(k, cx, cy + 4); x.shadowBlur = 0; x.font = '700 13px sans-serif'; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillText('KM/H', cx, cy + 38); }; })()))(st); }   // v54：揸車速度錶（BG）   // 錢 + 惡名 ★（freefight.js）
     const M = mission, box = $('omis');
     if (!M.type) { box.hidden = false; box.innerHTML = window.LIB && LIB.inside ? LIB.hint() : '<b>自由行</b><br>行去黃色光柱接任務：外賣・的士・追偷雞賊・小巴司機' + (MTR.ex.length ? '<br>🚇 行去地鐵出口（小地圖彩色方格）可以搭地鐵去第二個站' : '') + stormHint() + (window.RIFT ? RIFT.hint(hero) : '') + (window.LIB ? LIB.hint() : ''); }
     else {
@@ -7757,7 +7773,8 @@ window.BRK = (() => {
   if (typeof HYDL !== 'undefined' && HYDL) HYDL.list.forEach((l) => addO({ k: 4, x: l.x, z: l.z, y: l.y, h: 0, big: 1, cb(on) { l.broken = !on; HYDL.refresh();
     if (LPTS && l.li < LPTS.count) { LPTS.setY(l.li, on ? l.y + l.h - 0.15 : -999); LPTS.needsUpdate = true; } } }));
   const hideSet = (L, H) => { L = L.filter(([m, i]) => i < m.count); let saved = null;
-    return (on) => { const G = window.__SIG && __SIG.glow; if (H) H.dead = !on; if (G && H && H.gi !== undefined && !on) { G.setY(H.gi, -999); G.needsUpdate = true; }   // 紅綠燈動畫（H.dead）會一直收埋光暈 if (!on) saved = L.map(([m, i]) => { const a = m.instanceMatrix.array.slice(i * 16, i * 16 + 16); m.setMatrixAt(i, ZERO); m.instanceMatrix.needsUpdate = true; return a; });
+    return (on) => { const G = window.__SIG && __SIG.glow; if (H) H.dead = !on; if (G && H && H.gi !== undefined && !on) { G.setY(H.gi, -999); G.needsUpdate = true; }   // 紅綠燈動畫（H.dead）會一直收埋光暈
+      if (!on) saved = L.map(([m, i]) => { const a = m.instanceMatrix.array.slice(i * 16, i * 16 + 16); m.setMatrixAt(i, ZERO); m.instanceMatrix.needsUpdate = true; return a; });
       else if (saved) { L.forEach(([m, i], q) => { m.instanceMatrix.array.set(saved[q], i * 16); m.instanceMatrix.needsUpdate = true; }); saved = null; } }; };
   { const S = window.__SIG; if (S) {
     S.VH.forEach((H, i) => addO({ k: 5, x: H.x, z: H.z, y: 0, h: 0, big: 1, cb: hideSet([[S.vBody, i], ...[0, 1, 2, 3, 4, 5].map((q) => [S.lamps, i * 6 + q]), [S.vpR, i], [S.vpG, i]], H) }));
@@ -7793,7 +7810,7 @@ window.BRK = (() => {
   chunks.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CM * 3).fill(1), 3);   // 要喺 count = 0 之前整好（setColorAt 用 count 開 buffer → 0 長 → 全黑）
   chunks.instanceMatrix.setUsage(THREE.DynamicDrawUsage); chunks.frustumCulled = false; chunks.count = 0; scene.add(chunks);
   const CH = []; let chHead = 0, chLive = 0;
-  const PAL = { 0: [0xe4561e, 0xe4561e, 0xc84a18, 0xb4b6b8, 0x18181a, 0xf2f2ea, 0x9fd26a], 1: [0xb08a5a, 0xa47e50, 0xc09a68, 0xd8c9a0, 0x8a6a40], 2: [0xc4231d, 0x9e1a15, 0xd83a2a], 3: [0xc8201c, 0xa81a16, 0xe0a020, 0x555555], 4: [0x9a9b98, 0xb8b9b6, 0x6e6f6c, 0xfff2c0], 5: [0x1e2023, 0x2a2c30, 0xff3024, 0x3dff8a, 0xffc020], 6: [0xc9ced3, 0xa8adb2, 0x8a8e94] };
+  const PAL = { 0: [0xe4561e, 0xe4561e, 0xc84a18, 0xb4b6b8, 0x18181a, 0xf2f2ea, 0x9fd26a], 1: [0xb08a5a, 0xa47e50, 0xc09a68, 0xd8c9a0, 0x8a6a40], 2: [0xc4231d, 0x9e1a15, 0xd83a2a], 3: [0xc8201c, 0xa81a16, 0xe0a020, 0x555555], 4: [0x9a9b98, 0xb8b9b6, 0x6e6f6c, 0xfff2c0], 5: [0x1e2023, 0x2a2c30, 0xff3024, 0x3dff8a, 0xffc020], 6: [0xc9ced3, 0xa8adb2, 0x8a8e94], 7: [0xd8d2c4, 0xb8b0a0, 0x8a8478, 0x4a4f5a] };
   function burst(o, dx, dz, pw) {
     const pal = PAL[o.k], n = 16;
     for (let q = 0; q < n; q++) { const ci = chHead, c = CH[ci] || (CH[ci] = {}); chHead = (chHead + 1) % CM;
@@ -7876,9 +7893,17 @@ window.BRK = (() => {
   }
 
   // ---------- 打爛 / 現返 ----------
-  const broken = [];
+  const broken = [], flying = [];
   function smash(o, dx, dz, pw) {
-    o.st = 1; o.t = 0; show(o, false); broken.push(o); burst(o, dx, dz, pw); sound(o.k); drop(o); stats.broken++;
+    o.st = 1; o.t = 0; broken.push(o); sound(o.k); drop(o); stats.broken++;
+    if (!o.cb && o.m && pw > 3) { flying.push({ o, x: o.x, y: o.y, z: o.z, vx: dx * pw * 0.9, vy: 2 + pw * 0.45, vz: dz * pw * 0.9, rx: 0, rz: 0, wx: rand(-8, 8), wz: rand(-8, 8), t: 0, dx, dz, pw }); return; }   // v57（BG「彈開一陣先，然後先散」）：成件飛 0.9 秒先碎
+    show(o, false); burst(o, dx, dz, pw);
+  }
+  function stepFly(dt) {
+    for (let i = flying.length - 1; i >= 0; i--) { const f = flying[i], o = f.o; f.t += dt; f.vy -= 18 * dt; f.x += f.vx * dt; f.y += f.vy * dt; f.z += f.vz * dt; f.rx += f.wx * dt; f.rz += f.wz * dt;
+      if (f.y < o.y) { f.y = o.y; f.vy *= -0.35; f.vx *= 0.6; f.vz *= 0.6; f.wx *= 0.6; f.wz *= 0.6; }
+      if (f.t > 0.9 || o.st !== 1) { flying.splice(i, 1); if (o.st === 1) { show(o, false); burst({ k: o.k, big: o.big, x: f.x, y: o.y, z: f.z }, f.dx, f.dz, f.pw * 0.5); } continue; }
+      _o.position.set(f.x, f.y, f.z); _o.rotation.set(f.rx, o.h, f.rz); _o.scale.set(1, 1, 1); _o.updateMatrix(); o.m.setMatrixAt(o.i, _o.matrix); o.m.instanceMatrix.needsUpdate = true; }
   }
   function near(x, z, r, fn) { const i0 = Math.floor((x - r) / 8), i1 = Math.floor((x + r) / 8), j0 = Math.floor((z - r) / 8), j1 = Math.floor((z + r) / 8);
     for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) { const L = G.get(i * 100000 + j); if (L) for (const o of L) fn(o); } }
@@ -7916,9 +7941,9 @@ window.BRK = (() => {
   return {
     step(dt) {
       if (window.OPEN && OPEN.active && cam.mode === 'open' && OPEN.inCar) ram();
-      if (chLive) stepChunks(dt); stepRespawn(dt); stepFood(dt);
+      if (flying.length) stepFly(dt); if (chLive) stepChunks(dt); stepRespawn(dt); stepFood(dt);
     },
-    stats, objs: O, food: FL, FOOD, smash, near, hitArc, drop,
+    stats, objs: O, food: FL, FOOD, smash, near, hitArc, drop, flying, puff: (x, y, z) => burst({ k: 7, x, y, z }, 0, 0, 2),
   };
 })();
 { const s0 = GAME.step; GAME.step = function (dt) { s0.call(this, dt); if (window.HARB) HARB.step(dt); BRK.step(dt); }; }   // v42：船 + 打得爛嘅嘢（主循環之後行，同 GAME.step 一齊跟 dt）
