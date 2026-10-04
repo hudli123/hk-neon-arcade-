@@ -917,7 +917,7 @@ window.DS_LOAD = () => {
       P.push(...A, ...B, ...C, ...A, ...C, ...E); UV.push(c[0], c[1], c[2], c[1], c[2], c[3], c[0], c[1], c[2], c[3], c[0], c[3]);
       const k = kind ? (w / 2 + 0.6) / (w / 2) : 0.6, top = y0 + h * (kind ? 1.04 : 0.9);
       for (const sg of [-1, 1]) posts.push([x + rx * k * sg, b, z + rz * k * sg, 0.16, top - b, 0.16]);   // 支柱
-      if (kind) posts.push([x - fx * 0.15, y0 + h + 0.2, z - fz * 0.15, w + 1.4, 0.35, 0.35, Math.atan2(fz, -fx)]);   // 門架橫樑
+      if (kind) posts.push([x - fx * 0.15, y0 + h + 0.2, z - fz * 0.15, w + 1.4, 0.35, 0.35, Math.atan2(fx, fz)]);   // 門架橫樑
     }
     const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.computeVertexNormals();
     const tex = new THREE.TextureLoader().load(TOUCH ? 'hkcity_ds_m.png' : 'hkcity_ds.png'); tex.anisotropy = 4;
