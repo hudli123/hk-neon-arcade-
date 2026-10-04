@@ -3952,13 +3952,13 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       const hit = (x, z) => { const fx = Math.sin(car.h), fz = Math.cos(car.h), rx = fz, rz = -fx; for (const [a, b] of bus ? [[5.6, 1.1], [5.6, -1.1], [-5.6, 1.1], [-5.6, -1.1], [0, 1.1], [0, -1.1]] : car.big ? [[3.7, 1.05], [3.7, -1.05], [-3.7, 1.05], [-3.7, -1.05], [0, 1.05], [0, -1.05]] : [[2.1, 0.8], [2.1, -0.8], [-2.1, 0.8], [-2.1, -0.8]]) if (solid(x + fx * a + rx * b, z + fz * a + rz * b)) return true; return false; };
       const blk = (x, z) => hit(x, z) || ELEV.edge(x, z, car.y, 1.6, 'r');
       if (blk(nx, nz)) { const sp = Math.abs(car.v); if (sp > 8) bump();   // v57（BG「撞牆會反彈轉頭」）：搵牆嘅法線，斜撞 = 車頭轉去反彈方向；正面撞 = 彈返轉少少
-        let wx = 0, wz = 0; for (let k = 0; k < 12; k++) { const a = k * 0.5236, px = Math.sin(a), pz = Math.cos(a), qx = car.x + px * 3, qz = car.z + pz * 3; if (solid(qx, qz) || ELEV.edge(qx, qz, car.y, 1.6, 'r')) { wx -= px; wz -= pz; } }
+        let wx = 0, wz = 0; for (const rr of [2.2, 3.2]) for (let k = 0; k < 12; k++) { const a = k * 0.5236, px = Math.sin(a), pz = Math.cos(a), qx = car.x + px * rr, qz = car.z + pz * rr; if (solid(qx, qz) || ELEV.edge(qx, qz, car.y, 1.6, 'r')) { wx -= px; wz -= pz; } }   // 薄牆：近啲都探
         const wl = Math.hypot(wx, wz), sg = Math.sign(car.v) || 1, dx = Math.sin(car.h) * sg, dz = Math.cos(car.h) * sg;
         if (wl > 0.01 && sp > 3) { const n0 = wx / wl, n1 = wz / wl, dn = dx * n0 + dz * n1;
           if (dn < -0.85) { car.v *= -0.35; car.spin = (Math.random() < 0.5 ? -1 : 1) * Math.min(2.5, sp * 0.12); }
           else { const rx = dx - 2 * dn * n0, rz = dz - 2 * dn * n1; car.spin = wrapA(Math.atan2(rx * sg, rz * sg) - car.h) * 3; car.v *= 0.55; }
           const px = car.x + n0 * 0.25, pz = car.z + n1 * 0.25; if (!blk(px, pz)) { car.x = px; car.z = pz; } }
-        else car.v *= -0.3; }
+        else { car.v *= -0.3; if (sp > 3) car.spin = (Math.random() < 0.5 ? -1 : 1) * Math.min(2, sp * 0.1); } }
       else { car.x = nx; car.z = nz; }
       if (car.spin) { car.h += car.spin * dt; car.spin *= Math.exp(-4 * dt); if (Math.abs(car.spin) < 0.05) car.spin = 0; }   // 高架路邊 = 石壆
       car.y = ELEV.surf(car.x, car.z, car.y, 1.6, 'r');
