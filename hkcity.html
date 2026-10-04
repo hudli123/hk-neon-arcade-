@@ -1,5 +1,6 @@
 <meta charset="utf-8">
 <title>香港 3D 城市</title>
+<link rel="icon" href="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#05070d;touch-action:none;user-select:none;-webkit-user-select:none}
@@ -7089,10 +7090,12 @@ window.IND = (() => {
   const $ = (id) => document.getElementById(id), CS = 0.4, FARE = 5;
   const FONT = '"PingFang HK","PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif';
   const S = { inside: false, busy: false, menu: false, state: null, data: null, groups: null, floor: null, root: null,
-    phase: null, t: 0, target: null, paid: false, goal: null, forceFood: false, notice: 0 };
+    phase: null, t: 0, target: null, paid: false, goal: null, forceFood: false, notice: 0, resourceTimer: 0,
+    savedBackground: null, hasSavedBackground: false, lastPickLoads: 0 };
   const records = D.venues.map((v) => ({ v, data: null, promise: null, groups: null, entries: null, markers: null }));
   const byId = new Map(records.map((r) => [r.v.id, r]));
   const byEn = new Map(records.map((r) => [r.v.en, r]));
+  let markerAssets = null;
   const ST = OPEN.stations || [];
   const stationVenue = new Map();
   ST.forEach((st, k) => {
@@ -7191,23 +7194,60 @@ window.IND = (() => {
     return r.entries;
   }
   const owned = (o, layer) => o.traverse((q) => q.layers.set(layer));
+  function sharedMarkerAssets() {
+    if (!markerAssets) markerAssets = {
+      torus: new THREE.TorusGeometry(0.82, 0.12, 8, 28),
+      ring: new THREE.RingGeometry(1.05, 1.55, 28),
+      torusMat: new THREE.MeshBasicMaterial({ color: 0xffc52d, transparent: true, opacity: 0.92 }),
+      ringMat: new THREE.MeshBasicMaterial({ color: 0xffcf38, transparent: true, opacity: 0.19, side: THREE.DoubleSide, depthWrite: false })
+    };
+    return markerAssets;
+  }
+  function disposeMarkerAssetsIfUnused() {
+    if (!markerAssets || records.some((r) => r.markers && r.markers.length)) return;
+    markerAssets.torus.dispose(); markerAssets.ring.dispose(); markerAssets.torusMat.dispose(); markerAssets.ringMat.dispose();
+    markerAssets = null;
+  }
+  function disposeMarkers(r) {
+    if (r.markers) for (const q of r.markers) if (q.g.parent) q.g.parent.remove(q.g);
+    if (r.markerMaterial) r.markerMaterial.dispose();
+    if (r.markerTexture) r.markerTexture.dispose();
+    r.markers = null; r.markerMaterial = null; r.markerTexture = null;
+    disposeMarkerAssetsIfUnused();
+  }
   function addMarkers(r) {
-    if (r.markers || isStation(r)) return;
+    if (r.markers !== null || isStation(r) || bboxDist(r.v.bb, OPEN.hero.x, OPEN.hero.z) > 250) return;
     const entries = getEntries(r); if (!entries.length) { r.markers = []; return; }
     const c = document.createElement('canvas'); c.width = 512; c.height = 128;
     const x = c.getContext('2d'); x.fillStyle = 'rgba(25,18,8,.84)'; x.fillRect(4, 5, 504, 118);
     x.strokeStyle = '#ffd65c'; x.lineWidth = 5; x.strokeRect(5, 6, 502, 116);
     x.fillStyle = '#fff5d2'; x.font = `900 54px ${FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(r.v.tc, 256, 65, 480);
-    const tex = new THREE.CanvasTexture(c); tex.anisotropy = 2;
+    const tex = new THREE.CanvasTexture(c); tex.anisotropy = 2; r.markerTexture = tex;
+    r.markerMaterial = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false });
+    const shared = sharedMarkerAssets();
     r.markers = entries.map((e) => {
-      const g = new THREE.Group(), ring = new THREE.Mesh(new THREE.TorusGeometry(0.82, 0.12, 8, 28), new THREE.MeshBasicMaterial({ color: 0xffc52d, transparent: true, opacity: 0.92 }));
+      const g = new THREE.Group(), ring = new THREE.Mesh(shared.torus, shared.torusMat);
       ring.rotation.x = Math.PI / 2; ring.position.y = 0.16; g.add(ring);
-      const glow = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.55, 28), new THREE.MeshBasicMaterial({ color: 0xffcf38, transparent: true, opacity: 0.19, side: THREE.DoubleSide, depthWrite: false }));
+      const glow = new THREE.Mesh(shared.ring, shared.ringMat);
       glow.rotation.x = -Math.PI / 2; glow.position.y = 0.08; g.add(glow);
-      const label = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false }));
+      const label = new THREE.Sprite(r.markerMaterial);
       label.scale.set(3.6, 0.9, 1); label.position.y = 2.7; label.renderOrder = 10; g.add(label);
       g.position.set(e.out.x, 0, e.out.z); owned(g, 0); scene.add(g); return { g, ring, entry: e };
     });
+  }
+  function releasePayload(r) {
+    disposeMarkers(r);
+    if (window.INDOOR_V) delete window.INDOOR_V[r.v.id];
+    r.data = null; r.groups = null; r.entries = null;
+  }
+  function syncResources() {
+    const x = OPEN.hero.x, z = OPEN.hero.z, target = OPEN.mission && OPEN.mission.indoor && OPEN.mission.indoor.venue;
+    for (const r of records) {
+      const d = bboxDist(r.v.bb, x, z);
+      if (r.data && !isStation(r) && d <= 250) addMarkers(r);
+      if (r.markers && d > 300) disposeMarkers(r);
+      if (r.data && !r.promise && !r.picking && d > 400 && r !== S.state && r.v.id !== target) releasePayload(r);
+    }
   }
   function load(r) {
     if (r.data) return Promise.resolve(r.data);
@@ -7215,11 +7255,11 @@ window.IND = (() => {
     r.promise = new Promise((resolve, reject) => {
       const s = document.createElement('script'); s.src = r.v.file; s.async = true;
       s.onload = () => {
-        r.data = window.INDOOR_V && window.INDOOR_V[r.v.id]; r.promise = null;
+        s.remove(); r.data = window.INDOOR_V && window.INDOOR_V[r.v.id]; r.promise = null;
         if (!r.data) { reject(new Error('IND: venue payload missing ' + r.v.id)); return; }
-        r.groups = makeGroups(r.data); addMarkers(r); resolve(r.data);
+        r.groups = makeGroups(r.data); resolve(r.data);
       };
-      s.onerror = () => { r.promise = null; console.warn('IND: failed to load', r.v.file); reject(new Error('IND: failed to load ' + r.v.file)); };
+      s.onerror = () => { s.remove(); r.promise = null; console.warn('IND: failed to load', r.v.file); reject(new Error('IND: failed to load ' + r.v.file)); };
       document.head.appendChild(s);
     });
     return r.promise;
@@ -7287,19 +7327,69 @@ window.IND = (() => {
   const centroid = (rings) => { const p = point(ringsOf(rings)[0] || []); if (!p.length) return { x: 0, z: 0 }; return { x: p.reduce((s, q) => s + q[0], 0) / p.length, z: p.reduce((s, q) => s + q[1], 0) / p.length }; };
   function linesOf(flat) { const p = point(flat), out = []; for (let i = 1; i < p.length; i++) out.push([p[i - 1], p[i]]); return out; }
   const distToSeg = (x, z, a, b) => edgeDist(x, z, a, b).d;
-  function wallBuild(vb, ring, H, c, doors, walls) {
+  function makeDoorIndex(doors) {
+    const cell = 4, segments = [], buckets = new Map();
+    for (const door of doors) for (const [a, b] of door) {
+      const seg = { a, b, x0: Math.min(a[0], b[0]), x1: Math.max(a[0], b[0]), z0: Math.min(a[1], b[1]), z1: Math.max(a[1], b[1]) }, id = segments.push(seg) - 1;
+      for (let x = Math.floor(seg.x0 / cell); x <= Math.floor(seg.x1 / cell); x++) for (let z = Math.floor(seg.z0 / cell); z <= Math.floor(seg.z1 / cell); z++) {
+        const key = `${x},${z}`; let bucket = buckets.get(key); if (!bucket) buckets.set(key, bucket = []); bucket.push(id);
+      }
+    }
+    return { cell, segments, buckets, seen: new Uint32Array(segments.length), stamp: 0 };
+  }
+  function doorCandidates(index, a, b, pad = 0.6) {
+    if (!index.segments.length) return [];
+    const ax = Math.min(a[0], b[0]), maxX = Math.max(a[0], b[0]), az = Math.min(a[1], b[1]), maxZ = Math.max(a[1], b[1]);
+    const x0 = Math.floor((ax - pad) / index.cell), x1 = Math.floor((maxX + pad) / index.cell), z0 = Math.floor((az - pad) / index.cell), z1 = Math.floor((maxZ + pad) / index.cell);
+    let stamp = (index.stamp + 1) >>> 0;
+    if (!stamp) { index.seen.fill(0); stamp = 1; }
+    index.stamp = stamp;
+    const found = [];
+    for (let cx = x0; cx <= x1; cx++) for (let cz = z0; cz <= z1; cz++) {
+      for (const id of index.buckets.get(`${cx},${cz}`) || []) {
+        if (index.seen[id] === stamp) continue;
+        index.seen[id] = stamp;
+        const s = index.segments[id];
+        if (s.x1 < ax - pad || s.x0 > maxX + pad || s.z1 < az - pad || s.z0 > maxZ + pad) continue;
+        found.push(s);
+      }
+    }
+    return found;
+  }
+  function nearDoor(segments, x, z) {
+    const pad = 0.6;
+    for (const s of segments) {
+      if (s.x1 < x - pad || s.x0 > x + pad || s.z1 < z - pad || s.z0 > z + pad) continue;
+      if (distToSeg(x, z, s.a, s.b) < pad) return true;
+    }
+    return false;
+  }
+  function wallBuild(vb, ring, H, c, doorIndex, walls) {
     const p = point(ring);
     for (let i = 0; i < p.length; i++) {
       const A = p[i], B = p[(i + 1) % p.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < 0.02) continue;
-      const n = Math.max(1, Math.ceil(L / 0.25));
-      for (let j = 0; j < n; j++) {
-        const t0 = j / n, t1 = (j + 1) / n, x0 = A[0] + (B[0] - A[0]) * t0, z0 = A[1] + (B[1] - A[1]) * t0, x1 = A[0] + (B[0] - A[0]) * t1, z1 = A[1] + (B[1] - A[1]) * t1;
-        const mx = (x0 + x1) / 2, mz = (z0 + z1) / 2;
-        if (doors.some((q) => q.some((s) => distToSeg(mx, mz, s[0], s[1]) < 0.6))) continue;
-        const dim = c.map((v) => v * 0.78);
-        vb.quad([x0, 0, z0], [x1, 0, z1], [x1, H, z1], [x0, H, z0], dim, dim, c, c);
-        walls.push([x0, z0, x1, z1]);
+      const dim = c.map((v) => v * 0.78), doors = doorCandidates(doorIndex, A, B);
+      if (!doors.length) {
+        if (vb) vb.quad([A[0], 0, A[1]], [B[0], 0, B[1]], [B[0], H, B[1]], [A[0], H, A[1]], dim, dim, c, c);
+        walls.push([A[0], A[1], B[0], B[1]]);
+        continue;
       }
+      const n = Math.max(1, Math.ceil(L / 0.25));
+      let runStart = -1, runEnd = -1;
+      const flush = () => {
+        if (runStart < 0) return;
+        const x0 = A[0] + (B[0] - A[0]) * runStart, z0 = A[1] + (B[1] - A[1]) * runStart;
+        const x1 = A[0] + (B[0] - A[0]) * runEnd, z1 = A[1] + (B[1] - A[1]) * runEnd;
+        if (vb) vb.quad([x0, 0, z0], [x1, 0, z1], [x1, H, z1], [x0, H, z0], dim, dim, c, c);
+        walls.push([x0, z0, x1, z1]); runStart = -1;
+      };
+      for (let j = 0; j < n; j++) {
+        const t0 = j / n, t1 = (j + 1) / n, mx = A[0] + (B[0] - A[0]) * (t0 + t1) / 2, mz = A[1] + (B[1] - A[1]) * (t0 + t1) / 2;
+        if (nearDoor(doors, mx, mz)) { flush(); continue; }
+        if (runStart < 0) runStart = t0;
+        runEnd = t1;
+      }
+      flush();
     }
   }
   function routeFloor(data, y) {
@@ -7307,17 +7397,34 @@ window.IND = (() => {
     for (const l of data.levels) { const d = Math.abs(l.z - y); if (d < bd) { bd = d; best = l.o; } }
     return best;
   }
+  function fillShape(grid, shape, x0, z0) {
+    const { nx, nz, walkable } = grid, p = shape[0]; if (!p || p.length < 3) return;
+    const minz = Math.min(...p.map((q) => q[1])), maxz = Math.max(...p.map((q) => q[1]));
+    const j0 = Math.max(0, Math.floor((minz - z0) / CS)), j1 = Math.min(nz - 1, Math.ceil((maxz - z0) / CS));
+    for (let j = j0; j <= j1; j++) {
+      const z = z0 + (j + 0.5) * CS, xs = [];
+      for (const ring of shape) for (let i = 0, k = ring.length - 1; i < ring.length; k = i++) {
+        const a = ring[k], b = ring[i];
+        if ((a[1] > z) !== (b[1] > z)) xs.push(a[0] + (z - a[1]) * (b[0] - a[0]) / (b[1] - a[1]));
+      }
+      xs.sort((a, b) => a - b);
+      for (let k = 0; k + 1 < xs.length; k += 2) {
+        const i0 = Math.max(0, Math.ceil((xs[k] - x0) / CS - 0.5)), i1 = Math.min(nx - 1, Math.ceil((xs[k + 1] - x0) / CS - 0.5) - 1);
+        for (let i = i0; i <= i1; i++) walkable[j * nx + i] = 1;
+      }
+    }
+  }
   function makeGrid(r, g, wallSegments) {
-    const pts = g.polys.flatMap((rings) => point(rings[0] || [])); if (!pts.length) return null;
-    const x0 = Math.floor(Math.min(...pts.map((p) => p[0])) / CS) * CS - CS, x1 = Math.ceil(Math.max(...pts.map((p) => p[0])) / CS) * CS + CS;
-    const z0 = Math.floor(Math.min(...pts.map((p) => p[1])) / CS) * CS - CS, z1 = Math.ceil(Math.max(...pts.map((p) => p[1])) / CS) * CS + CS;
+    const shapes = g.polys.map((rings) => ringsOf(rings).map(point)).filter((rings) => rings.length && rings[0].length > 2), outer = shapes.map((s) => s[0]).filter((p) => p.length);
+    if (!outer.length) return null;
+    let minx = Infinity, maxx = -Infinity, minz = Infinity, maxz = -Infinity;
+    for (const p of outer) for (const q of p) { minx = Math.min(minx, q[0]); maxx = Math.max(maxx, q[0]); minz = Math.min(minz, q[1]); maxz = Math.max(maxz, q[1]); }
+    const x0 = Math.floor(minx / CS) * CS - CS, x1 = Math.ceil(maxx / CS) * CS + CS;
+    const z0 = Math.floor(minz / CS) * CS - CS, z1 = Math.ceil(maxz / CS) * CS + CS;
     const nx = Math.ceil((x1 - x0) / CS), nz = Math.ceil((z1 - z0) / CS), n = nx * nz;
     const walkable = new Uint8Array(n), paid = new Uint8Array(n);
     const idxAt = (x, z) => { const i = Math.floor((x - x0) / CS), j = Math.floor((z - z0) / CS); return i < 0 || j < 0 || i >= nx || j >= nz ? -1 : j * nx + i; };
-    for (let j = 0; j < nz; j++) for (let i = 0; i < nx; i++) {
-      const x = x0 + (i + 0.5) * CS, z = z0 + (j + 0.5) * CS, k = j * nx + i;
-      if (g.polys.some((p) => insideShape(p, x, z))) walkable[k] = 1;
-    }
+    for (const shape of shapes) fillShape({ nx, nz, walkable }, shape, x0, z0);
     for (const u of g.units) {
       const cat = r.data.cats[u[1]] || '';
       if (!NO_WALK.has(cat)) continue;
@@ -7355,6 +7462,17 @@ window.IND = (() => {
     }
     return { x0, z0, nx, nz, walkable, paid, idxAt };
   }
+  function groupWalkable(r, g) {
+    if (typeof g.walkable === 'boolean') return g.walkable;
+    const doorIndex = makeDoorIndex(g.doors.map((d) => linesOf(d[2]))), walls = [];
+    for (const u of g.units) {
+      const cat = r.data.cats[u[1]] || '';
+      if (!NO_WALL.has(cat)) for (const ring of unitRings(u)) wallBuild(null, ring, Math.min(g.H, 3), color(UNIT_COLOR[cat] || '#9a9286'), doorIndex, walls);
+    }
+    for (const rings of g.polys) for (const ring of rings) wallBuild(null, ring, g.H, color('#aaa79f'), doorIndex, walls);
+    const grid = makeGrid(r, g, walls); g.walkable = !!(grid && grid.walkable.some((v) => v));
+    return g.walkable;
+  }
   function nearestCell(grid, x, z) {
     if (!grid) return null;
     const k = grid.idxAt(x, z), n = grid.nx * grid.nz;
@@ -7384,16 +7502,21 @@ window.IND = (() => {
       ctx.fillStyle = '#fff4d1'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 23px ${FONT}`; ctx.fillText(it.text, x + cw / 2, y + ch / 2, cw - 18);
     });
     const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 2;
-    const mat = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, side: THREE.DoubleSide, fog: false });
+    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, fog: false });
     const listGroup = new THREE.Group(); listGroup.userData.labels = [];
-    list.forEach((it, i) => {
-      const col = i % cols, row = Math.floor(i / cols), geom = new THREE.PlaneGeometry(it.text.length > 10 ? 3.2 : 2.6, 0.62), uv = geom.attributes.uv;
-      const u0 = col / cols, u1 = (col + 1) / cols, v1 = 1 - row / rows, v0 = 1 - (row + 1) / rows;
-      for (let k = 0; k < uv.count; k++) uv.setXY(k, u0 + uv.getX(k) * (u1 - u0), v0 + uv.getY(k) * (v1 - v0));
-      const mesh = new THREE.Mesh(geom, mat); mesh.position.set(it.x, 2.6, it.z); mesh.renderOrder = 5; listGroup.add(mesh); listGroup.userData.labels.push(mesh);
-    });
-    owned(listGroup, 1); root.add(listGroup); root.userData.ownedTextures = (root.userData.ownedTextures || []).concat(tex);
+    const ownedGeometries = root.userData.ownedGeometries || (root.userData.ownedGeometries = []);
     root.userData.ownedMaterials = (root.userData.ownedMaterials || []).concat(mat);
+    root.userData.ownedTextures = (root.userData.ownedTextures || []).concat(tex);
+    list.forEach((it, i) => {
+      const col = i % cols, row = Math.floor(i / cols);
+      const sprite = new THREE.Sprite(mat); sprite.scale.set(it.text.length > 10 ? 2.8 : 2.2, 0.55, 1);
+      const geo = sprite.geometry.clone(), uv = geo.attributes.uv;
+      for (let j = 0; j < uv.count; j++) uv.setXY(j, col / cols + uv.getX(j) / cols, 1 - (row + 1) / rows + uv.getY(j) / rows);
+      uv.needsUpdate = true; sprite.geometry = geo;
+      sprite.position.set(it.x, 2.6, it.z); sprite.renderOrder = 5; listGroup.add(sprite); listGroup.userData.labels.push(sprite);
+      ownedGeometries.push(geo);
+    });
+    owned(listGroup, 1); root.add(listGroup);
     return listGroup;
   }
   function addRoutes(root, g, data) {
@@ -7415,19 +7538,20 @@ window.IND = (() => {
   }
   function buildFloor(r, g) {
     if (!M) init();
-    const t0 = performance.now(), root = new THREE.Group(), vb = vbNew(), doors = g.doors.map((d) => linesOf(d[2])), walls = [], unitPoints = [];
+    const t0 = performance.now(), root = new THREE.Group(), vb = vbNew(), doorIndex = makeDoorIndex(g.doors.map((d) => linesOf(d[2]))), walls = [], unitPoints = [];
     for (const rings of g.polys) vb.flat(rings, 0, color('#c1c1c1'), true);
     for (const u of g.units) {
       const cat = unitKind(u), rings = unitRings(u), cc = UNIT_COLOR[cat] || '#9a9286';
       vb.flat(rings, 0.01, color(cat === 'platform' ? '#438865' : cc), true);
-      if (!NO_WALL.has(cat)) for (const ring of rings) wallBuild(vb, ring, Math.min(g.H, 3), color(cc), doors, walls);
+      if (!NO_WALL.has(cat)) for (const ring of rings) wallBuild(vb, ring, Math.min(g.H, 3), color(cc), doorIndex, walls);
       const cp = centroid(rings); unitPoints.push({ u, cat, pos: cp });
     }
-    for (const rings of g.polys) for (const ring of rings) wallBuild(vb, ring, g.H, color('#aaa79f'), doors, walls);
+    for (const rings of g.polys) for (const ring of rings) wallBuild(vb, ring, g.H, color('#aaa79f'), doorIndex, walls);
     for (const rings of g.polys) vb.flat(rings, g.H, color('#8a8d93'), false);
     const mesh = new THREE.Mesh(vb.geo(), M.v); mesh.frustumCulled = false; root.add(mesh);
     root.traverse((o) => o.layers.set(1)); S.root.add(root);
-    const grid = makeGrid(r, g, walls), labels = addLabels(root, g, r.data); addRoutes(root, g, r.data);
+    const grid = makeGrid(r, g, walls); g.walkable = !!(grid && grid.walkable.some((v) => v));
+    const labels = addLabels(root, g, r.data); addRoutes(root, g, r.data);
     root.traverse((o) => o.layers.set(1));
     let tris = 0; root.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.attributes.position) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
     return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), buildMs: performance.now() - t0, group: g };
@@ -7436,7 +7560,8 @@ window.IND = (() => {
     if (!S.floor) return;
     S.root.remove(S.floor.root);
     const geos = new Set(), mats = new Set();
-    S.floor.root.traverse((o) => { if (o.geometry) geos.add(o.geometry); });
+    S.floor.root.traverse((o) => { if (o.geometry && !o.isSprite) geos.add(o.geometry); });
+    for (const g of S.floor.root.userData.ownedGeometries || []) geos.add(g);
     for (const g of geos) g.dispose();
     for (const m of S.floor.root.userData.ownedMaterials || []) mats.add(m);
     mats.forEach((m) => m.dispose());
@@ -7456,6 +7581,7 @@ window.IND = (() => {
   function addGoal() {
     if (!S.floor || !S.goal || S.goal.venue !== S.state.v.id || S.goal.o !== S.floor.group.o || S.goalObj) return;
     const g = new THREE.Group(), bm = new THREE.MeshBasicMaterial({ color: 0x3cff8a, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }), rm = new THREE.MeshBasicMaterial({ color: 0x3cff8a });
+    g.name = 'indoorDeliveryGoal';
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 4, 12, 1, true), bm);
     beam.position.y = 2; g.add(beam);
     const ring = new THREE.Mesh(new THREE.TorusGeometry(0.8, 0.1, 8, 24), rm);
@@ -7565,10 +7691,18 @@ window.IND = (() => {
   }
   const fade = (v) => { $('ofade').style.opacity = v ? 1 : 0; };
   function begin(type, target) { S.busy = true; S.phase = type; S.target = target; S.t = 0.28; fade(1); OPEN.beep(720, 0.1); }
+  function indoorBackground(on) {
+    if (on) {
+      if (!S.hasSavedBackground) { S.savedBackground = scene.background; S.hasSavedBackground = true; }
+      scene.background = new THREE.Color(0x292c32);
+    } else if (S.hasSavedBackground) {
+      scene.background = S.savedBackground; S.savedBackground = null; S.hasSavedBackground = false;
+    }
+  }
   function doEnter(r, entry) {
     const zero = floorByOrdinal(r, 0) || r.groups[0]; if (!zero) return;
     if (!S.root) init();
-    S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; cameraLayers(true); S.root.visible = true;
+    S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; indoorBackground(true); cameraLayers(true); S.root.visible = true;
     showFloor(r, zero, entry.mid.x - entry.nx * 4.2, entry.mid.z - entry.nz * 4.2, Math.atan2(-entry.nx, -entry.nz));
     S.paid = false; OPEN.big(`${r.v.tc} ${zero.name}`, '#ffd98a');
   }
@@ -7592,11 +7726,11 @@ window.IND = (() => {
     const p = networkSpawn(r, e); if (!p) { OPEN.big('搵唔到站內通道', '#ff765e'); return; }
     const g = floorByElevation(r, p.y); if (!g) return;
     if (!S.root) init();
-    S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; cameraLayers(true); S.root.visible = true;
+    S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; indoorBackground(true); cameraLayers(true); S.root.visible = true;
     showFloor(r, g, p.x, p.z, p.h); S.paid = false; OPEN.big(`${r.v.tc} ${g.name}`, '#ffd98a');
   }
   function doLeave(entry) {
-    clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.paid = false; S.root.visible = false; cameraLayers(false); $('indLift').hidden = true; $('indStair').hidden = true; S.menu = false;
+    clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.paid = false; S.root.visible = false; indoorBackground(false); cameraLayers(false); $('indLift').hidden = true; $('indStair').hidden = true; S.menu = false;
     if (entry) place(entry.out.x, entry.out.z, Math.atan2(entry.nx, entry.nz));
     else { const q = S.target && S.target.entry; if (q) place(q.out.x, q.out.z, Math.atan2(q.nx, q.nz)); }
     fade(0);
@@ -7604,9 +7738,12 @@ window.IND = (() => {
   function doFloor(target) {
     if (!target || !S.state) return;
     const g = floorByOrdinal(S.state, target.o); if (!g) return;
+    if (!groupWalkable(S.state, g)) { OPEN.big('呢層入唔到', '#ff765e'); return; }
     showFloor(S.state, g, target.x, target.z); OPEN.big(`${S.state.v.tc} ${g.name}`, '#ffd98a'); OPEN.beep(1180, 0.22);
   }
   function step(dt) {
+    S.resourceTimer -= dt;
+    if (S.resourceTimer <= 0) { S.resourceTimer = 0.4; syncResources(); }
     if (!S.inside) {
       const x = OPEN.hero.x, z = OPEN.hero.z;
       for (const r of records) if (!r.data && bboxDist(r.v.bb, x, z) <= 150) load(r).catch(() => {});
@@ -7626,7 +7763,8 @@ window.IND = (() => {
     $('indStair').hidden = !q;
     if (q) {
       $('indStairT').textContent = q.cat === 'escalator' ? '扶手電梯' : '樓梯';
-      const o = S.floor.group.o, canDown = !!floorByOrdinal(S.state, o - 1), canUp = !!floorByOrdinal(S.state, o + 1);
+      const o = S.floor.group.o, down = floorByOrdinal(S.state, o - 1), up = floorByOrdinal(S.state, o + 1);
+      const canDown = !!down && groupWalkable(S.state, down), canUp = !!up && groupWalkable(S.state, up);
       $('indDown').hidden = !canDown; $('indUp').hidden = !canUp;
       $('indDown').onclick = () => changeByUnit(q, o - 1); $('indUp').onclick = () => changeByUnit(q, o + 1);
     }
@@ -7634,6 +7772,7 @@ window.IND = (() => {
   }
   function changeByUnit(source, ordinal) {
     const g = floorByOrdinal(S.state, ordinal); if (!g) return;
+    if (!groupWalkable(S.state, g)) { OPEN.big('呢層入唔到', '#ff765e'); return; }
     const options = g.units.filter((u) => ['stairs', 'escalator'].includes(unitKind(u))).map((u) => ({ u, p: centroid(unitRings(u)) }));
     let p = options.sort((a, b) => Math.hypot(a.p.x - source.pos.x, a.p.z - source.pos.z) - Math.hypot(b.p.x - source.pos.x, b.p.z - source.pos.z))[0];
     if (!p) p = { p: { x: OPEN.hero.x, z: OPEN.hero.z } };
@@ -7643,13 +7782,14 @@ window.IND = (() => {
     const floors = [];
     for (const g of S.groups) {
       const lifts = g.units.filter((u) => unitKind(u) === 'elevator').map((u) => centroid(unitRings(u)));
-      if (lifts.some((p) => Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) <= 3)) floors.push(g);
+      if (lifts.some((p) => Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z) <= 3) && groupWalkable(S.state, g)) floors.push(g);
     }
-    const list = floors.length ? floors : S.groups;
+    const list = floors.length ? floors : S.groups.filter((g) => groupWalkable(S.state, g));
     $('indLiftL').innerHTML = list.slice().sort((a, b) => b.o - a.o).map((g) => `<button data-o="${g.o}" class="${g.o === S.floor.group.o ? 'here' : ''}">${g.name}<small>${g.o === 0 ? 'G/F・出入口' : `樓層 ${g.o}`}</small></button>`).join('');
     for (const b of $('indLiftL').querySelectorAll('button')) b.onclick = () => {
       const o = +b.dataset.o; if (o === S.floor.group.o) return;
-      const g = floorByOrdinal(S.state, o), u = g.units.filter((q) => unitKind(q) === 'elevator').map((q) => centroid(unitRings(q))).sort((a, c) => Math.hypot(a.x - unit.pos.x, a.z - unit.pos.z) - Math.hypot(c.x - unit.pos.x, c.z - unit.pos.z))[0];
+      const g = floorByOrdinal(S.state, o); if (!g || !groupWalkable(S.state, g)) { OPEN.big('呢層入唔到', '#ff765e'); return; }
+      const u = g.units.filter((q) => unitKind(q) === 'elevator').map((q) => centroid(unitRings(q))).sort((a, c) => Math.hypot(a.x - unit.pos.x, a.z - unit.pos.z) - Math.hypot(c.x - unit.pos.x, c.z - unit.pos.z))[0];
       const p = u || unit.pos; $('indLift').hidden = true; S.menu = false; begin('floor', { o, x: p.x, z: p.z });
     };
     S.menu = true; S.busy = true; $('indLift').hidden = false; $('oprompt').hidden = true;
@@ -7688,17 +7828,37 @@ window.IND = (() => {
     if (!S.inside && !S.phase) return;
     if (hard) {
       clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.phase = null; S.busy = false; S.menu = false;
-      if (S.root) S.root.visible = false; $('indLift').hidden = true; $('indStair').hidden = true; fade(0); cameraLayers(false); return;
+      if (S.root) S.root.visible = false; indoorBackground(false); $('indLift').hidden = true; $('indStair').hidden = true; fade(0); cameraLayers(false); return;
     }
     forceLeave();
   }
   function camera3(pitch) {
     if (!S.floor) return;
-    const p = clamp(pitch, -0.1, 0.62), d = innerWidth < innerHeight ? 3.6 : 3.2, hy = 1.55, fx = Math.sin(cam.wyaw) * Math.cos(p), fz = Math.cos(cam.wyaw) * Math.cos(p), fy = Math.sin(p);
-    let t = d;
-    for (let k = 1; k <= 18; k++) { const s = d * k / 18, y = hy + fy * s; if (y > S.floor.H - 0.2 || walk(OPEN.hero.x + fx * s, OPEN.hero.z + fz * s)) { t = d * (k - 1) / 18; break; } }
-    t = Math.max(0.35, t); camera.position.set(OPEN.hero.x + fx * t, hy + fy * t, OPEN.hero.z + fz * t); camera.lookAt(OPEN.hero.x, hy, OPEN.hero.z);
-    if (S.floor.labels) for (const q of S.floor.labels.userData.labels) q.rotation.y = cam.wyaw;
+    const p = clamp(pitch, -0.1, 0.62), d = innerWidth < innerHeight ? 3.6 : 3.2, hy = 1.55, offsets = [0, -0.3, 0.3, -0.6, 0.6, -0.9, 0.9];
+    let best = { t: -1, offset: 0 };
+    for (const offset of offsets) {
+      const yaw = cam.wyaw + offset, fx = Math.sin(yaw) * Math.cos(p), fz = Math.cos(yaw) * Math.cos(p), fy = Math.sin(p);
+      let t = 0;
+      for (let k = 1; k <= 24; k++) {
+        const s = d * k / 24, y = hy + fy * s;
+        if (y < 0.25 || y > S.floor.H - 0.22 || walk(OPEN.hero.x + fx * s, OPEN.hero.z + fz * s)) break;
+        t = s;
+      }
+      if (t > best.t + 0.01 || (Math.abs(t - best.t) <= 0.01 && Math.abs(offset) < Math.abs(best.offset))) best = { t, offset };
+      if (best.t >= d - 0.14) break;
+    }
+    const yaw = cam.wyaw + best.offset, fx = Math.sin(yaw) * Math.cos(p), fz = Math.cos(yaw) * Math.cos(p), fy = Math.sin(p), t = Math.max(0, best.t - 0.16);
+    const x = OPEN.hero.x + fx * t, z = OPEN.hero.z + fz * t;
+    let y = clamp(hy + fy * t, 0.25, S.floor.H - 0.22);
+    if (best.t < 0.75) y = Math.min(S.floor.H - 0.22, Math.max(y, hy + 1.15));
+    camera.position.set(x, y, z); camera.lookAt(OPEN.hero.x, hy, OPEN.hero.z);
+    if (S.floor.labels) {
+      const hx = OPEN.hero.x, hz = OPEN.hero.z, cx = camera.position.x, cy = camera.position.y, cz = camera.position.z;
+      for (const q of S.floor.labels.userData.labels) {
+        const dx = q.position.x - hx, dz = q.position.z - hz, x = q.position.x - cx, y = q.position.y - cy, z = q.position.z - cz;
+        q.visible = dx * dx + dz * dz <= 625 && x * x + y * y + z * z >= 3.24;
+      }
+    }
   }
   function label() { return S.inside && S.floor ? `📍 ${S.state.v.tc} ${S.floor.group.name}<small>${S.state.v.en}</small>` : ''; }
   function hint() {
@@ -7769,22 +7929,29 @@ window.IND = (() => {
       const c = r.v.outline && r.v.outline.length ? centroid(r.v.outline) : { x: (r.v.bb[0] + r.v.bb[2]) / 2, z: (r.v.bb[1] + r.v.bb[3]) / 2 };
       return { r, d: Math.hypot(c.x - from.x, c.z - from.z) };
     }).filter((q) => q.d >= 150 && q.d <= 700).sort(() => Math.random() - 0.5);
+    let loads = 0;
     for (const q of choices) {
-      const r = q.r; try { await load(r); } catch (e) { continue; }
-      if (!r.data.pois.length) continue;
+      const r = q.r;
+      if (!r.data && !r.promise) { if (loads >= 3) break; loads++; }
+      r.picking = true;
+      try { await load(r); } catch (e) { r.picking = false; continue; }
+      if (!r.data.pois.length) { r.picking = false; continue; }
       const entries = isStation(r) ? null : getEntries(r);
       const station = isStation(r) ? [...stationVenue].find(([, v]) => v === r) : null;
       const outside = isStation(r) ? station && stationExit(station[0], from.x, from.z) : entries && entries.reduce((a, b) => !a || Math.hypot(b.out.x - from.x, b.out.z - from.z) < Math.hypot(a.out.x - from.x, a.out.z - from.z) ? b : a, null);
-      if (!outside) continue;
+      if (!outside) { r.picking = false; continue; }
       const named = r.data.pois.filter((p) => p[2] && !['商店', '餐廳', '電影院', '熟食檔', 'empty'].includes(p[2]));
-      if (!named.length && r.v.en !== 'Pioneer Centre') continue;
+      if (!named.length && r.v.en !== 'Pioneer Centre') { r.picking = false; continue; }
       const list = named.length ? named : r.data.pois.filter((p) => p[2] && p[2] !== 'empty');
-      if (!list.length) continue;
+      if (!list.length) { r.picking = false; continue; }
       const poi = list[Math.floor(Math.random() * list.length)], l = r.data.levels[poi[0]], group = floorByOrdinal(r, l.o);
-      if (!group) continue;
+      if (!group) { r.picking = false; continue; }
       const x = isStation(r) ? outside.fx : outside.out.x, z = isStation(r) ? outside.fz : outside.out.z;
+      r.picking = false;
+      S.lastPickLoads = loads;
       return { venue: r, poi, o: l.o, floor: group.name, x: poi[3], z: poi[4], outside: { x, z }, stationExit: isStation(r) ? outside : null, distance: q.d };
     }
+    S.lastPickLoads = loads;
     return null;
   }
   function setForceFood() { S.forceFood = true; }
@@ -7792,10 +7959,12 @@ window.IND = (() => {
     const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id);
     if (!r) throw new Error('IND test venue not found: ' + id);
     return load(r).then(() => {
+      const g = floorByOrdinal(r, o); if (!g) throw new Error('IND test floor not found: ' + o);
+      if (!groupWalkable(r, g)) return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: false, skipped: true, buildMs: 0, triangles: 0, floors: r.groups.length };
       if (!S.root) init();
       if (S.inside) { disposeFloor(); S.root.visible = false; }
-      S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; cameraLayers(true);
-      const g = floorByOrdinal(r, o); if (!g) throw new Error('IND test floor not found: ' + o);
+      S.phase = null; S.busy = false; S.menu = false; $('indLift').hidden = true; $('indStair').hidden = true; fade(0);
+      S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; indoorBackground(true); cameraLayers(true);
       const target = r.v.bb, p = showFloor(r, g, (target[0] + target[2]) / 2, (target[1] + target[3]) / 2);
       S.paid = paidAt(p.x, p.z);
       return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: p.walkable, buildMs: p.buildMs, triangles: p.triangles, floors: r.groups.length };
@@ -7803,6 +7972,9 @@ window.IND = (() => {
   }
   function testStats() {
     return records.filter((r) => r.data).map((r) => ({ id: r.v.id, venue: r.v.en, floors: r.groups.length, ordinals: r.groups.map((g) => g.o) }));
+  }
+  function resourceStats() {
+    return records.map((r) => ({ venue: r.v.en, loaded: !!r.data, entries: !!r.entries, floors: r.groups && r.groups.length || 0, markers: r.markers && r.markers.length || 0 }));
   }
   function testGatePairs() {
     if (!S.floor || !isStation(S.state)) return [];
@@ -7823,7 +7995,7 @@ window.IND = (() => {
     get venue() { return S.state && S.state.v; }, get floor() { return S.floor && S.floor.group.o; }, get paid() { return S.paid; },
     canMove, setGoal, hasStation, stationVenueId: (k) => stationForIndex(k)?.v.id || null, enterStation, pickDelivery, setForceFood, consumeForceFood: () => { const q = S.forceFood; S.forceFood = false; return q; }, nearOutside,
     _load: (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); return r && load(r); },
-    _goto: testGoto, _stats: testStats, _walkable: gridWalkable,
+    _goto: testGoto, _stats: testStats, _resources: resourceStats, _lastPickLoads: () => S.lastPickLoads, _walkable: gridWalkable,
     _entries: async (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); if (!r) return []; await load(r); return getEntries(r).map((e) => ({ mid: e.mid, out: e.out, nx: e.nx, nz: e.nz, code: e.code })); },
     _gatePairs: testGatePairs, _setPaid: (v) => { S.paid = !!v; },
     _triangleCount: () => S.floor ? S.floor.triangles : 0 };
