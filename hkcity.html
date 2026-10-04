@@ -910,8 +910,16 @@ window.DS_LOAD = () => {
   const s = document.createElement('script'); s.src = 'hkcity_ds.js'; s.onload = () => {
     const D = window.DSIGN, P = [], UV = [], posts = [], o = new THREE.Object3D(), uo = TOUCH ? 13 : 9;
     for (const d of D) {
-      const [x, z, fx, fz, y00, w, h, kind, el] = d, c = d.slice(uo, uo + 4);
-      let b = 0; if (el && window.ELEV) { let q = ELEV.surf(x, z, 200, 0, 'r'); for (let r = 2; r <= 18 && !(q > 0); r += 2) for (let a = 0; a < 12 && !(q > 0); a++) q = ELEV.surf(x + Math.cos(a * .5236) * r, z + Math.sin(a * .5236) * r, 200, 0, 'r'); if (q > 0) b = q; }
+      let [x, z, fx, fz, y00, w, h, kind, el] = d; const c = d.slice(uo, uo + 4);
+      let b = 0;
+      if (el && window.ELEV) {   // 高架牌：揾 8 m 內中心同兩支柱腳都喺橋面嘅位，冇就留喺地面
+        const S = (u, v) => ELEV.surf(u, v, 200, 0, 'r'), kk = kind ? (w / 2 + 0.6) / (w / 2) : 0.6, ex = fz * w / 2 * kk, ez = -fx * w / 2 * kk;
+        found: for (let r = 0; r <= 8; r++) for (let a = 0; a < (r ? 12 : 1); a++) {
+          const u = x + Math.cos(a * .5236) * r, v = z + Math.sin(a * .5236) * r, q = S(u, v);
+          if (q > 0 && S(u + ex, v + ez) > 0 && S(u - ex, v - ez) > 0) { x = u; z = v; b = q; break found; }
+        }
+        if (!b && kind) b = S(x, z);   // 闊門架橫跨成條橋：中心喺橋面就照用
+      }
       const y0 = b + y00, cx = x + fx * 0.08, cz = z + fz * 0.08, rx = fz * w / 2, rz = -fx * w / 2;
       const A = [cx - rx, y0, cz - rz], B = [cx + rx, y0, cz + rz], C = [cx + rx, y0 + h, cz + rz], E = [cx - rx, y0 + h, cz - rz];
       P.push(...A, ...B, ...C, ...A, ...C, ...E); UV.push(c[0], c[1], c[2], c[1], c[2], c[3], c[0], c[1], c[2], c[3], c[0], c[3]);
