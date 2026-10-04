@@ -7095,6 +7095,29 @@ window.IND = (() => {
   const records = D.venues.map((v) => ({ v, data: null, promise: null, groups: null, entries: null, markers: null }));
   const byId = new Map(records.map((r) => [r.v.id, r]));
   const byEn = new Map(records.map((r) => [r.v.en, r]));
+  const textureLedger = { created: 0, disposed: 0, live: new Map() };
+  let textureSerial = 0;
+  function tagTexture(tex, role, scope) {
+    const id = ++textureSerial;
+    tex.userData = tex.userData || {};
+    tex.name = `IND:${role}:${id}`; tex.userData.indoorRole = role; tex.userData.indoorScope = scope;
+    textureLedger.created++; textureLedger.live.set(id, { id, role, scope });
+    tex.addEventListener('dispose', () => {
+      if (textureLedger.live.delete(id)) textureLedger.disposed++;
+    });
+    return tex;
+  }
+  function disposeTexture(tex) {
+    if (!tex) return;
+    if (!tex.userData.indoorRole) { tex.dispose(); return; }
+    if (tex.userData.indoorDisposed) return;
+    tex.userData.indoorDisposed = true; tex.dispose();
+  }
+  function textureStats() {
+    const live = [...textureLedger.live.values()];
+    return { created: textureLedger.created, disposed: textureLedger.disposed, live,
+      byScope: live.reduce((out, q) => (out[q.scope] = (out[q.scope] || 0) + 1, out), {}) };
+  }
   let markerAssets = null;
   const ST = OPEN.stations || [];
   const stationVenue = new Map();
@@ -7195,42 +7218,57 @@ window.IND = (() => {
   }
   const owned = (o, layer) => o.traverse((q) => q.layers.set(layer));
   function sharedMarkerAssets() {
-    if (!markerAssets) markerAssets = {
-      torus: new THREE.TorusGeometry(0.82, 0.12, 8, 28),
-      ring: new THREE.RingGeometry(1.05, 1.55, 28),
-      torusMat: new THREE.MeshBasicMaterial({ color: 0xffc52d, transparent: true, opacity: 0.92 }),
-      ringMat: new THREE.MeshBasicMaterial({ color: 0xffcf38, transparent: true, opacity: 0.19, side: THREE.DoubleSide, depthWrite: false })
-    };
+    if (!markerAssets) {
+      const cols = 4, cw = 128, ch = 128, rows = Math.ceil(D.venues.length / cols), canvas = document.createElement('canvas');
+      canvas.width = cols * cw; canvas.height = rows * ch;
+      const ctx = canvas.getContext('2d');
+      D.venues.forEach((v, i) => {
+        const x = i % cols * cw, y = Math.floor(i / cols) * ch;
+        ctx.fillStyle = 'rgba(25,18,8,.92)'; ctx.fillRect(x + 3, y + 4, cw - 6, ch - 8);
+        ctx.strokeStyle = '#ffd65c'; ctx.lineWidth = 4; ctx.strokeRect(x + 4, y + 5, cw - 8, ch - 10);
+        ctx.fillStyle = '#fff5d2'; ctx.font = `900 28px ${FONT}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(v.tc, x + cw / 2, y + ch / 2, cw - 16);
+      });
+      const texture = tagTexture(new THREE.CanvasTexture(canvas), 'street-marker-atlas', 'marker');
+      texture.anisotropy = 2;
+      markerAssets = {
+        torus: new THREE.TorusGeometry(0.82, 0.12, 8, 28),
+        ring: new THREE.RingGeometry(1.05, 1.55, 28),
+        torusMat: new THREE.MeshBasicMaterial({ color: 0xffc52d, transparent: true, opacity: 0.92 }),
+        ringMat: new THREE.MeshBasicMaterial({ color: 0xffcf38, transparent: true, opacity: 0.19, side: THREE.DoubleSide, depthWrite: false }),
+        markerTexture: texture, markerMaterial: new THREE.SpriteMaterial({ map: texture, transparent: true, depthTest: false, fog: false }),
+        markerRows: rows, markerCols: cols
+      };
+    }
     return markerAssets;
   }
   function disposeMarkerAssetsIfUnused() {
     if (!markerAssets || records.some((r) => r.markers && r.markers.length)) return;
     markerAssets.torus.dispose(); markerAssets.ring.dispose(); markerAssets.torusMat.dispose(); markerAssets.ringMat.dispose();
+    markerAssets.markerMaterial.dispose(); disposeTexture(markerAssets.markerTexture);
     markerAssets = null;
   }
   function disposeMarkers(r) {
     if (r.markers) for (const q of r.markers) if (q.g.parent) q.g.parent.remove(q.g);
-    if (r.markerMaterial) r.markerMaterial.dispose();
-    if (r.markerTexture) r.markerTexture.dispose();
-    r.markers = null; r.markerMaterial = null; r.markerTexture = null;
+    for (const geo of r.markerGeometries || []) geo.dispose();
+    r.markers = null; r.markerGeometries = null; r.markerMaterial = null; r.markerTexture = null;
     disposeMarkerAssetsIfUnused();
   }
   function addMarkers(r) {
     if (r.markers !== null || isStation(r) || bboxDist(r.v.bb, OPEN.hero.x, OPEN.hero.z) > 250) return;
     const entries = getEntries(r); if (!entries.length) { r.markers = []; return; }
-    const c = document.createElement('canvas'); c.width = 512; c.height = 128;
-    const x = c.getContext('2d'); x.fillStyle = 'rgba(25,18,8,.84)'; x.fillRect(4, 5, 504, 118);
-    x.strokeStyle = '#ffd65c'; x.lineWidth = 5; x.strokeRect(5, 6, 502, 116);
-    x.fillStyle = '#fff5d2'; x.font = `900 54px ${FONT}`; x.textAlign = 'center'; x.textBaseline = 'middle'; x.fillText(r.v.tc, 256, 65, 480);
-    const tex = new THREE.CanvasTexture(c); tex.anisotropy = 2; r.markerTexture = tex;
-    r.markerMaterial = new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false, fog: false });
     const shared = sharedMarkerAssets();
+    const index = D.venues.findIndex((v) => v.id === r.v.id), col = index % shared.markerCols, row = Math.floor(index / shared.markerCols);
+    r.markerTexture = shared.markerTexture; r.markerMaterial = shared.markerMaterial; r.markerGeometries = [];
     r.markers = entries.map((e) => {
       const g = new THREE.Group(), ring = new THREE.Mesh(shared.torus, shared.torusMat);
       ring.rotation.x = Math.PI / 2; ring.position.y = 0.16; g.add(ring);
       const glow = new THREE.Mesh(shared.ring, shared.ringMat);
       glow.rotation.x = -Math.PI / 2; glow.position.y = 0.08; g.add(glow);
-      const label = new THREE.Sprite(r.markerMaterial);
+      const label = new THREE.Sprite(shared.markerMaterial), geometry = label.geometry.clone(), uv = geometry.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, col / shared.markerCols + uv.getX(i) / shared.markerCols,
+        1 - (row + 1) / shared.markerRows + uv.getY(i) / shared.markerRows);
+      uv.needsUpdate = true; label.geometry = geometry; r.markerGeometries.push(geometry);
       label.scale.set(3.6, 0.9, 1); label.position.y = 2.7; label.renderOrder = 10; g.add(label);
       g.position.set(e.out.x, 0, e.out.z); owned(g, 0); scene.add(g); return { g, ring, entry: e };
     });
@@ -7285,46 +7323,203 @@ window.IND = (() => {
   $('indLiftX').onclick = () => { S.menu = false; S.busy = false; $('indLift').hidden = true; };
   const C3 = new THREE.Color();
   const color = (hex, k = 1) => { C3.set(hex); return [C3.r * k, C3.g * k, C3.b * k]; };
-  let M = null;
+  let M = null, sharedAssets = null;
+  function tileTexture(draw) {
+    const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
+    draw(cv.getContext('2d'), cv.width, cv.height);
+    const tex = tagTexture(new THREE.CanvasTexture(cv), 'shared-fitout', 'session'); tex.wrapS = THREE.RepeatWrapping; tex.wrapT = THREE.RepeatWrapping; tex.anisotropy = 2;
+    return tex;
+  }
+  function makeSharedAssets() {
+    if (sharedAssets) return sharedAssets;
+    const gridTile = (base, line, flecks = false) => tileTexture((ctx, w, h) => {
+      ctx.fillStyle = base; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = line; ctx.lineWidth = 3; ctx.strokeRect(1.5, 1.5, w - 3, h - 3);
+      if (flecks) for (let i = 0; i < 34; i++) {
+        const x = (i * 47 + 19) % w, y = (i * 83 + 31) % h;
+        ctx.fillStyle = i % 2 ? 'rgba(255,255,255,.22)' : 'rgba(55,58,60,.14)'; ctx.fillRect(x, y, i % 3 ? 2 : 3, 2);
+      }
+    });
+    const terrazzo = gridTile('#d9dad7', '#bfc2c0', true);
+    const beigeTile = gridTile('#d7c8ad', '#b9a98d');
+    const granite = gridTile('#9ba0a1', '#72797b', true);
+    const wood = tileTexture((ctx, w, h) => {
+      ctx.fillStyle = '#bb9667'; ctx.fillRect(0, 0, w, h);
+      for (let x = 0; x < w; x += 64) {
+        ctx.fillStyle = x % 128 ? '#c7a779' : '#b88f5e'; ctx.fillRect(x + 2, 2, 60, h - 4);
+        ctx.strokeStyle = 'rgba(93,61,34,.35)'; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(x + 1, 0); ctx.lineTo(x + 1, h); ctx.stroke();
+        ctx.strokeStyle = 'rgba(255,232,190,.25)'; ctx.lineWidth = 1;
+        for (let y = 20; y < h; y += 31) { ctx.beginPath(); ctx.moveTo(x + 8, y); ctx.bezierCurveTo(x + 25, y - 3, x + 40, y + 4, x + 56, y); ctx.stroke(); }
+      }
+      ctx.strokeStyle = 'rgba(83,55,32,.25)'; ctx.beginPath(); ctx.moveTo(0, h - 2); ctx.lineTo(w, h - 2); ctx.stroke();
+    });
+    const plaster = tileTexture((ctx, w, h) => {
+      ctx.fillStyle = '#eeeae1'; ctx.fillRect(0, 0, w, h); ctx.strokeStyle = 'rgba(178,170,156,.17)'; ctx.lineWidth = 1;
+      for (let y = 23; y < h; y += 32) { ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(w, y); ctx.stroke(); }
+      ctx.fillStyle = '#9b9285'; ctx.fillRect(0, h - 4, w, 4);
+    });
+    const enamel = tileTexture((ctx, w, h) => {
+      ctx.fillStyle = '#eee9dc'; ctx.fillRect(0, 0, w, h); ctx.fillStyle = '#e5dfd2'; ctx.fillRect(2, 2, w - 4, h - 4);
+      ctx.strokeStyle = '#c4bcae'; ctx.lineWidth = 2; ctx.strokeRect(3, 3, w - 6, h - 6);
+      ctx.strokeStyle = 'rgba(255,255,255,.8)'; ctx.beginPath(); ctx.moveTo(8, 6); ctx.lineTo(w - 8, 6); ctx.stroke();
+    });
+    const ceiling = gridTile('#f1f1ed', '#c9ccca');
+    const standard = (map, extra = {}) => new THREE.MeshStandardMaterial({ map, color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 0.76, fog: false, ...extra });
+    const solid = (hex, extra = {}) => new THREE.MeshStandardMaterial({ color: hex, vertexColors: true, side: THREE.DoubleSide, roughness: 0.72, fog: false, ...extra });
+    const materials = {
+      mallFloor: standard(terrazzo, { roughness: 0.32 }),
+      woodFloor: standard(wood, { roughness: 0.55 }),
+      beigeFloor: standard(beigeTile, { roughness: 0.7 }),
+      stationFloor: standard(granite, { roughness: 0.66 }),
+      plasterWall: standard(plaster),
+      stationWall: standard(enamel),
+      ceiling: standard(ceiling),
+      shopGlass: solid(0xaac8d2, { transparent: true, opacity: 0.3, depthWrite: false, roughness: 0.1, metalness: 0.15 }),
+      fascia: solid(0xd2bc91, { roughness: 0.6 }),
+      metal: solid(0x323941, { roughness: 0.36, metalness: 0.72 }),
+      brushedSteel: solid(0xc0c5c7, { roughness: 0.48, metalness: 0.16 }),
+      furniture: solid(0xffffff, { roughness: 0.78 }),
+      gate: solid(0x969da2, { roughness: 0.48, metalness: 0.42 }),
+      tactile: solid(0xe7bd36, { roughness: 0.68 }),
+      lightPanel: new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xfff8dc, emissiveIntensity: 1.25, roughness: 0.4, fog: false }),
+      lightGeo: new THREE.BoxGeometry(1.2, 0.045, 0.6)
+    };
+    sharedAssets = { textures: [terrazzo, wood, beigeTile, granite, plaster, enamel, ceiling], materials };
+    return sharedAssets;
+  }
   function init() {
-    M = { v: new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide, fog: false }),
+    const assets = makeSharedAssets();
+    M = { assets, hemi: new THREE.HemisphereLight(0xe4e9ee, 0x77746e, 0.9), sun: new THREE.DirectionalLight(0xfff0dc, 0.32),
       line2: new THREE.LineBasicMaterial({ color: 0x45bfff, transparent: true, opacity: 0.9 }),
       line3: new THREE.LineDashedMaterial({ color: 0xffa52c, dashSize: 1.2, gapSize: 0.8, transparent: true, opacity: 0.95 }) };
     OPEN.hero.root.traverse((o) => o.layers.enable(1));
     S.root = new THREE.Group(); S.root.visible = false;
-    S.root.add(new THREE.HemisphereLight(0xddeaff, 0x686775, 0.9));
-    const sun = new THREE.DirectionalLight(0xffe6c4, 0.32); sun.position.set(8, 12, 5); S.root.add(sun, sun.target);
+    M.sun.position.set(8, 12, 5);
+    S.root.add(M.hemi, M.sun, M.sun.target);
     owned(S.root, 1);
     scene.add(S.root);
   }
   function vbNew() {
-    const P = [], N = [], C = [], a = new THREE.Vector3(), b = new THREE.Vector3();
-    const tri = (A, B, Cc, ca, cb, cc) => {
+    const P = [], N = [], C = [], U = [], a = new THREE.Vector3(), b = new THREE.Vector3();
+    const tri = (A, B, Cc, ca, cb, cc, ua = [A[0], A[2]], ub = [B[0], B[2]], uc = [Cc[0], Cc[2]]) => {
       a.set(B[0] - A[0], B[1] - A[1], B[2] - A[2]); b.set(Cc[0] - A[0], Cc[1] - A[1], Cc[2] - A[2]); a.cross(b).normalize();
-      for (const [p, c] of [[A, ca], [B, cb], [Cc, cc]]) { P.push(...p); N.push(a.x, a.y, a.z); C.push(...c); }
+      for (const [p, c, uv] of [[A, ca, ua], [B, cb, ub], [Cc, cc, uc]]) { P.push(...p); N.push(a.x, a.y, a.z); C.push(...c); U.push(...uv); }
     };
-    return { tri, quad: (a, b, c, d, ca, cb = ca, cc = cb, cd = ca) => { tri(a, b, c, ca, cb, cc); tri(a, c, d, ca, cc, cd); },
-      flat(rings, y, c, up = true) {
+    return { tri, quad: (a, b, c, d, ca, cb = ca, cc = cb, cd = ca, uv = null) => {
+      const q = uv || [[a[0], a[2]], [b[0], b[2]], [c[0], c[2]], [d[0], d[2]]];
+      tri(a, b, c, ca, cb, cc, q[0], q[1], q[2]); tri(a, c, d, ca, cc, cd, q[0], q[2], q[3]);
+    },
+      flat(rings, y, c, up = true, scale = 0.6) {
         const rr = ringsOf(rings); if (!rr.length) return;
         const outer = point(rr[0]).map(([x, z]) => new THREE.Vector2(x, z)), holes = rr.slice(1).map((r) => point(r).map(([x, z]) => new THREE.Vector2(x, z)));
         const all = outer.concat(...holes);
         for (const [i, j, k] of THREE.ShapeUtils.triangulateShape(outer, holes)) {
           const A = all[i], B = all[j], Cc = all[k], cr = (B.x - A.x) * (Cc.y - A.y) - (B.y - A.y) * (Cc.x - A.x);
           const p = [[A.x, y, A.y], [B.x, y, B.y], [Cc.x, y, Cc.y]];
-          if ((cr < 0) === up) tri(p[0], p[1], p[2], c, c, c); else tri(p[0], p[2], p[1], c, c, c);
+          const uv = [[A.x / scale, A.y / scale], [B.x / scale, B.y / scale], [Cc.x / scale, Cc.y / scale]];
+          if ((cr < 0) === up) tri(p[0], p[1], p[2], c, c, c, uv[0], uv[1], uv[2]); else tri(p[0], p[2], p[1], c, c, c, uv[0], uv[2], uv[1]);
         }
       },
-      geo() { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); return g; },
+      geo() { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(N, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(C, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(U, 2)); return g; },
       get triangles() { return P.length / 9; } };
   }
-  const NO_WALL = new Set(['walkway', 'lobby', 'parking', 'road', 'platform', 'opentobelow', 'unspecified', 'vegetation']);
+  const NO_WALL = new Set(['walkway', 'lobby', 'unenclosedarea', 'parking', 'road', 'platform', 'opentobelow', 'unspecified', 'vegetation']);
   const NO_WALK = new Set(['opentobelow', 'elevator', 'vegetation']);
+  const SHOP_CATEGORIES = new Set(['room', 'foodservice', 'classroom', 'office']);
+  const PUBLIC_CATEGORIES = new Set(['walkway', 'lobby', 'unenclosedarea']);
+  const GENERIC_SHOP_NAMES = new Set(['商店', '餐廳', 'shop', 'kitchen', '熟食檔', '電影院', '店舖']);
+  const NONSHOP_NAMES = new Set(['中空', '走廊', '行車通道', '有蓋走廊', '有蓋行人通道', '大堂', '停車位( 一般)', '升降機',
+    '升降機大堂', '樓梯', '扶手電梯', '防煙間', '垃圾房', '洗手間(男性)', '洗手間(女性)', '洗手間(女性及男性)',
+    '洗手間(殘疾人士)', '上落客貨處', '上落客貨平台', '院子', '花園', '鐵路路軌', '月台', '平台', 'Platform']);
+  const NONSHOP_NAME_RE = /月台|平台|platform|路軌|track|走廊|中空|升降機|lift|樓梯|扶手電梯|洗手間|防煙間|垃圾房|貯存室|保安|控制室|非開放區域|限制區域|診所|健康院|藥房|客務中心|辦公室|工場|停車|大堂/i;
   const UNIT_COLOR = { walkway: '#989ca3', lobby: '#b3a78f', room: '#887e72', platform: '#438865', elevator: '#858a95',
     escalator: '#a58e63', stairs: '#a9956c', opentobelow: '#272b34', vegetation: '#47634a', parking: '#555860',
     road: '#44474d', foodservice: '#c78957', 'restroom.female': '#b57496', 'restroom.male': '#6289b0',
     'restroom.unisex': '#8a78ae', 'restroom.wheelchair': '#538fa0' };
   const unitRings = (u) => ringsOf(u[4]);
+  const unitName = (u) => String(u[2] || '').trim();
+  function isShopLike(cat, name) {
+    const nonshop = NONSHOP_NAMES.has(name) || NONSHOP_NAME_RE.test(name);
+    return !nonshop && (SHOP_CATEGORIES.has(cat) || (cat === 'unspecified' && !!name));
+  }
+  function signableName(name) { const text = String(name || '').trim(); return !!text && !/^[\d０-９]+$/.test(text) && !GENERIC_SHOP_NAMES.has(text.toLowerCase()); }
+  function floorMaterialClass(cat, station, name) {
+    if (station || cat === 'platform') return 'stationFloor';
+    if (cat === 'room' || cat === 'office') return 'woodFloor';
+    if (cat === 'foodservice' || cat === 'classroom' || (cat === 'unspecified' && isShopLike(cat, name))) return 'beigeFloor';
+    return 'mallFloor';
+  }
   const centroid = (rings) => { const p = point(ringsOf(rings)[0] || []); if (!p.length) return { x: 0, z: 0 }; return { x: p.reduce((s, q) => s + q[0], 0) / p.length, z: p.reduce((s, q) => s + q[1], 0) / p.length }; };
+  function orientedBounds(rings) {
+    const p = point(ringsOf(rings)[0] || []); if (p.length < 3) return null;
+    let edge = null, best = 0;
+    for (let i = 0; i < p.length; i++) {
+      const A = p[i], B = p[(i + 1) % p.length], dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz);
+      if (len > best) { best = len; edge = { ux: dx / len, uz: dz / len }; }
+    }
+    if (!edge) return null;
+    const ux = edge.ux, uz = edge.uz, nx = -uz, nz = ux;
+    let minS = Infinity, maxS = -Infinity, minT = Infinity, maxT = -Infinity;
+    for (const q of p) { const s = q[0] * ux + q[1] * uz, t = q[0] * nx + q[1] * nz; minS = Math.min(minS, s); maxS = Math.max(maxS, s); minT = Math.min(minT, t); maxT = Math.max(maxT, t); }
+    return { ux, uz, nx, nz, minS, maxS, minT, maxT, length: maxS - minS, width: maxT - minT };
+  }
+  function localPoint(box, s, t) { return { x: box.ux * s + box.nx * t, z: box.uz * s + box.nz * t }; }
+  function polygonArea(rings) {
+    const rr = ringsOf(rings); let area = 0;
+    for (let ri = 0; ri < rr.length; ri++) {
+      const p = point(rr[ri]); let a = 0;
+      for (let i = 0; i < p.length; i++) a += p[i][0] * p[(i + 1) % p.length][1] - p[(i + 1) % p.length][0] * p[i][1];
+      area += (ri ? -1 : 1) * Math.abs(a) * 0.5;
+    }
+    return Math.max(0, area);
+  }
+  function facingEdge(unit, grid) {
+    let best = null;
+    for (const ring of unit.rings) {
+      const p = point(ring);
+      for (let i = 0; i < p.length; i++) {
+        const A = p[i], B = p[(i + 1) % p.length], len = Math.hypot(B[0] - A[0], B[1] - A[1]);
+        if (len < 0.45) continue;
+        const mid = [(A[0] + B[0]) * 0.5, (A[1] + B[1]) * 0.5], dx = B[0] - A[0], dz = B[1] - A[1];
+        let nx = -dz / len, nz = dx / len;
+        if (insideShape(unit.rings, mid[0] + nx * 0.12, mid[1] + nz * 0.12)) { nx = -nx; nz = -nz; }
+        let score = 0;
+        for (let s = 0.25; s < len - 0.2; s += 0.55) {
+          const t = s / len, x = A[0] + dx * t, z = A[1] + dz * t;
+          for (const off of [0.32, 0.62, 0.95]) {
+            const ix = grid ? grid.idxAt(x + nx * off, z + nz * off) : -1;
+            if (ix >= 0 && grid.walkable[ix]) score += 1 / off;
+          }
+        }
+        if (!best || score > best.score) best = { A, B, nx, nz, score, length: len };
+      }
+    }
+    return best && best.score > 0 ? best : null;
+  }
+  function doorFacingEdge(unit, grid, doors) {
+    let best = null;
+    for (const door of doors || []) for (const [A, B] of linesOf(door[2])) {
+      const dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz);
+      if (len < 0.38 || len > 3.2) continue;
+      const mid = [(A[0] + B[0]) * 0.5, (A[1] + B[1]) * 0.5];
+      let boundary = Infinity;
+      for (const ring of unit.rings) {
+        const p = point(ring);
+        for (let i = 0; i < p.length; i++) boundary = Math.min(boundary, distToSeg(mid[0], mid[1], p[i], p[(i + 1) % p.length]));
+      }
+      if (boundary > 0.8 && !insideShape(unit.rings, mid[0], mid[1])) continue;
+      let nx = -dz / len, nz = dx / len;
+      if (insideShape(unit.rings, mid[0] + nx * 0.12, mid[1] + nz * 0.12)) { nx = -nx; nz = -nz; }
+      let score = 0;
+      for (let t = 0.18; t < 0.9; t += 0.24) for (const off of [0.3, 0.55, 0.85]) {
+        const x = A[0] + dx * t + nx * off, z = A[1] + dz * t + nz * off, ix = grid ? grid.idxAt(x, z) : -1;
+        if (ix >= 0 && grid.walkable[ix]) score += 1 / off;
+      }
+      if (score > 0 && (!best || score > best.score || (score === best.score && boundary < best.boundary))) {
+        best = { A, B, nx, nz, score, length: len, boundary, source: 'door' };
+      }
+    }
+    return best;
+  }
   function linesOf(flat) { const p = point(flat), out = []; for (let i = 1; i < p.length; i++) out.push([p[i - 1], p[i]]); return out; }
   const distToSeg = (x, z, a, b) => edgeDist(x, z, a, b).d;
   function makeDoorIndex(doors) {
@@ -7364,14 +7559,94 @@ window.IND = (() => {
     }
     return false;
   }
-  function wallBuild(vb, ring, H, c, doorIndex, walls) {
+  function unitBounds(rings) {
+    const p = point(ringsOf(rings)[0] || []), b = [Infinity, Infinity, -Infinity, -Infinity];
+    for (const q of p) { b[0] = Math.min(b[0], q[0]); b[1] = Math.min(b[1], q[1]); b[2] = Math.max(b[2], q[0]); b[3] = Math.max(b[3], q[1]); }
+    return b;
+  }
+  function publicUnitShapes(g, data) {
+    const out = { cell: 4, length: 0, buckets: new Map(), large: [] };
+    for (const u of g.units) {
+      if (!PUBLIC_CATEGORIES.has(data.cats[u[1]] || '')) continue;
+      const rings = unitRings(u), bounds = unitBounds(rings); if (!Number.isFinite(bounds[0])) continue;
+      const shape = { rings, bounds }, x0 = Math.floor(bounds[0] / out.cell), x1 = Math.floor(bounds[2] / out.cell), z0 = Math.floor(bounds[1] / out.cell), z1 = Math.floor(bounds[3] / out.cell);
+      out.length++;
+      if ((x1 - x0 + 1) * (z1 - z0 + 1) > 2000) { out.large.push(shape); continue; }
+      for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
+        const key = `${x},${z}`; let bucket = out.buckets.get(key); if (!bucket) out.buckets.set(key, bucket = []); bucket.push(shape);
+      }
+    }
+    return out;
+  }
+  function publicAt(units, x, z) {
+    if (!units || !units.length) return false;
+    const bucket = units.buckets.get(`${Math.floor(x / units.cell)},${Math.floor(z / units.cell)}`) || [];
+    for (const u of bucket) {
+      const b = u.bounds; if (x < b[0] || x > b[2] || z < b[1] || z > b[3]) continue;
+      if (insideShape(u.rings, x, z)) return true;
+    }
+    for (const u of units.large) {
+      const b = u.bounds; if (x < b[0] || x > b[2] || z < b[1] || z > b[3]) continue;
+      if (insideShape(u.rings, x, z)) return true;
+    }
+    return false;
+  }
+  function publicSide(ring, A, B, publicUnits) {
+    if (!publicUnits || !publicUnits.length) return null;
+    const dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz) || 1, mx = (A[0] + B[0]) * 0.5, mz = (A[1] + B[1]) * 0.5;
+    let nx = -dz / len, nz = dx / len;
+    if (insideShape(ring, mx + nx * 0.12, mz + nz * 0.12)) { nx = -nx; nz = -nz; }
+    if ([0.25, 0.55, 0.95].some((d) => publicAt(publicUnits, mx + nx * d, mz + nz * d))) return { nx, nz };
+    return null;
+  }
+  function addBox(builder, center, size, axis, tint) {
+    const ux = axis ? axis[0] : 1, uz = axis ? axis[1] : 0, nx = -uz, nz = ux;
+    const [sx, sy, sz] = size, [cx, cy, cz] = center, v = (x, y, z) => [cx + ux * x + nx * z, cy + y, cz + uz * x + nz * z];
+    const x0 = -sx * 0.5, x1 = sx * 0.5, y0 = -sy * 0.5, y1 = sy * 0.5, z0 = -sz * 0.5, z1 = sz * 0.5, c = tint;
+    const faces = [
+      [v(x0, y0, z1), v(x1, y0, z1), v(x1, y1, z1), v(x0, y1, z1)],
+      [v(x1, y0, z0), v(x0, y0, z0), v(x0, y1, z0), v(x1, y1, z0)],
+      [v(x0, y1, z1), v(x1, y1, z1), v(x1, y1, z0), v(x0, y1, z0)],
+      [v(x0, y0, z0), v(x1, y0, z0), v(x1, y0, z1), v(x0, y0, z1)],
+      [v(x0, y0, z0), v(x0, y0, z1), v(x0, y1, z1), v(x0, y1, z0)],
+      [v(x1, y0, z1), v(x1, y0, z0), v(x1, y1, z0), v(x1, y1, z1)]
+    ];
+    for (const q of faces) builder.quad(q[0], q[1], q[2], q[3], c);
+  }
+  function addWallBand(builder, A, B, y0, y1, tint, alongScale = 1.2, heightScale = 6) {
+    const len = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / len, uz = (B[1] - A[1]) / len;
+    const s0 = (A[0] * ux + A[1] * uz) / alongScale, s1 = (B[0] * ux + B[1] * uz) / alongScale;
+    const uv = [[s0, y0 / heightScale], [s1, y0 / heightScale], [s1, y1 / heightScale], [s0, y1 / heightScale]];
+    builder.quad([A[0], y0, A[1]], [B[0], y0, B[1]], [B[0], y1, B[1]], [A[0], y1, A[1]], tint, tint, tint, tint, uv);
+  }
+  function wallBuild(getBuilder, ring, H, c, doorIndex, walls, options = {}) {
     const p = point(ring);
+    const addRun = (A, B, front) => {
+      const L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < 0.02) return;
+      walls.push([A[0], A[1], B[0], B[1]]);
+      if (!getBuilder) return;
+      if (!front) {
+        const key = options.wallClass || 'plasterWall';
+        addWallBand(getBuilder(key), A, B, 0, H, options.wallTint || c, key === 'stationWall' ? 1.5 : 1.2, key === 'stationWall' ? 2 : 6);
+        return;
+      }
+      const baseTop = Math.min(0.1, H), glassTop = Math.min(2.6, H), fasciaTint = options.fasciaTint || color('#6f777a');
+      addWallBand(getBuilder('fascia'), A, B, 0, baseTop, color('#a6a296'), 1, 1);
+      if (glassTop > baseTop + 0.05) addWallBand(getBuilder('shopGlass'), A, B, baseTop, glassTop, color('#ffffff'), 1.5, 2.5);
+      if (H > 2.6) addWallBand(getBuilder('fascia'), A, B, 2.6, H, fasciaTint, 1.5, 1);
+      const ux = (B[0] - A[0]) / L, uz = (B[1] - A[1]) / L, nx = front.nx, nz = front.nz;
+      for (let d = 0; d < L; d += 1.5) {
+        const t = d / L, x = A[0] + (B[0] - A[0]) * t + nx * 0.035, z = A[1] + (B[1] - A[1]) * t + nz * 0.035;
+        addBox(getBuilder('metal'), [x, (baseTop + glassTop) * 0.5, z], [0.045, Math.max(0.02, glassTop - baseTop), 0.055], [ux, uz], color('#424b50'));
+      }
+      if (options.frontRuns) options.frontRuns.push({ unitIndex: options.unitIndex, category: options.category, name: options.name,
+        A, B, nx, nz, length: L, ux, uz });
+    };
     for (let i = 0; i < p.length; i++) {
       const A = p[i], B = p[(i + 1) % p.length], L = Math.hypot(B[0] - A[0], B[1] - A[1]); if (L < 0.02) continue;
-      const dim = c.map((v) => v * 0.78), doors = doorCandidates(doorIndex, A, B);
+      const doors = doorCandidates(doorIndex, A, B), side = options.shopLike ? publicSide(ring, A, B, options.publicUnits) : null;
       if (!doors.length) {
-        if (vb) vb.quad([A[0], 0, A[1]], [B[0], 0, B[1]], [B[0], H, B[1]], [A[0], H, A[1]], dim, dim, c, c);
-        walls.push([A[0], A[1], B[0], B[1]]);
+        addRun(A, B, side);
         continue;
       }
       const n = Math.max(1, Math.ceil(L / 0.25));
@@ -7380,8 +7655,7 @@ window.IND = (() => {
         if (runStart < 0) return;
         const x0 = A[0] + (B[0] - A[0]) * runStart, z0 = A[1] + (B[1] - A[1]) * runStart;
         const x1 = A[0] + (B[0] - A[0]) * runEnd, z1 = A[1] + (B[1] - A[1]) * runEnd;
-        if (vb) vb.quad([x0, 0, z0], [x1, 0, z1], [x1, H, z1], [x0, H, z0], dim, dim, c, c);
-        walls.push([x0, z0, x1, z1]); runStart = -1;
+        addRun([x0, z0], [x1, z1], side); runStart = -1;
       };
       for (let j = 0; j < n; j++) {
         const t0 = j / n, t1 = (j + 1) / n, mx = A[0] + (B[0] - A[0]) * (t0 + t1) / 2, mz = A[1] + (B[1] - A[1]) * (t0 + t1) / 2;
@@ -7422,7 +7696,7 @@ window.IND = (() => {
     const x0 = Math.floor(minx / CS) * CS - CS, x1 = Math.ceil(maxx / CS) * CS + CS;
     const z0 = Math.floor(minz / CS) * CS - CS, z1 = Math.ceil(maxz / CS) * CS + CS;
     const nx = Math.ceil((x1 - x0) / CS), nz = Math.ceil((z1 - z0) / CS), n = nx * nz;
-    const walkable = new Uint8Array(n), paid = new Uint8Array(n);
+    const walkable = new Uint8Array(n), paid = new Uint8Array(n), routed = new Uint8Array(n);
     const idxAt = (x, z) => { const i = Math.floor((x - x0) / CS), j = Math.floor((z - z0) / CS); return i < 0 || j < 0 || i >= nx || j >= nz ? -1 : j * nx + i; };
     for (const shape of shapes) fillShape({ nx, nz, walkable }, shape, x0, z0);
     for (const u of g.units) {
@@ -7455,19 +7729,22 @@ window.IND = (() => {
           const minz = Math.max(0, Math.floor((Math.min(A[1], B[1]) - 2.5 - z0) / CS)), maxz = Math.min(nz - 1, Math.ceil((Math.max(A[1], B[1]) + 2.5 - z0) / CS));
           for (let j = minz; j <= maxz; j++) for (let i = minx; i <= maxx; i++) {
             const k0 = j * nx + i, d = distToSeg(x0 + (i + 0.5) * CS, z0 + (j + 0.5) * CS, A, B);
-            if (d <= 2.5 && d < best[k0]) { best[k0] = d; paid[k0] = loc === 3 ? 1 : 0; }
+            if (d <= 2.5) {
+              routed[k0] = 1;
+              if (d < best[k0]) { best[k0] = d; paid[k0] = loc === 3 ? 1 : 0; }
+            }
           }
         }
       }
     }
-    return { x0, z0, nx, nz, walkable, paid, idxAt };
+    return { x0, z0, nx, nz, walkable, paid, routed, idxAt };
   }
   function groupWalkable(r, g) {
     if (typeof g.walkable === 'boolean') return g.walkable;
     const doorIndex = makeDoorIndex(g.doors.map((d) => linesOf(d[2]))), walls = [];
     for (const u of g.units) {
-      const cat = r.data.cats[u[1]] || '';
-      if (!NO_WALL.has(cat)) for (const ring of unitRings(u)) wallBuild(null, ring, Math.min(g.H, 3), color(UNIT_COLOR[cat] || '#9a9286'), doorIndex, walls);
+      const cat = r.data.cats[u[1]] || '', name = unitName(u);
+      if (!NO_WALL.has(cat) || isShopLike(cat, name)) for (const ring of unitRings(u)) wallBuild(null, ring, Math.min(g.H, 3), color(UNIT_COLOR[cat] || '#9a9286'), doorIndex, walls);
     }
     for (const rings of g.polys) for (const ring of rings) wallBuild(null, ring, g.H, color('#aaa79f'), doorIndex, walls);
     const grid = makeGrid(r, g, walls); g.walkable = !!(grid && grid.walkable.some((v) => v));
@@ -7488,36 +7765,335 @@ window.IND = (() => {
   }
   function unitKind(u) { return S.data.cats[u[1]] || ''; }
   function unitNodes(g, kind) { return g.units.filter((u) => unitKind(u) === kind).map((u) => ({ u, pos: centroid(unitRings(u)), cat: unitKind(u) })); }
-  function categoryLabel(cat) { return cat === 'elevator' ? '升降機' : cat === 'escalator' ? '扶手電梯' : cat === 'stairs' ? '樓梯' : cat.startsWith('restroom.') ? '洗手間' : ''; }
-  function addLabels(root, g, data) {
-    const items = [];
-    for (const p of g.pois.slice(0, 80)) if (p[2]) items.push({ x: p[3], z: p[4], text: p[2] });
-    for (const u of g.units) { const text = categoryLabel(unitKind(u)); if (text) { const c = centroid(unitRings(u)); items.push({ x: c.x, z: c.z, text }); } }
-    const list = items.slice(0, 180); if (!list.length) return null;
-    const cw = 256, ch = 64, cols = 4, rows = Math.ceil(list.length / cols), cv = document.createElement('canvas'); cv.width = cw * cols; cv.height = ch * rows;
+  function categoryLabel(cat) {
+    if (cat === 'elevator') return '升降機';
+    if (cat === 'escalator') return '扶手電梯';
+    if (cat === 'stairs') return '樓梯';
+    if (cat.startsWith('restroom.')) return `洗手間 ${cat === 'restroom.male' ? '男' : cat === 'restroom.female' ? '女' : cat === 'restroom.wheelchair' ? '♿' : '男女'}`;
+    return '';
+  }
+  const SIGN_COLOR = { room: '#344b52', foodservice: '#70432c', classroom: '#334b6a', office: '#3e5748', unspecified: '#41444e' };
+  function signFrame(frame, builder, texIndex, cols, rows, width, y0, y1) {
+    if (!frame || !builder || y1 <= y0 + 0.08) return null;
+    let { A, B, nx, nz } = frame, dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz) || 1, ux = dx / len, uz = dz / len;
+    if ((-uz) * nx + ux * nz < 0) { [A, B] = [B, A]; dx = -dx; dz = -dz; ux = -ux; uz = -uz; }
+    width = Math.min(width, len * 0.84);
+    if (width < 0.48) return null;
+    const cx = (A[0] + B[0]) * 0.5 + nx * 0.05, cz = (A[1] + B[1]) * 0.5 + nz * 0.05, hx = width * 0.5;
+    const a = [cx - ux * hx, y0, cz - uz * hx], b = [cx + ux * hx, y0, cz + uz * hx];
+    const c = [cx + ux * hx, y1, cz + uz * hx], d = [cx - ux * hx, y1, cz - uz * hx];
+    const col = texIndex % cols, row = Math.floor(texIndex / cols), u0 = col / cols, u1 = (col + 1) / cols, v0 = 1 - (row + 1) / rows, v1 = 1 - row / rows;
+    builder.quad(a, b, c, d, color('#ffffff'), color('#ffffff'), color('#ffffff'), color('#ffffff'), [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+    return { x: cx, y: (y0 + y1) * 0.5, z: cz, nx, nz, width, y0, y1, frameA: A, frameB: B, source: frame.source || 'frontage' };
+  }
+  function addLabels(root, g, data, frontRuns, unitPoints, grid) {
+    const signRuns = new Map();
+    for (const q of frontRuns) if (signableName(q.name) && q.length >= 0.86 && g.H >= 2.82) {
+      const old = signRuns.get(q.unitIndex); if (!old || q.length > old.length) signRuns.set(q.unitIndex, q);
+    }
+    const signedUnits = new Set(signRuns.keys()), signedNames = new Set([...signRuns.values()].map((q) => q.name.trim().toLowerCase()));
+    const atlas = [], sprites = [], doorSigns = [], fasciaSigns = [];
+    for (const [unitIndex, run] of signRuns) atlas.push({ kind: 'fascia', text: run.name, unitIndex, run });
+    for (const p of g.pois.slice(0, 80)) if (p[2] && !signedNames.has(p[2].trim().toLowerCase()) && ![...signedUnits].some((i) => insideShape(unitPoints[i].rings, p[3], p[4]))) {
+      const it = { kind: 'label', text: p[2], x: p[3], z: p[4] }; atlas.push(it); sprites.push(it);
+    }
+    for (let i = 0; i < unitPoints.length; i++) {
+      const u = unitPoints[i], text = categoryLabel(u.cat);
+      if (text) { const it = { kind: 'label', text, x: u.pos.x, z: u.pos.z }; atlas.push(it); sprites.push(it); }
+      if (u.cat === 'elevator' || u.cat.startsWith('restroom.')) {
+        const frame = u.cat.startsWith('restroom.') ? doorFacingEdge(u, grid, g.doors) || facingEdge(u, grid) : facingEdge(u, grid);
+        const signText = u.cat === 'elevator' ? '升降機 / Lift' : `洗手間\n${u.cat === 'restroom.male' ? '男' : u.cat === 'restroom.female' ? '女' : u.cat === 'restroom.wheelchair' ? '♿' : '男女'}`;
+        const diagnostic = { kind: 'doorSign', category: u.cat, text: signText, unitIndex: i,
+          source: frame && frame.source || (frame ? 'unit-edge' : null), frame: frame && { A: frame.A, B: frame.B, nx: frame.nx, nz: frame.nz, score: frame.score, boundary: frame.boundary || 0 } };
+        doorSigns.push(diagnostic);
+        if (frame) {
+          const it = { kind: 'doorSign', text: signText, frame, x: u.pos.x, z: u.pos.z, diagnostic }; atlas.push(it);
+        }
+      }
+    }
+    root.userData.signDebug = { signedUnits: [...signedUnits], fasciaNames: [...signedNames], doorSigns, poiSprites: sprites.map((q) => q.text) };
+    if (!atlas.length) return null;
+    const cols = 8, cw = 192, ch = 48, rows = Math.max(1, Math.ceil(atlas.length / cols));
+    const cv = document.createElement('canvas'); cv.width = cw * cols; cv.height = ch * rows;
     const ctx = cv.getContext('2d');
-    list.forEach((it, i) => {
+    atlas.forEach((it, i) => {
       const x = i % cols * cw, y = Math.floor(i / cols) * ch;
-      ctx.fillStyle = 'rgba(12,18,30,.82)'; ctx.fillRect(x + 4, y + 4, cw - 8, ch - 8); ctx.strokeStyle = '#d5c799'; ctx.lineWidth = 2; ctx.strokeRect(x + 5, y + 5, cw - 10, ch - 10);
-      ctx.fillStyle = '#fff4d1'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 23px ${FONT}`; ctx.fillText(it.text, x + cw / 2, y + ch / 2, cw - 18);
+      ctx.fillStyle = it.kind === 'fascia' ? (SIGN_COLOR[unitPoints[it.unitIndex].cat] || '#343b43') : it.kind === 'doorSign' ? '#343b43' : 'rgba(12,18,30,.82)';
+      ctx.fillRect(x + 3, y + 3, cw - 6, ch - 6); ctx.strokeStyle = it.kind === 'fascia' ? '#d5c799' : '#b8c1c8'; ctx.lineWidth = 1.5; ctx.strokeRect(x + 4, y + 4, cw - 8, ch - 8);
+      ctx.fillStyle = '#fff4d1'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.font = `800 ${it.text.length > 12 ? 14 : 17}px ${FONT}`;
+      const lines = it.text.split('\n'), lineH = 18, top = y + ch / 2 - (lines.length - 1) * lineH / 2;
+      lines.forEach((line, j) => ctx.fillText(line, x + cw / 2, top + j * lineH, cw - 16));
     });
-    const tex = new THREE.CanvasTexture(cv); tex.anisotropy = 2;
-    const mat = new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false, depthTest: false, fog: false });
+    const tex = tagTexture(new THREE.CanvasTexture(cv), 'floor-sign-atlas', 'floor'); tex.anisotropy = 2;
+    root.userData.ownedTextures = (root.userData.ownedTextures || []).concat(tex);
+    const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: false, depthWrite: false, depthTest: false, fog: false });
     const listGroup = new THREE.Group(); listGroup.userData.labels = [];
     const ownedGeometries = root.userData.ownedGeometries || (root.userData.ownedGeometries = []);
-    root.userData.ownedMaterials = (root.userData.ownedMaterials || []).concat(mat);
-    root.userData.ownedTextures = (root.userData.ownedTextures || []).concat(tex);
-    list.forEach((it, i) => {
-      const col = i % cols, row = Math.floor(i / cols);
-      const sprite = new THREE.Sprite(mat); sprite.scale.set(it.text.length > 10 ? 2.8 : 2.2, 0.55, 1);
+    root.userData.ownedMaterials = (root.userData.ownedMaterials || []).concat(spriteMat);
+    sprites.slice(0, 180).forEach((it) => {
+      const i = atlas.indexOf(it), col = i % cols, row = Math.floor(i / cols), sprite = new THREE.Sprite(spriteMat);
+      sprite.scale.set(it.text.length > 10 ? 2.8 : 2.2, 0.55, 1);
       const geo = sprite.geometry.clone(), uv = geo.attributes.uv;
       for (let j = 0; j < uv.count; j++) uv.setXY(j, col / cols + uv.getX(j) / cols, 1 - (row + 1) / rows + uv.getY(j) / rows);
-      uv.needsUpdate = true; sprite.geometry = geo;
-      sprite.position.set(it.x, 2.6, it.z); sprite.renderOrder = 5; listGroup.add(sprite); listGroup.userData.labels.push(sprite);
-      ownedGeometries.push(geo);
+      uv.needsUpdate = true; sprite.geometry = geo; sprite.position.set(it.x, 2.6, it.z); sprite.renderOrder = 5;
+      listGroup.add(sprite); listGroup.userData.labels.push(sprite); ownedGeometries.push(geo);
     });
-    owned(listGroup, 1); root.add(listGroup);
-    return listGroup;
+    if (listGroup.userData.labels.length) { owned(listGroup, 1); root.add(listGroup); }
+    const signBuilder = vbNew();
+    atlas.forEach((it, i) => {
+      if (it.kind === 'fascia') {
+        const frame = signFrame({ ...it.run }, signBuilder, i, cols, rows, it.text.length > 10 ? 2.8 : 2.2, 2.62, Math.min(3.22, g.H - 0.06));
+        if (frame) fasciaSigns.push({ text: it.text, unitIndex: it.unitIndex, ...frame });
+      } else if (it.kind === 'doorSign') {
+        const frame = signFrame(it.frame, signBuilder, i, cols, rows, 0.95, 2.02, 2.38);
+        if (frame) { it.diagnostic.placed = frame; it.diagnostic.textIndex = i; }
+      }
+    });
+    root.userData.signDebug.fasciaSigns = fasciaSigns;
+    if (signBuilder.triangles) {
+      const signMat = new THREE.MeshBasicMaterial({ map: tex, side: THREE.DoubleSide, fog: false, toneMapped: false });
+      root.userData.ownedMaterials.push(signMat);
+      const mesh = new THREE.Mesh(signBuilder.geo(), signMat); mesh.renderOrder = 6; root.add(mesh);
+    }
+    return listGroup.userData.labels.length ? listGroup : null;
+  }
+  function addCeilingLights(root, g, grid, publicUnits) {
+    if (!grid) return 0;
+    const points = [], x1 = grid.x0 + grid.nx * CS, z1 = grid.z0 + grid.nz * CS;
+    for (let x = Math.ceil(grid.x0 / 6) * 6; x < x1 && points.length < 300; x += 6) {
+      for (let z = Math.ceil(grid.z0 / 6) * 6; z < z1 && points.length < 300; z += 6) {
+        const i = grid.idxAt(x, z);
+        if (i >= 0 && grid.walkable[i] && publicAt(publicUnits, x, z)) points.push([x, g.H - 0.075, z]);
+      }
+    }
+    if (!points.length) return 0;
+    const mesh = new THREE.InstancedMesh(M.assets.materials.lightGeo, M.assets.materials.lightPanel, points.length), object = new THREE.Object3D();
+    points.forEach(([x, y, z], i) => { object.position.set(x, y, z); object.updateMatrix(); mesh.setMatrixAt(i, object.matrix); });
+    mesh.instanceMatrix.needsUpdate = true; mesh.frustumCulled = false; root.add(mesh);
+    root.userData.ownedInstances = (root.userData.ownedInstances || []).concat(mesh);
+    return points.length;
+  }
+  function shapeDistance(x, z, rings) {
+    if (insideShape(rings, x, z)) return 0;
+    let best = Infinity;
+    for (const ring of ringsOf(rings)) {
+      const p = point(ring);
+      for (let i = 0; i < p.length; i++) best = Math.min(best, distToSeg(x, z, p[i], p[(i + 1) % p.length]));
+    }
+    return best;
+  }
+  function addPlatformStrips(getBuilder, g, data) {
+    const platforms = g.units.filter((u) => (data.cats[u[1]] || '') === 'platform' || /月台|platform/i.test(unitName(u)));
+    const tracks = g.units.filter((u) => /鐵路路軌|路軌|track/i.test(unitName(u) + ' ' + (data.cats[u[1]] || '')));
+    if (!platforms.length || !tracks.length) return 0;
+    const vb = getBuilder('tactile'), yellow = color('#f0c73b'); let strips = 0;
+    for (const u of platforms) for (const ring of unitRings(u)) {
+      const p = point(ring);
+      for (let i = 0; i < p.length; i++) {
+        const A = p[i], B = p[(i + 1) % p.length], dx = B[0] - A[0], dz = B[1] - A[1], len = Math.hypot(dx, dz);
+        if (len < 1.5) continue;
+        let nx = -dz / len, nz = dx / len;
+        if (!insideShape(unitRings(u), (A[0] + B[0]) * 0.5 + nx * 0.12, (A[1] + B[1]) * 0.5 + nz * 0.12)) { nx = -nx; nz = -nz; }
+        let near = 0, total = 0;
+        for (let s = 0.25; s < len - 0.15; s += 0.5) {
+          const t = s / len, x = A[0] + dx * t, z = A[1] + dz * t;
+          let d = Infinity; for (const track of tracks) d = Math.min(d, shapeDistance(x, z, unitRings(track)));
+          total++; if (d <= 1.25) near++;
+        }
+        if (!total || near / total < 0.7) continue;
+        const ax = A[0] + nx * 0.02, az = A[1] + nz * 0.02, bx = B[0] + nx * 0.02, bz = B[1] + nz * 0.02;
+        const c = [bx + nx * 0.6, 0.035, bz + nz * 0.6], d = [ax + nx * 0.6, 0.035, az + nz * 0.6];
+        vb.quad([ax, 0.035, az], [bx, 0.035, bz], c, d, yellow); strips++;
+      }
+    }
+    return strips;
+  }
+  function gateTransitions(grid, data, ordinal) {
+    if (!grid || !grid.routed) return { before: 0, candidates: 0, gates: [] };
+    const oldRows = [], clusters = []; let candidates = 0, routeCandidates = 0;
+    for (let j = 0; j < grid.nz; j++) for (let i = 0; i < grid.nx; i++) {
+      const k = j * grid.nx + i; if (!grid.walkable[k] || !grid.routed[k]) continue;
+      for (const n of [i + 1 < grid.nx ? k + 1 : -1, j + 1 < grid.nz ? k + grid.nx : -1]) {
+        if (n < 0 || !grid.walkable[n] || !grid.routed[n] || grid.paid[k] === grid.paid[n]) continue;
+        const ax = grid.x0 + ((k % grid.nx) + 0.5) * CS, az = grid.z0 + (Math.floor(k / grid.nx) + 0.5) * CS;
+        const bx = grid.x0 + ((n % grid.nx) + 0.5) * CS, bz = grid.z0 + (Math.floor(n / grid.nx) + 0.5) * CS;
+        const x = (ax + bx) * 0.5, z = (az + bz) * 0.5, dx = grid.paid[k] ? bx - ax : ax - bx, dz = grid.paid[k] ? bz - az : az - bz;
+        const candidate = { x, z, dx, dz }; candidates++;
+        if (oldRows.length < 40 && !oldRows.some((q) => Math.hypot(q.x - x, q.z - z) < 2)) oldRows.push(candidate);
+      }
+    }
+    const endpoints = { 2: [], 3: [] }, routes = data && data.net && data.net.r || [];
+    for (const route of routes) {
+      const loc = route[1]; if (loc !== 2 && loc !== 3) continue;
+      const points = route[4];
+      for (let k = 0; k + 2 < points.length; k += 3) {
+        const x = points[k], y = points[k + 1], z = points[k + 2];
+        if (routeFloor(data, y) !== ordinal) continue;
+        const neighbors = [];
+        if (k >= 3 && routeFloor(data, (points[k - 2] + y) * 0.5) === ordinal) neighbors.push([points[k - 3], points[k - 1]]);
+        if (k + 5 < points.length && routeFloor(data, (y + points[k + 4]) * 0.5) === ordinal) neighbors.push([points[k + 3], points[k + 5]]);
+        endpoints[loc].push({ x, z, neighbors });
+      }
+    }
+    const cellSize = 0.5, buckets = new Map();
+    for (const q of endpoints[3]) {
+      const key = `${Math.floor(q.x / cellSize)}:${Math.floor(q.z / cellSize)}`;
+      if (!buckets.has(key)) buckets.set(key, []);
+      buckets.get(key).push(q);
+    }
+    const heading = (q) => {
+      let dx = 0, dz = 0, bx = 0, bz = 0;
+      for (const p of q.neighbors) {
+        const L = Math.hypot(p[0] - q.x, p[1] - q.z) || 1, x = (p[0] - q.x) / L, z = (p[1] - q.z) / L;
+        const sign = bx * x + bz * z < 0 ? -1 : 1;
+        dx += x * sign; dz += z * sign;
+        if (!bx && !bz) { bx = x; bz = z; }
+      }
+      const L = Math.hypot(dx, dz) || 1; return { dx: dx / L, dz: dz / L };
+    };
+    for (const unpaid of endpoints[2]) {
+      const ix = Math.floor(unpaid.x / cellSize), iz = Math.floor(unpaid.z / cellSize);
+      for (let oz = -1; oz <= 1; oz++) for (let ox = -1; ox <= 1; ox++) {
+        for (const paid of buckets.get(`${ix + ox}:${iz + oz}`) || []) {
+          const d = Math.hypot(unpaid.x - paid.x, unpaid.z - paid.z); if (d > 0.5) continue;
+          const x = (unpaid.x + paid.x) * 0.5, z = (unpaid.z + paid.z) * 0.5, i = grid.idxAt(x, z);
+          if (i < 0 || !grid.walkable[i]) continue;
+          const a = heading(unpaid), b = heading(paid), sign = a.dx * b.dx + a.dz * b.dz < 0 ? -1 : 1;
+          const dx = a.dx + b.dx * sign, dz = a.dz + b.dz * sign;
+          routeCandidates++;
+          let cluster = null, nearest = 3;
+          for (const q of clusters) {
+            const dist = Math.hypot(q.x - x, q.z - z);
+            if (dist <= nearest) { nearest = dist; cluster = q; }
+          }
+          if (!cluster) {
+            if (clusters.length < 40) clusters.push({ x, z, dx, dz, count: 1 });
+            continue;
+          }
+          const L = Math.hypot(dx, dz) || 1, Q = Math.hypot(cluster.dx, cluster.dz) || 1;
+          const dot = dx / L * cluster.dx / Q + dz / L * cluster.dz / Q, dirSign = dot < 0 ? -1 : 1;
+          cluster.x = (cluster.x * cluster.count + x) / (cluster.count + 1);
+          cluster.z = (cluster.z * cluster.count + z) / (cluster.count + 1);
+          cluster.dx += dx * dirSign; cluster.dz += dz * dirSign; cluster.count++;
+        }
+      }
+    }
+    return { before: oldRows.length, candidates, routeCandidates,
+      gates: clusters.map((q) => ({ x: q.x, z: q.z, dx: q.dx, dz: q.dz, transitions: q.count })) };
+  }
+  function addFareGates(getBuilder, grid, data, ordinal) {
+    const vb = getBuilder('gate'), grey = color('#9aa2a5');
+    const stats = gateTransitions(grid, data, ordinal);
+    for (const gate of stats.gates) {
+      const L = Math.hypot(gate.dx, gate.dz) || 1, sx = -gate.dz / L, sz = gate.dx / L;
+      for (let i = -1; i <= 1; i++) {
+        const x = gate.x + sx * i * 0.9, z = gate.z + sz * i * 0.9;
+        addBox(vb, [x, 0.8, z], [0.3, 1.6, 1.0], [sx, sz], grey);
+        addBox(vb, [x, 1.625, z], [0.13, 0.05, 0.14], [sx, sz], color(i === 0 ? '#f2cb4e' : '#54c986'));
+      }
+    }
+    return { beforeRows: stats.before, afterRows: stats.gates.length, candidates: stats.candidates,
+      beforeCabinets: stats.before * 3, afterCabinets: stats.gates.length * 3 };
+  }
+  function addBeam(builder, A, B, width, height, tint) {
+    const dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2], len = Math.hypot(dx, dy, dz);
+    if (len < 0.02) return;
+    const dir = [dx / len, dy / len, dz / len], horizontal = Math.hypot(dx, dz) || 1, right = [-dz / horizontal, 0, dx / horizontal];
+    const up = [right[1] * dir[2] - right[2] * dir[1], right[2] * dir[0] - right[0] * dir[2], right[0] * dir[1] - right[1] * dir[0]];
+    const C = [(A[0] + B[0]) * 0.5, (A[1] + B[1]) * 0.5, (A[2] + B[2]) * 0.5], hL = len * 0.5, hW = width * 0.5, hH = height * 0.5;
+    const p = (a, b, c) => [C[0] + dir[0] * a + right[0] * b + up[0] * c, C[1] + dir[1] * a + right[1] * b + up[1] * c, C[2] + dir[2] * a + right[2] * b + up[2] * c];
+    const x0 = -hL, x1 = hL, y0 = -hW, y1 = hW, z0 = -hH, z1 = hH;
+    for (const q of [
+      [p(x0, y0, z1), p(x1, y0, z1), p(x1, y1, z1), p(x0, y1, z1)],
+      [p(x1, y0, z0), p(x0, y0, z0), p(x0, y1, z0), p(x1, y1, z0)],
+      [p(x0, y1, z1), p(x1, y1, z1), p(x1, y1, z0), p(x0, y1, z0)],
+      [p(x0, y0, z0), p(x1, y0, z0), p(x1, y0, z1), p(x0, y0, z1)],
+      [p(x0, y0, z0), p(x0, y0, z1), p(x0, y1, z1), p(x0, y1, z0)],
+      [p(x1, y0, z1), p(x1, y0, z0), p(x1, y1, z0), p(x1, y1, z1)]
+    ]) builder.quad(q[0], q[1], q[2], q[3], tint);
+  }
+  function local3(box, s, t, y) { const p = localPoint(box, s, t); return [p.x, y, p.z]; }
+  function addGlassRail(builder, box, s0, s1, t, y0, y1, height) {
+    const A = local3(box, s0, t, y0), B = local3(box, s1, t, y1), C = local3(box, s1, t, y1 + height), D = local3(box, s0, t, y0 + height);
+    builder.quad(A, B, C, D, color('#ffffff'));
+  }
+  function addFacilityProps(getBuilder, unitPoints, grid) {
+    const metal = getBuilder('metal'), glass = getBuilder('shopGlass'), steel = getBuilder('brushedSteel');
+    for (const unit of unitPoints) {
+      if (unit.cat === 'elevator') {
+        const frame = facingEdge(unit, grid); if (!frame) continue;
+        let ux = (frame.B[0] - frame.A[0]) / frame.length, uz = (frame.B[1] - frame.A[1]) / frame.length;
+        if ((-uz) * frame.nx + ux * frame.nz < 0) { ux = -ux; uz = -uz; }
+        const width = Math.min(1.65, frame.length * 0.68), cx = (frame.A[0] + frame.B[0]) * 0.5 + frame.nx * 0.07, cz = (frame.A[1] + frame.B[1]) * 0.5 + frame.nz * 0.07;
+        const panelW = (width - 0.06) * 0.5;
+        for (const side of [-1, 1]) addBox(steel, [cx + ux * side * (panelW * 0.5 + 0.015), 1.02, cz + uz * side * (panelW * 0.5 + 0.015)], [panelW, 2.04, 0.07], [ux, uz], color('#d4d7d9'));
+        addBox(metal, [cx, 1.02, cz], [0.025, 2.04, 0.075], [ux, uz], color('#555d62'));
+        const px = cx + ux * (width * 0.5 + 0.17), pz = cz + uz * (width * 0.5 + 0.17);
+        addBox(steel, [px, 1.31, pz], [0.22, 0.46, 0.07], [ux, uz], color('#9ca4a8'));
+        addBox(metal, [px, 1.41, pz], [0.08, 0.055, 0.04], [ux, uz], color('#68ce91'));
+        addBox(metal, [px, 1.22, pz], [0.08, 0.055, 0.04], [ux, uz], color('#e3c34e'));
+        continue;
+      }
+      if (unit.cat !== 'stairs' && unit.cat !== 'escalator') continue;
+      const obb = orientedBounds(unit.rings); if (!obb || obb.length < 1.2 || obb.width < 0.8) continue;
+      const count = unit.cat === 'escalator' ? 12 : 8, rise = unit.cat === 'escalator' ? 1.8 : 1.6, start = obb.minS + 0.1, end = obb.maxS - 0.1, run = (end - start) / count;
+      const width = Math.min(unit.cat === 'escalator' ? 1.55 : 1.3, obb.width * 0.72), midT = (obb.minT + obb.maxT) * 0.5;
+      if (run < 0.12 || width < 0.5) continue;
+      for (let i = 0; i < count; i++) {
+        const h = rise * (i + 1) / count, s = start + (i + 0.5) * run, p = localPoint(obb, s, midT);
+        addBox(steel, [p.x, h, p.z], [run * 0.9, 0.11, width], [obb.ux, obb.uz], color(unit.cat === 'escalator' ? '#a0a7a9' : '#b0aaa1'));
+      }
+      if (unit.cat === 'escalator') {
+        for (const side of [-1, 1]) {
+          const t = midT + side * (width * 0.5 + 0.08);
+          addGlassRail(glass, obb, start, end, t, 0.12, rise + 0.12, 0.66);
+          addBeam(metal, local3(obb, start, t, 0.88), local3(obb, end, t, Math.min(rise + 0.55, 2.42)), 0.065, 0.08, color('#3f484c'));
+        }
+      } else {
+        for (const side of [-1, 1]) {
+          const t = midT + side * Math.min(obb.width * 0.43, 0.78);
+          addBeam(metal, local3(obb, start, t, 0.82), local3(obb, end, t, 2.38), 0.055, 0.065, color('#4d5151'));
+        }
+      }
+    }
+  }
+  function addShopFurniture(getBuilder, unitPoints, frontRuns) {
+    const vb = getBuilder('furniture'), fronts = new Map(); let count = 0;
+    for (const run of frontRuns) { const old = fronts.get(run.unitIndex); if (!old || run.length > old.length) fronts.set(run.unitIndex, run); }
+    for (let i = 0; i < unitPoints.length && count < 150; i++) {
+      const unit = unitPoints[i]; if (!unit.shop || polygonArea(unit.rings) < 12) continue;
+      const box = orientedBounds(unit.rings); if (!box || box.length < 1.1 || box.width < 0.7) continue;
+      const front = fronts.get(i); let fs = (box.minS + box.maxS) * 0.5, ft = (box.minT + box.maxT) * 0.5, bs = fs, bt = ft;
+      if (front) {
+        const mx = (front.A[0] + front.B[0]) * 0.5, mz = (front.A[1] + front.B[1]) * 0.5;
+        const ds = mx * box.ux + mz * box.uz - fs, dt = mx * box.nx + mz * box.nz - ft;
+        if (Math.abs(ds) > Math.abs(dt)) {
+          fs = ds < 0 ? box.minS + 0.6 : box.maxS - 0.6; bs = ds < 0 ? box.maxS - 0.3 : box.minS + 0.3;
+        } else {
+          ft = dt < 0 ? box.minT + 0.55 : box.maxT - 0.55; bt = dt < 0 ? box.maxT - 0.3 : box.minT + 0.3;
+        }
+      } else { fs = box.minS + 0.6; bs = box.maxS - 0.3; }
+      const counter = localPoint(box, fs, ft), shelf = localPoint(box, bs, bt), length = Math.min(1.5, box.length * 0.55), depth = Math.min(0.5, box.width * 0.5);
+      if (length < 0.6 || depth < 0.25) continue;
+      const tone = color(unit.cat === 'foodservice' ? '#9a704d' : unit.cat === 'office' ? '#687663' : unit.cat === 'classroom' ? '#7d765f' : '#896b4f');
+      addBox(vb, [counter.x, 0.48, counter.z], [length, 0.96, depth], [box.ux, box.uz], tone);
+      addBox(vb, [shelf.x, 0.82, shelf.z], [Math.min(1.6, box.length * 0.65), 1.64, Math.min(0.34, box.width * 0.35)], [box.ux, box.uz], color('#66594b'));
+      count++;
+    }
+    return count;
+  }
+  function poiFasciaNames(g) {
+    const names = new Map();
+    for (let i = 0; i < g.units.length; i++) {
+      const u = g.units[i], cat = unitKind(u), name = unitName(u), rings = unitRings(u);
+      if (!isShopLike(cat, name) || signableName(name)) continue;
+      const center = centroid(rings), matches = g.pois.filter((p) => signableName(p[2] || '') && insideShape(rings, p[3], p[4]));
+      if (matches.length) {
+        matches.sort((a, b) => Math.hypot(a[3] - center.x, a[4] - center.z) - Math.hypot(b[3] - center.x, b[4] - center.z));
+        names.set(i, matches[0][2].trim());
+      }
+    }
+    return names;
   }
   function addRoutes(root, g, data) {
     if (!data.net) return;
@@ -7538,34 +8114,55 @@ window.IND = (() => {
   }
   function buildFloor(r, g) {
     if (!M) init();
-    const t0 = performance.now(), root = new THREE.Group(), vb = vbNew(), doorIndex = makeDoorIndex(g.doors.map((d) => linesOf(d[2]))), walls = [], unitPoints = [];
-    for (const rings of g.polys) vb.flat(rings, 0, color('#c1c1c1'), true);
-    for (const u of g.units) {
-      const cat = unitKind(u), rings = unitRings(u), cc = UNIT_COLOR[cat] || '#9a9286';
-      vb.flat(rings, 0.01, color(cat === 'platform' ? '#438865' : cc), true);
-      if (!NO_WALL.has(cat)) for (const ring of rings) wallBuild(vb, ring, Math.min(g.H, 3), color(cc), doorIndex, walls);
-      const cp = centroid(rings); unitPoints.push({ u, cat, pos: cp });
+    const t0 = performance.now(), root = new THREE.Group(), builders = new Map(), materials = M.assets.materials;
+    const builder = (key) => { let b = builders.get(key); if (!b) builders.set(key, b = vbNew()); return b; };
+    const doorIndex = makeDoorIndex(g.doors.map((d) => linesOf(d[2]))), walls = [], unitPoints = [], frontRuns = [], poiNames = poiFasciaNames(g);
+    const station = isStation(r), baseFloor = station ? 'stationFloor' : 'mallFloor', publicUnits = publicUnitShapes(g, r.data), white = color('#ffffff');
+    for (const rings of g.polys) builder(baseFloor).flat(rings, 0, white, true, 0.6);
+    for (let i = 0; i < g.units.length; i++) {
+      const u = g.units[i], cat = unitKind(u), originalName = unitName(u), name = signableName(originalName) ? originalName : poiNames.get(i) || originalName;
+      const rings = unitRings(u), shop = isShopLike(cat, originalName), floorClass = floorMaterialClass(cat, station, originalName);
+      const uvScale = floorClass === 'woodFloor' ? 1.2 : 0.6;
+      builder(floorClass).flat(rings, 0.01, white, true, uvScale);
+      if (!NO_WALL.has(cat) || shop) for (const ring of rings) wallBuild(builder, ring, Math.min(g.H, 3), white, doorIndex, walls, {
+        wallClass: station ? 'stationWall' : 'plasterWall', shopLike: shop, publicUnits, frontRuns,
+        unitIndex: i, category: cat, name, fasciaTint: color(UNIT_COLOR[cat] || '#6f777a')
+      });
+      const cp = centroid(rings); unitPoints.push({ u, cat, name, originalName, pos: cp, rings, shop, floorClass });
     }
-    for (const rings of g.polys) for (const ring of rings) wallBuild(vb, ring, g.H, color('#aaa79f'), doorIndex, walls);
-    for (const rings of g.polys) vb.flat(rings, g.H, color('#8a8d93'), false);
-    const mesh = new THREE.Mesh(vb.geo(), M.v); mesh.frustumCulled = false; root.add(mesh);
-    root.traverse((o) => o.layers.set(1)); S.root.add(root);
+    for (const rings of g.polys) for (const ring of rings) wallBuild(builder, ring, g.H, white, doorIndex, walls, { wallClass: station ? 'stationWall' : 'plasterWall' });
+    for (const rings of g.polys) builder('ceiling').flat(rings, g.H, white, false, 0.6);
     const grid = makeGrid(r, g, walls); g.walkable = !!(grid && grid.walkable.some((v) => v));
-    const labels = addLabels(root, g, r.data); addRoutes(root, g, r.data);
-    root.traverse((o) => o.layers.set(1));
-    let tris = 0; root.traverse((o) => { if (o.isMesh && o.geometry && o.geometry.attributes.position) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3; });
-    return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), buildMs: performance.now() - t0, group: g };
+    addFacilityProps(builder, unitPoints, grid);
+    addShopFurniture(builder, unitPoints, frontRuns);
+    const gateStats = station ? addFareGates(builder, grid, r.data, g.o) : null;
+    if (station) addPlatformStrips(builder, g, r.data);
+    addCeilingLights(root, g, grid, publicUnits);
+    const labels = addLabels(root, g, r.data, frontRuns, unitPoints, grid); addRoutes(root, g, r.data);
+    for (const [key, b] of builders) if (b.triangles) {
+      const mesh = new THREE.Mesh(b.geo(), materials[key]); mesh.frustumCulled = false; root.add(mesh);
+    }
+    root.traverse((o) => o.layers.set(1)); S.root.add(root);
+    let tris = 0, drawCalls = 0; root.traverse((o) => {
+      if (o.isMesh && o.geometry && o.geometry.attributes.position) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1);
+      if ((o.isMesh || o.isLineSegments) && !o.isSprite) drawCalls++;
+    });
+    return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), drawCalls, buildMs: performance.now() - t0, group: g, gateStats };
   }
   function disposeFloor() {
     if (!S.floor) return;
     S.root.remove(S.floor.root);
-    const geos = new Set(), mats = new Set();
-    S.floor.root.traverse((o) => { if (o.geometry && !o.isSprite) geos.add(o.geometry); });
+    const geos = new Set(), mats = new Set(), textures = new Set(S.floor.root.userData.ownedTextures || []);
+    S.floor.root.traverse((o) => { if (o.geometry && !o.isSprite && !o.isInstancedMesh) geos.add(o.geometry); });
     for (const g of S.floor.root.userData.ownedGeometries || []) geos.add(g);
     for (const g of geos) g.dispose();
-    for (const m of S.floor.root.userData.ownedMaterials || []) mats.add(m);
+    for (const inst of S.floor.root.userData.ownedInstances || []) if (inst.dispose) inst.dispose();
+    for (const m of S.floor.root.userData.ownedMaterials || []) {
+      mats.add(m);
+      for (const value of Object.values(m)) if (value && value.isTexture) textures.add(value);
+    }
     mats.forEach((m) => m.dispose());
-    for (const t of S.floor.root.userData.ownedTextures || []) t.dispose();
+    textures.forEach(disposeTexture);
     S.floor = null; S.goalObj = null;
   }
   function clearGoal() {
@@ -7593,7 +8190,8 @@ window.IND = (() => {
     S.floor = buildFloor(r, g); S.root.visible = true; addGoal();
     const p = nearestCell(S.floor.grid, x, z) || { x: x, z: z };
     place(p.x, p.z, h); S.paid = paidAt(p.x, p.z);
-    return { ...p, walkable: !!(S.floor.grid && S.floor.grid.walkable[S.floor.grid.idxAt(p.x, p.z)]), buildMs: S.floor.buildMs, triangles: S.floor.triangles };
+    return { ...p, walkable: !!(S.floor.grid && S.floor.grid.walkable[S.floor.grid.idxAt(p.x, p.z)]), buildMs: S.floor.buildMs,
+      triangles: S.floor.triangles, drawCalls: S.floor.drawCalls, gateStats: S.floor.gateStats };
   }
   function place(x, z, h = OPEN.hero.h) {
     const H = OPEN.hero; H.x = x; H.z = z; H.y = 0; H.vy = 0; H.h = h;
@@ -7695,8 +8293,13 @@ window.IND = (() => {
     if (on) {
       if (!S.hasSavedBackground) { S.savedBackground = scene.background; S.hasSavedBackground = true; }
       scene.background = new THREE.Color(0x292c32);
+      if (M && !S.savedLighting) S.savedLighting = { hemi: M.hemi.intensity, sun: M.sun.intensity };
+      if (M) { M.hemi.intensity = 1; M.sun.intensity = 0.35; }
     } else if (S.hasSavedBackground) {
       scene.background = S.savedBackground; S.savedBackground = null; S.hasSavedBackground = false;
+    }
+    if (!on && M && S.savedLighting) {
+      M.hemi.intensity = S.savedLighting.hemi; M.sun.intensity = S.savedLighting.sun; S.savedLighting = null;
     }
   }
   function doEnter(r, entry) {
@@ -7960,14 +8563,17 @@ window.IND = (() => {
     if (!r) throw new Error('IND test venue not found: ' + id);
     return load(r).then(() => {
       const g = floorByOrdinal(r, o); if (!g) throw new Error('IND test floor not found: ' + o);
-      if (!groupWalkable(r, g)) return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: false, skipped: true, buildMs: 0, triangles: 0, floors: r.groups.length };
+      if (!groupWalkable(r, g)) return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: false, skipped: true, buildMs: 0, triangles: 0, drawCalls: 0, floors: r.groups.length };
       if (!S.root) init();
       if (S.inside) { disposeFloor(); S.root.visible = false; }
       S.phase = null; S.busy = false; S.menu = false; $('indLift').hidden = true; $('indStair').hidden = true; fade(0);
       S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; indoorBackground(true); cameraLayers(true);
       const target = r.v.bb, p = showFloor(r, g, (target[0] + target[2]) / 2, (target[1] + target[3]) / 2);
       S.paid = paidAt(p.x, p.z);
-      return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: p.walkable, buildMs: p.buildMs, triangles: p.triangles, floors: r.groups.length };
+      return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: p.walkable, buildMs: p.buildMs, triangles: p.triangles,
+        drawCalls: p.drawCalls, gateStats: p.gateStats, signDebug: S.floor.root.userData.signDebug,
+        floorResources: { textures: S.floor.root.userData.ownedTextures?.length || 0, materials: S.floor.root.userData.ownedMaterials?.length || 0,
+          geometries: S.floor.root.userData.ownedGeometries?.length || 0 }, floors: r.groups.length };
     });
   }
   function testStats() {
@@ -7995,10 +8601,12 @@ window.IND = (() => {
     get venue() { return S.state && S.state.v; }, get floor() { return S.floor && S.floor.group.o; }, get paid() { return S.paid; },
     canMove, setGoal, hasStation, stationVenueId: (k) => stationForIndex(k)?.v.id || null, enterStation, pickDelivery, setForceFood, consumeForceFood: () => { const q = S.forceFood; S.forceFood = false; return q; }, nearOutside,
     _load: (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); return r && load(r); },
-    _goto: testGoto, _stats: testStats, _resources: resourceStats, _lastPickLoads: () => S.lastPickLoads, _walkable: gridWalkable,
+    _goto: testGoto, _stats: testStats, _resources: resourceStats, _textures: textureStats, _signs: () => S.floor?.root.userData.signDebug || null,
+    _gateStats: () => S.floor?.gateStats || null, _lastPickLoads: () => S.lastPickLoads, _walkable: gridWalkable,
     _entries: async (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); if (!r) return []; await load(r); return getEntries(r).map((e) => ({ mid: e.mid, out: e.out, nx: e.nx, nz: e.nz, code: e.code })); },
     _gatePairs: testGatePairs, _setPaid: (v) => { S.paid = !!v; },
-    _triangleCount: () => S.floor ? S.floor.triangles : 0 };
+    _triangleCount: () => S.floor ? S.floor.triangles : 0,
+    _lighting: () => M && { hemi: M.hemi.intensity, sun: M.sun.intensity, saved: S.savedLighting && { ...S.savedLighting } } };
 })();
 </script><script>window.BOOT && BOOT(0.993)</script>
 <script>// ============ 街頭打鬥 + 惡名星（v39-C，BG：好似「臺北GTA」咁，開放世界隨街打交 + 通緝星）============
