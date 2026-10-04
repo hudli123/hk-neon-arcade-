@@ -1404,9 +1404,10 @@ window.HG = HG; window.clearFrac = clearFrac;
   const TREE = [];   // [x, z, 樹種, seed, 橫向比例, 直向比例, 係咪街樹]
   const SPN = 4;     // 0 細葉榕 1 洋紫荊 2 白千層 3 蒲葵
   const pick = (r, w) => { let a = 0; for (let s = 0; s < w.length; s++) { a += w[s]; if (r < a) return s; } return w.length - 1; };
+  const underDeck = (x, z) => window.ELEV && [[0, 0], [2.5, 0], [-2.5, 0], [0, 2.5], [0, -2.5]].some(([u, v]) => ELEV.surf(x + u, z + v, 200, 0, 'r') > 0.5);   // 高架路底 / 橋面上唔種樹（樹冠會插穿橋面）
   if (CITY.tr) {
     const TP = b64i16(CITY.tr), TK = (() => { const b = atob(CITY.tk), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return u; })();
-    for (let i = 0; i < TK.length; i++) { const x = TP[i * 2] / QS, z = TP[i * 2 + 1] / QS; if (HG.at(x, z) >= 0.5) continue;
+    for (let i = 0; i < TK.length; i++) { const x = TP[i * 2] / QS, z = TP[i * 2 + 1] / QS; if (HG.at(x, z) >= 0.5 || underDeck(x, z)) continue;
       const s = pick(rnd(i * 4.13), [0.5, 0.2, 0.2, 0.1]), k = 0.8 + 0.45 * rnd(i * 1.37) + (TK[i] ? 0.15 : 0); TREE.push([x, z, s, i, k, k, 0]); }
   }
   // 街樹：過路線 + 路邊嘢 4 米格網，避開
