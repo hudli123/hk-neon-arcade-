@@ -155,13 +155,17 @@ async function loadBg(cx, cz, R) {
 
 // 鏡頭：拖 = 轉，滾輪 / 兩指 = 遠近
 const orb = { yaw: 2.3, pitch: 0.28, d: 160, t: new THREE.Vector3() };
-let drag = null, pinch = 0;
-addEventListener('pointerdown', (e) => { if (e.target.tagName !== 'CANVAS') return; drag = [e.clientX, e.clientY]; });
-addEventListener('pointerup', () => drag = null);
-addEventListener('pointermove', (e) => { if (!drag || pinch) return; orb.yaw -= (e.clientX - drag[0]) * 0.006; orb.pitch = Math.max(-0.05, Math.min(1.4, orb.pitch + (e.clientY - drag[1]) * 0.005)); drag = [e.clientX, e.clientY]; });
+const ptr = new Map(); let pinch = 0;   // 一隻手指 = 轉，兩隻 = 遠近（唔轉）
+addEventListener('pointerdown', (e) => { if (e.target.tagName !== 'CANVAS') return; ptr.set(e.pointerId, [e.clientX, e.clientY]); pinch = 0; });
+const up = (e) => { ptr.delete(e.pointerId); pinch = 0; };
+addEventListener('pointerup', up); addEventListener('pointercancel', up);
+addEventListener('pointermove', (e) => {
+  const q = ptr.get(e.pointerId); if (!q) return;
+  if (ptr.size === 1) { orb.yaw -= (e.clientX - q[0]) * 0.006; orb.pitch = Math.max(-0.05, Math.min(1.4, orb.pitch + (e.clientY - q[1]) * 0.005)); }
+  ptr.set(e.pointerId, [e.clientX, e.clientY]);
+  if (ptr.size === 2) { const [A, B] = [...ptr.values()], d = Math.hypot(A[0] - B[0], A[1] - B[1]); if (pinch) orb.d = Math.max(8, Math.min(900, orb.d * pinch / d)); pinch = d; }
+});
 addEventListener('wheel', (e) => { orb.d = Math.max(8, Math.min(900, orb.d * Math.exp(e.deltaY * 0.001))); }, { passive: true });
-addEventListener('touchmove', (e) => { if (e.touches.length !== 2) { pinch = 0; return; } const d = Math.hypot(e.touches[0].clientX - e.touches[1].clientX, e.touches[0].clientY - e.touches[1].clientY); if (pinch) orb.d = Math.max(8, Math.min(900, orb.d * pinch / d)); pinch = d; }, { passive: true });
-addEventListener('touchend', () => pinch = 0);
 addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); });
 HD.orb = orb;
 
