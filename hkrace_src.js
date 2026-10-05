@@ -17,26 +17,45 @@ const cam = { mode: 'race', wx: 0, wz: 0, wyaw: 0 };
 
 // 地政總署圖幅：只揀賽道 150 米內嘅（RACE_TILES），按鏡頭距離載入 / 卸走，一次載一份
 const TILES = (() => {
-  const list = (window.RACE_TILES || []).map((t) => ({ ...t, state: 0, mesh: null, mat: null }));
-  const MAXN = TOUCH ? 18 : 60, R = TOUCH ? 380 : 650; let busy = false, t0 = 0;
+  const list = (window.RACE_TILES || []).map((t) => ({ ...t, state: 0, mesh: null, mat: null, hdr: null, lo: null, hi: null, hiState: 0, hiLvl: -1 }));
+  const MAXN = TOUCH ? 24 : 90, R = TOUCH ? 450 : 900; let busy = false, t0 = 0;
+  // 高清貼圖：最近幾份由 1024 換 2048（手機）／4096（電腦最近 3 份），載完先換，遠咗就放返 1024
+  const MAXHI = TOUCH ? 3 : 8, RH = TOUCH ? 200 : 320, N0 = TOUCH ? 0 : 2, RH0 = 110;
+  const setMap = (t, tex) => { t.mat.map = tex; if (t.mat.emissiveMap) t.mat.emissiveMap = tex; t.mat.needsUpdate = true; };
   const dist = (t, x, z) => { const [x0, z0, x1, z1] = t.bb; return Math.hypot(Math.max(x0 - x, 0, x - x1), Math.max(z0 - z, 0, z - z1)); };
   async function load(t) {
     t.state = 1; busy = true;
-    try { const r = await loadTile('tiles/', t.s, 2); t.mesh = r.mesh; t.mat = r.mat; scene.add(r.mesh); t.state = 2; }
+    try { const r = await loadTile('tiles/', t.s, 2); t.mesh = r.mesh; t.mat = r.mat; t.hdr = r.hdr; t.lo = r.mat.map; scene.add(r.mesh); t.state = 2; }
     catch (e) { t.state = -1; console.warn('tile', t.s, e.message); }
     busy = false;
   }
-  function unload(t) { scene.remove(t.mesh); t.mesh.geometry.dispose(); if (t.mat.map) t.mat.map.dispose(); t.mat.dispose(); t.mesh = t.mat = null; t.state = 0; }
+  async function upgrade(t, lvl) {
+    t.hiState = 1; busy = true;
+    try { const tex = await loadTileTex('tiles/', t.hdr, lvl); if (t.state === 2 && t.hiState === 1) { if (t.hi) t.hi.dispose(); t.hi = tex; t.hiLvl = lvl; setMap(t, tex); t.hiState = 2; } else tex.dispose(); }
+    catch (e) { t.hiState = -1; console.warn('tile hi', t.s, e.message); }
+    busy = false;
+  }
+  function downgrade(t) { if (t.hi) { setMap(t, t.lo); t.hi.dispose(); t.hi = null; } t.hiState = 0; t.hiLvl = -1; }
+  function unload(t) { downgrade(t); scene.remove(t.mesh); t.mesh.geometry.dispose(); if (t.lo) t.lo.dispose(); t.mat.dispose(); t.mesh = t.mat = t.lo = null; t.state = 0; }
   function step(dt, x, z) {
     TEXQ.pump();
     if (location.protocol === 'file:' || (t0 -= dt) > 0) return; t0 = 0.4;
     const ranked = list.filter((t) => t.state >= 0).map((t) => [dist(t, x, z), t]).sort((a, b) => a[0] - b[0]);
-    ranked.forEach(([d, t], k) => { if (t.state === 2 && (d > R + 200 || k >= MAXN + 4)) unload(t); });
+    api.hi = list.filter((t) => t.hiState >= 1).length;
+    ranked.forEach(([d, t], k) => {
+      if (t.state !== 2) return;
+      if (d > R + 200 || k >= MAXN + 4) unload(t);
+      else if (t.hiState === 2 && (d > RH + 80 || k >= MAXHI + 2 || (t.hiLvl === 0 && (k >= N0 + 2 || d > RH0 + 60)))) downgrade(t);
+    });
     api.near = ranked.filter(([d]) => d <= R).length; api.loaded = list.filter((t) => t.state === 2).length;
     if (busy) return;
-    const ld = ranked.slice(0, MAXN).find(([d, t]) => d <= R && t.state === 0); if (ld) load(ld[1]);
+    const ld = ranked.slice(0, MAXN).find(([d, t]) => d <= R && t.state === 0);
+    const want = (k, d) => (k < N0 && d <= RH0 ? 0 : 1);
+    const up = ranked.slice(0, MAXHI).find(([d, t], k) => d <= RH && t.state === 2 && ((t.hiState === 0 && api.hi < MAXHI) || (t.hiState === 2 && want(k, d) < t.hiLvl)));
+    /* 大廈幾何優先：250 m 內仲有未載嘅份，就唔換高清 */
+    if (ld && (!up || ld[0] <= 250 || ld[0] <= up[0] + 60)) load(ld[1]); else if (up) upgrade(up[1], want(ranked.indexOf(up), up[0]));
   }
-  const api = { step, list, near: 0, loaded: 0 };
+  const api = { step, list, near: 0, loaded: 0, hi: 0 };
   return api;
 })();
 const CL = buildCars(window.HKR_CARS);
