@@ -6,11 +6,11 @@ window.HDM = (() => {
   const LIST = [{ en: 'The Peninsula', x: 273.8, z: 1516.3, ground: 3.574, ids: ['B357421737102063A0', 'B357411738401063A0'] }];
   function create(scene, o) {
     const px = o.px || 2048, R = o.R || 350, R2 = o.R2 || 500, aniso = o.aniso || 4;
-    const items = LIST.map((L) => ({ ...L, state: 0, root: null, texs: [], mats: [], ims: [] }));
+    const items = LIST.map((L) => ({ ...L, state: 0, root: null, texs: [], mats: [], ims: [], pend: [] }));
     async function load(it) {
       it.state = 1;
       try {
-        const root = new THREE.Group(), texs = [], mats = [];
+        const root = new THREE.Group(), texs = [], mats = [], pend = [];
         for (const id of it.ids) {
         const base = `hd/${id}/`;
         const g = await (await fetch(`${base}${id}.gltf`)).json();
@@ -38,28 +38,32 @@ window.HDM = (() => {
           if (p.attributes.NORMAL != null) geo.setAttribute('normal', new THREE.BufferAttribute(acc(p.attributes.NORMAL), 3)); else geo.computeVertexNormals();
           geo.setAttribute('uv', new THREE.BufferAttribute(acc(p.attributes.TEXCOORD_0), 2));
           geo.setIndex(new THREE.BufferAttribute(acc(p.indices), 1));
-          part.add(new THREE.Mesh(geo, mt[p.material]));
+          pend.push([part, new THREE.Mesh(geo, mt[p.material])]);
         }
         part.matrixAutoUpdate = false;   // glTF 世界 = (x, z, -y) + T（T = HK1980 + mPD）；遊戲：X = E - E0，Z = N0 - N，y = mPD - ground
         part.matrix.set(1, 0, 0, T[0] - E0, 0, 0, 1, T[1] - it.ground, 0, -1, 0, T[2] + N0, 0, 0, 0, 1);
         root.add(part);
         }
-        if (it.state !== 1) { root.traverse((c) => c.geometry && c.geometry.dispose()); texs.forEach((t) => t.dispose()); return; }
-        Object.assign(it, { root, texs, mats, state: 2 }); scene.add(root);
-        o.onShow && o.onShow(it, true);
+        if (it.state !== 1) { pend.forEach(([, me]) => me.geometry.dispose()); texs.forEach((t) => t.dispose()); return; }
+        Object.assign(it, { root, texs, mats, pend, state: 2, shown: false }); scene.add(root);
       } catch (e) { it.state = -1; console.warn('hdmodel', it.en, e.message); }
     }
     function unload(it) {
       if (it.root) { scene.remove(it.root); it.root.traverse((c) => c.geometry && c.geometry.dispose()); }
       it.mats.forEach((m) => m.dispose()); it.texs.forEach((t) => t.dispose()); it.ims.forEach((im) => im.close && im.close());
-      if (it.state === 2) o.onShow && o.onShow(it, false);
-      Object.assign(it, { state: 0, root: null, texs: [], mats: [], ims: [] });
+      if (it.shown) o.onShow && o.onShow(it, false);
+      it.shown = false;
+      it.pend.forEach(([, me]) => me.geometry.dispose());
+      Object.assign(it, { state: 0, root: null, texs: [], mats: [], ims: [], pend: [] });
     }
     function step(x, z) {
       for (const it of items) {
         const d = Math.hypot(it.x - x, it.z - z);
         if (d < R && it.state === 0) load(it);
         else if (d > R2 && it.state >= 1) unload(it);
+        // 每格只加一件 mesh：每件第一次畫先上傳一張貼圖，分開幾十格就唔會一下卡死
+        else if (it.state === 2 && it.pend.length) { const [part, me] = it.pend.shift(); part.add(me);
+          if (!it.pend.length) { it.shown = true; o.onShow && o.onShow(it, true); } }
       }
     }
     return { step, items, px };

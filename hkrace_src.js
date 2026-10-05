@@ -820,8 +820,8 @@ body.touch #pick .car p{display:none}
 {
   let last = performance.now();
   const fr = { n: 0, t: 0 }; window.RACE_PERF = fr;
-  // 精品：半島酒店（圖幅入面挖咗窿）用地政總署原始 model，行近先載；手機 1024、電腦 2048
-  const HDMOD = window.HDM ? HDM.create(scene, { px: TOUCH || (navigator.deviceMemory || 8) <= 4 ? 1024 : 2048, R: 350, R2: 500 }) : null;
+  // 精品：半島酒店（圖幅入面挖咗窿）用地政總署原始 model，成條賽道都喺 1.5 km 內，開波前就載，唔會揸到先見窿；行近先載；手機 1024、電腦 2048
+  const HDMOD = window.HDM ? HDM.create(scene, { px: TOUCH || (navigator.deviceMemory || 8) <= 4 ? 1024 : 2048, R: 3000, R2: 4000 }) : null;
   window.HDMOD = HDMOD;
   function frame(now) {
     requestAnimationFrame(frame);
