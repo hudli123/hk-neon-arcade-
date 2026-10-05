@@ -87,6 +87,7 @@ html = f'''<!doctype html>
 <script>{route_js}</script>
 <script>window.RACE_TILES = {json.dumps(near, separators=(',', ':'))};</script>
 <script>document.write('<script src="' + (matchMedia('(pointer:coarse)').matches ? 'hkrace_cars_m.js' : 'hkrace_cars.js') + '"><\\/script>');</script>
+<script src="hdmodel.js"></script>
 <script>{game}</script>
 </body></html>
 '''

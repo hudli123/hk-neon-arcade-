@@ -820,11 +820,15 @@ body.touch #pick .car p{display:none}
 {
   let last = performance.now();
   const fr = { n: 0, t: 0 }; window.RACE_PERF = fr;
+  // 精品：半島酒店（圖幅入面挖咗窿）用地政總署原始 model，行近先載；手機 1024、電腦 2048
+  const HDMOD = window.HDM ? HDM.create(scene, { px: TOUCH || (navigator.deviceMemory || 8) <= 4 ? 1024 : 2048, R: 350, R2: 500 }) : null;
+  window.HDMOD = HDMOD;
   function frame(now) {
     requestAnimationFrame(frame);
     const dt = Math.min(0.1, (now - last) / 1000); last = now;
     RACE.step(dt);
     TILES.step(dt, camera.position.x, camera.position.z);
+    if (HDMOD) HDMOD.step(camera.position.x, camera.position.z);
     renderer.render(scene, camera);
     fr.n++; fr.t += dt;
   }
