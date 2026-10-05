@@ -2,7 +2,7 @@
 """Build hkrace.html (standalone HK street race) from hkcity.html + hkrace_src.js.
 
 Takes from hkcity.html: three.js, the LandsD tile loader, buildCars, RACE_ROUTE and
-the tiles within 150 m of the route. Writes hkrace_cars.js / hkrace_cars_m.js with
+the tiles within 260 m of the route. Writes hkrace_cars.js / hkrace_cars_m.js with
 only the 4 selectable cars (taxi, police car, green + red minibus).
 Run from the repo root: python3 tools/make_hkrace.py
 """
@@ -10,7 +10,7 @@ import base64, json, math, re, struct
 
 ROOT = '.'
 CARS = ['hktaxi', 'police_car', 'minibus', 'minibus_red']
-NEAR = 150  # m: tiles kept around the route
+NEAR = 260  # m: tiles kept around the route
 
 s = open(f'{ROOT}/hkcity.html', encoding='utf-8').read()
 
