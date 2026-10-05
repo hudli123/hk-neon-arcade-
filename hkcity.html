@@ -2537,7 +2537,7 @@ $('tHelp').onclick = () => showHelp(cam.mode === 'walk' ? 'walk' : 'fly');
 $('hclose').onclick = () => { $('helpbox').hidden = true; };
 $('helpbox').addEventListener('pointerdown', (e) => e.stopPropagation());
 try { if (!localStorage.getItem('hkcity-help')) { showHelp('fly'); localStorage.setItem('hkcity-help', 1); } } catch (e) {}
-$('mFly').onclick = () => setMode('fly'); $('mWalk').onclick = () => setMode('walk'); $('mRace').onclick = () => window.RACE && RACE.enter(); $('mOpen').onclick = () => window.OPEN && OPEN.enter();
+$('mFly').onclick = () => setMode('fly'); $('mWalk').onclick = () => setMode('walk'); $('mRace').onclick = () => { location.href = 'hkrace.html'; };   /* 賽車搬咗去獨立嘅 hkrace.html（BG 10-02「完全獨立於個地圖」） */ $('mOpen').onclick = () => window.OPEN && OPEN.enter();
 function nearestRoad(x, z) {   // 最近馬路中線上嘅一點 + 路名 + 方向
   let best = null, bd = 1e9;
   for (const r of ROADS) for (let s = 0; s + 1 < r.pts.length; s++) {
