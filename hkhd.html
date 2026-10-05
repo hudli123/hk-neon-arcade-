@@ -87,6 +87,9 @@ window.loadTile = async function (base, sheet, lvl) {
 <script>// 精品區（hkhd.html）：地政總署原始 3D model（唔減面、原圖 2048 貼圖）+ 附近遊戲圖幅做背景。
 // 改呢個檔，再行 python3 tools/make_hkhd.py
 const TOUCH = matchMedia('(pointer:coarse)').matches;
+// 手機／細記憶體：貼圖解成 1024（≈85 MB 而唔係 ≈341 MB），一張張解，費事爆記憶體
+const LITE = TOUCH || (navigator.deviceMemory || 8) <= 4;
+const TEXPX = LITE ? 1024 : 2048;
 const E0 = 835469, N0 = 818879;
 const renderer = new THREE.WebGLRenderer({ antialias: true });
 renderer.setPixelRatio(Math.min(devicePixelRatio, TOUCH ? 1.5 : 2)); renderer.setSize(innerWidth, innerHeight);
@@ -129,8 +132,11 @@ async function loadOrig(id, dir) {
   root.matrixAutoUpdate = false;
   root.matrix.set(1, 0, 0, T[0] - E0, 0, 0, 1, -zmin, 0, -1, 0, T[2] + N0, 0, 0, 0, 1);
   scene.add(root);
-  const imgs = await Promise.all(texs.map((t) => fetch(t.hd.url).then((r) => r.blob()).then((b) => createImageBitmap(b, { imageOrientation: 'none' }))));
-  imgs.forEach((im, k) => { const t = texs[k]; t.hd.full = im; t.image = im; t.needsUpdate = true; ST.tex++; ST.texMB += im.width * im.height * 4 * 4 / 3 / 1048576; });
+  const dec = (t) => fetch(t.hd.url).then((r) => r.blob()).then((b) => createImageBitmap(b, LITE
+    ? { imageOrientation: 'none', resizeWidth: TEXPX, resizeHeight: TEXPX, resizeQuality: 'high' } : { imageOrientation: 'none' }));
+  const put = (im, t) => { t.hd.full = im; t.image = im; t.needsUpdate = true; ST.tex++; ST.texMB += im.width * im.height * 4 * 4 / 3 / 1048576; };
+  if (LITE) { for (const t of texs) put(await dec(t), t); }
+  else (await Promise.all(texs.map(dec))).forEach((im, k) => put(im, texs[k]));
   const rec = { id, root, texs, mats, c: new THREE.Vector3(T[0] - E0, 0, T[2] + N0) };
   HD.models.push(rec); return rec;
 }
@@ -144,17 +150,18 @@ function lowTex(t) {
 }
 let lo = false;
 function setLo(v) { lo = v; for (const m of HD.models) m.mats.forEach((mt, k) => { mt.map = v ? lowTex(m.texs[k]) : m.texs[k]; mt.needsUpdate = true; });
-  document.getElementById('mode').textContent = v ? '而家：128 px（遊戲版貼圖大小）' : '而家：原圖 2048 px'; }
+  document.getElementById('mode').textContent = v ? '而家：128 px（遊戲版貼圖大小）' : `而家：${LITE ? '手機版 1024 px（原圖 2048，慳記憶體）' : '原圖 2048 px'}`; }
 document.getElementById('mode').onclick = () => setLo(!lo);
+setLo(false);
 
-// 背景：附近圖幅（遊戲版，電腦 4096、手機 1024）
+// 背景：附近圖幅（遊戲版，電腦 2048、手機 1024）
 async function loadBg(cx, cz, R) {
   const near = (window.HD_TILES || []).filter((t) => { const [x0, z0, x1, z1] = t.bb; return Math.hypot(Math.max(x0 - cx, 0, cx - x1), Math.max(z0 - cz, 0, cz - z1)) < R; });
-  for (const t of near) { try { const r = await loadTile('tiles/', t.s, TOUCH ? 2 : 0); scene.add(r.mesh); ST.tiles++; ST.tris += r.hdr.ni / 3; } catch (e) { ST.err.push(String(e)); } }
+  for (const t of near) { try { const r = await loadTile('tiles/', t.s, LITE ? 2 : 1); scene.add(r.mesh); ST.tiles++; ST.tris += r.hdr.ni / 3; } catch (e) { ST.err.push(String(e)); } }
 }
 
 // 鏡頭：拖 = 轉，滾輪 / 兩指 = 遠近
-const orb = { yaw: 2.3, pitch: 0.28, d: 160, t: new THREE.Vector3() };
+const orb = { yaw: 0.4, pitch: 0.3, d: 160, t: new THREE.Vector3() };
 const ptr = new Map(); let pinch = 0;   // 一隻手指 = 轉，兩隻 = 遠近（唔轉）
 addEventListener('pointerdown', (e) => { if (e.target.tagName !== 'CANVAS') return; ptr.set(e.pointerId, [e.clientX, e.clientY]); pinch = 0; });
 const up = (e) => { ptr.delete(e.pointerId); pinch = 0; };
@@ -178,6 +185,8 @@ function frame() {
   if (++fr % 20 === 0) { const n = performance.now(); fps = 20000 / (n - ft); ft = n;
     stat.textContent = `原始 model ${HD.models.length} 棟 · 貼圖 ${ST.tex} 張（≈${ST.texMB.toFixed(0)} MB 顯示記憶體）· 三角形 ${(renderer.info.render.triangles / 1000).toFixed(0)}k · 背景圖幅 ${ST.tiles} · 載入 ${(ST.ms / 1000).toFixed(1)} s · ${fps.toFixed(0)} fps`; }
 }
+renderer.domElement.addEventListener('webglcontextlost', (e) => { e.preventDefault(); ST.err.push('webglcontextlost');
+  stat.textContent = '顯示記憶體唔夠，畫面停咗。請關咗其他分頁再重新載入。'; });
 frame();
 (async () => {
   try {
