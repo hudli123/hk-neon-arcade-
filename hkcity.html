@@ -138,6 +138,7 @@ window.buildLandmarks = function (LMD) {
 };
 </script><script>window.BOOT && BOOT(0.289)</script>
 <script>if (!matchMedia('(pointer:coarse)').matches) document.write('<script src="hkcity_lm.js"><\/script>');   // v47：HK_LM 搬咗出去（手機開機記憶體高峰）；手機用方盒車 / 冇地標細節</script>
+<script src="hdmodel.js"></script>
 <script>// 1B 全城真模型：串流載入地政總署圖幅（hk-city/tile_pack2.py：每個圖幅切 4 份，tiles/<SHEET>q<k>.bin.gz）
 // 貼圖三級：0 = _0.jpg 4096（電腦近距離）、1 = _0s.jpg 2048（手機近距離）、2 = _0m.jpg 1024（遠距離）
 // .bin.gz 解壓後 = 'HKT1' + uint32 頭長度 + JSON 頭 + Int16 位置(×s) + Uint16 UV + Int8 法線 + Uint32 索引
@@ -979,6 +980,11 @@ if (!TOUCH) setTimeout(window.DS_LOAD, 4000);
 const LMK = window.HK_LM ? buildLandmarks(HK_LM) : { list: [], mats: [] };
 for (const L of LMK.list) scene.add(L.group);
 window.LMK = LMK;
+// 精品：行近半島酒店就換地政總署原始 model（電腦 2048 原圖，手機 / 細記憶體 512），遠咗就卸走
+const HDMOD = window.HDM ? HDM.create(scene, { px: TOUCH || (navigator.deviceMemory || 8) <= 4 ? 512 : 2048, R: 350, R2: 500,
+  onShow(it, on) { const L = LMK.list.find((l) => l.en === it.en); if (L) L.group.visible = !on;
+    for (const m of it.mats) { const k = LMK.mats.indexOf(m); if (on && k < 0) LMK.mats.push(m); else if (!on && k >= 0) LMK.mats.splice(k, 1); } } }) : null;
+window.HDMOD = HDMOD;
 window.gotoLM = (i) => { const L = LMK.list[i]; cam.tx = L.x; cam.tz = L.z; cam.dist = Math.max(120, L.r * 2.4, L.h * 1.6); cam.pitch = 0.42; };
 // ---------- 1B 全城真模型：地政總署圖幅串流（tiles/，網上版先有；file:// 讀唔到就保持方盒）----------
 const TILES = (() => {   // 每個圖幅切 4 份：幾何 + 遠距離貼圖（1024）喺 R 內載入；最近幾份再換高解像度（電腦 4096 / 手機 2048）
@@ -2601,6 +2607,7 @@ const GAME = {
     if (!LIBIN) {
     TRAFFIC.step(dt); TRAFFIC.lights.material.opacity = 0.35 + 0.65 * night;
     TILES.step(dt, cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z, camera.position.y < 150);
+    if (HDMOD) HDMOD.step(cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z);
     SHOPF.near(camera.position.x, camera.position.z, camera.position.y < 150);   // 近鏡立體鋪面
     { camera.getWorldDirection(_cmpV); const a = Math.round(-Math.atan2(_cmpV.x, -_cmpV.z) * 180 / Math.PI);   // BG 09-30「北面喺邊」：指南針，N 指住真北（遊戲 −z）
       if (a !== _cmpA) { _cmpA = a; $('compassR').style.transform = `rotate(${a}deg)`; } }
