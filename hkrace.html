@@ -141,7 +141,7 @@ addEventListener('resize', layout); layout();
 scene.add(new THREE.HemisphereLight(0xe4eeff, 0x5a5650, 0.85));
 const sunL = new THREE.DirectionalLight(0xffffff, 0.85); sunL.position.set(300, 520, 180); scene.add(sunL);
 const cam = { mode: 'race', wx: 0, wz: 0, wyaw: 0 };
-{ const g = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000), new THREE.MeshLambertMaterial({ color: 0x6b6c6e })); g.rotation.x = -Math.PI / 2; g.position.y = -0.06; scene.add(g); }
+{ const g = new THREE.Mesh(new THREE.PlaneGeometry(9000, 9000, 60, 60), new THREE.MeshLambertMaterial({ color: 0x6b6c6e, polygonOffset: true, polygonOffsetFactor: 2, polygonOffsetUnits: 8 })); g.rotation.x = -Math.PI / 2; g.position.y = -0.15; scene.add(g); }   /* 一塊 9000 m 大三角形喺遠處同瀝青 z-fight，賽道會變灰：切細 + 降低 + polygonOffset */
 
 // 地政總署圖幅：只揀賽道 150 米內嘅（RACE_TILES），按鏡頭距離載入 / 卸走，一次載一份
 const TILES = (() => {
