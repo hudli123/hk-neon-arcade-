@@ -12,6 +12,7 @@ canvas{display:block}
 #compass{position:fixed;right:14px;top:96px;width:46px;height:46px;border-radius:50%;background:rgba(20,30,50,.72);border:1px solid rgba(160,210,255,.5);pointer-events:none;z-index:5}#compass i{position:absolute;inset:0;display:block}#compass b{position:absolute;left:50%;top:1px;transform:translateX(-50%);color:#ff5a5a;font:900 13px sans-serif}#compass s{position:absolute;left:50%;top:15px;width:0;height:0;margin-left:-5px;border:5px solid transparent;border-bottom:9px solid #ff5a5a;border-top:0}body.open #compass,body.agent-on #compass{display:none}   /* 開放世界有小地圖（北向上 + N） */
 #modes button,#time button{font:bold 14px inherit;font-family:inherit;color:#fff;background:rgba(20,30,50,.7);border:1px solid rgba(160,210,255,.5);border-radius:18px;padding:7px 14px;cursor:pointer}
 #modes button.on{background:linear-gradient(90deg,#1f5f9b,#1fb5a8)}
+@media (max-width:480px){#modes{gap:5px}#modes button{padding:7px 9px;white-space:nowrap}}
 #time{position:fixed;right:12px;top:52px;display:flex;gap:8px}
 #helpbox{position:fixed;inset:0;z-index:50;background:rgba(4,6,14,.7);display:flex;align-items:center;justify-content:center;padding:14px}
 #helpbox .hb{max-width:560px;max-height:88vh;overflow:auto;background:#141a2e;border:1px solid rgba(140,170,255,.45);border-radius:16px;padding:16px 20px;font-size:15px;line-height:1.7;box-shadow:0 10px 40px #000}
@@ -44,7 +45,7 @@ window.BOOT = (p) => {
 };
 </script><script>window.BOOT && BOOT(0.000)</script>
 <div id="hud"><div id="street"></div></div>
-<div id="compass"><i id="compassR"><b>N</b><s></s></i></div><div id="modes"><button id="mFly" class="on">航拍</button><button id="mWalk">落街行</button><button id="mRace">賽車</button><button id="mOpen">開放世界</button></div>
+<div id="compass"><i id="compassR"><b>N</b><s></s></i></div><div id="modes"><button id="mFly" class="on">航拍</button><button id="mWalk">落街行</button><button id="mRace">賽車</button><button id="mOpen">開放世界</button><button id="mNet">🌐 聯機</button></div>
 <div id="time"><button id="tNight">夜晚</button><button id="tDay">日頭</button><button id="tHelp">❓ 玩法</button></div>
 <div id="helpbox" hidden><div class="hb"><div id="hbody"></div><button id="hclose">明白，開始！</button></div></div>
 <div id="help"></div>
@@ -2540,6 +2541,9 @@ ${T ? '' : `<li>🚗 揸車：${k('W')} 油・${k('S')} 剎・${k('A')}${k('D')}
   }; })();
 window.showHelp = (m) => { $('hbody').innerHTML = HELP[m] || HELP.fly; $('helpbox').hidden = false; };
 $('tHelp').onclick = () => showHelp(cam.mode === 'walk' ? 'walk' : 'fly');
+{ const on = /[?&]online=1(&|$)/.test(location.search), nb = $('mNet');
+  if (on) nb.textContent = '🔌 單機';
+  nb.onclick = () => { const u = new URL(location.href); if (on) u.searchParams.delete('online'); else u.searchParams.set('online', '1'); location.href = u.href; }; }
 $('hclose').onclick = () => { $('helpbox').hidden = true; };
 $('helpbox').addEventListener('pointerdown', (e) => e.stopPropagation());
 try { if (!localStorage.getItem('hkcity-help')) { showHelp('fly'); localStorage.setItem('hkcity-help', 1); } } catch (e) {}
