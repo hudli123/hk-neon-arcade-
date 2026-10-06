@@ -4109,7 +4109,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       else box.innerHTML = M.type === 'food' ? `<b>外賣速遞</b> ${tt}<br>${M.indoor ? `送去：${M.indoor.tc} ${M.indoor.floor} 〈${M.indoor.name}〉${M.indoor.stage === 1 ? '・行入大廈' : '・送到指定樓層'}` : `送去：${to}`}` : M.type === 'taxi' ? (M.stage === 'pick' ? `<b>的士</b> ${tt}<br>接客：揸車去紅色「客」停低${M.hint ? '<br>' + M.hint : ''}` : `<b>的士</b> ${tt}<br>去：${to}，停車落客`) : `<b>追偷雞賊</b> ${tt}<br>揸車撞佢 3 次（${M.hits}/3）`;
     }
     if (M.type && window.IND && IND.inside) box.innerHTML += `<br>${IND.hint()}`;
-    box.innerHTML = misMin ? box.innerHTML.split('<br>')[0] + ' <span class="x">▸</span>' : '<span class="x">✕</span>' + box.innerHTML;
+    box.innerHTML = misMin ? box.innerHTML.split('<br>')[0] + (window.IND && IND.inside ? ' <span class="ogo ind-ogo">🚪 出返街</span>' : '') + ' <span class="x">▸</span>' : '<span class="x">✕</span>' + box.innerHTML;
     // 小地圖：北向上，半徑 250 米
     const x = mctx, S = 150 / 250, cx = hero.x, cz = hero.z;
     x.save(); x.clearRect(0, 0, 300, 300); x.beginPath(); x.arc(150, 150, 150, 0, 7); x.clip(); x.fillStyle = '#23252b'; x.fillRect(0, 0, 300, 300);
@@ -7957,14 +7957,18 @@ window.IND = (() => {
       const old = signRuns.get(q.unitIndex); if (!old || q.length > old.length) signRuns.set(q.unitIndex, q);
     }
     const signedUnits = new Set(signRuns.keys()), signedNames = new Set([...signRuns.values()].map((q) => q.name.trim().toLowerCase()));
-    const atlas = [], sprites = [], doorSigns = [], fasciaSigns = [];
+    const atlas = [], sprites = [], doorSigns = [], fasciaSigns = [], acceptedCategoryLabels = [];
+    let dedupedCategoryLabels = 0;
     for (const [unitIndex, run] of signRuns) atlas.push({ kind: 'fascia', text: run.name, unitIndex, run });
     for (const p of g.pois.slice(0, 80)) if (p[2] && !signedNames.has(p[2].trim().toLowerCase()) && ![...signedUnits].some((i) => insideShape(unitPoints[i].rings, p[3], p[4]))) {
       const it = { kind: 'label', text: p[2], x: p[3], z: p[4] }; atlas.push(it); sprites.push(it);
     }
     for (let i = 0; i < unitPoints.length; i++) {
       const u = unitPoints[i], text = categoryLabel(u.cat);
-      if (text) { const it = { kind: 'label', text, x: u.pos.x, z: u.pos.z }; atlas.push(it); sprites.push(it); }
+      if (text) {
+        if (acceptedCategoryLabels.some((q) => q.text === text && Math.hypot(q.x - u.pos.x, q.z - u.pos.z) < 6)) dedupedCategoryLabels++;
+        else { const it = { kind: 'label', text, x: u.pos.x, z: u.pos.z }; atlas.push(it); sprites.push(it); acceptedCategoryLabels.push(it); }
+      }
       if (u.cat === 'elevator' || u.cat.startsWith('restroom.')) {
         const frame = u.cat.startsWith('restroom.') ? doorFacingEdge(u, grid, g.doors) || facingEdge(u, grid) : facingEdge(u, grid);
         const signText = u.cat === 'elevator' ? '升降機 / Lift' : `洗手間\n${u.cat === 'restroom.male' ? '男' : u.cat === 'restroom.female' ? '女' : u.cat === 'restroom.wheelchair' ? '♿' : '男女'}`;
@@ -7976,7 +7980,8 @@ window.IND = (() => {
         }
       }
     }
-    root.userData.signDebug = { signedUnits: [...signedUnits], fasciaNames: [...signedNames], doorSigns, poiSprites: sprites.map((q) => q.text) };
+    root.userData.signDebug = { signedUnits: [...signedUnits], fasciaNames: [...signedNames], doorSigns,
+      poiSprites: sprites.map((q) => q.text), dedupedCategoryLabels };
     if (!atlas.length) return null;
     const cols = 8, cw = 192, ch = 48, rows = Math.max(1, Math.ceil(atlas.length / cols));
     const cv = document.createElement('canvas'); cv.width = cw * cols; cv.height = ch * rows;
@@ -8447,8 +8452,9 @@ window.IND = (() => {
           addShelf(unit, { x: center.x + shelfNormal[0] * 0.62, z: center.z + shelfNormal[1] * 0.62 }, shelfAxis, shelfLength * 0.9, `${poi[2]}:side`);
         }
         if (type === 'convenience' && noDoorRoom) {
+          const faceAxis = -axis[1] * frame.nx + axis[0] * frame.nz >= 0 ? axis : [-axis[0], -axis[1]];
           const fridge = machine({ x: front.x + frontage.ux * (spanWidth * 0.38) + inward[0] * 1.3, z: front.z + frontage.uz * (spanWidth * 0.38) + inward[1] * 1.3 },
-            axis, 'vending', null, unit, true);
+            faceAxis, 'vending', null, unit, true);
           if (fridge) stat.shopFixtures++;
         }
         stat.shopFixtures += built ? 1 : 0;
@@ -8562,10 +8568,12 @@ window.IND = (() => {
       }
       if (!best) return [];
       const rows = [];
+      const faceAxis = -best.axis[1] * best.normal[0] + best.axis[0] * best.normal[1] >= 0 ?
+        best.axis : [-best.axis[0], -best.axis[1]];
       for (let i = 0; i < count; i++) {
         const offset = (i - (count - 1) * 0.5) * 1.0;
         const center = { x: best.base.x + best.axis[0] * offset, z: best.base.z + best.axis[1] * offset };
-        const placed = machine(center, best.axis, type, labelIndex, null, true);
+        const placed = machine(center, faceAxis, type, labelIndex, null, true);
         if (placed) {
           rows.push(placed); placedMachines.push(placed);
           stat.landmarks.machines.push({ x: placed.x, z: placed.z, normal: placed.normal, type, labelIndex });
@@ -9205,8 +9213,15 @@ window.IND = (() => {
   function buildFloor(r, g, start = { x: 0, z: 0 }) {
     if (!M) init();
     const showcase = showcaseForFloor(r, g);
-    if (showcase) ensureShowcaseAssets();
+    const stageMs = {};
+    if (showcase) {
+      const showcaseAssetsStart = performance.now();
+      ensureShowcaseAssets();
+      stageMs.showcaseAssets = Math.round((performance.now() - showcaseAssetsStart) * 10) / 10;
+    }
     const t0 = performance.now(), root = new THREE.Group(), builders = new Map(), materials = M.assets.materials;
+    let tp = t0;
+    const mark = (k) => { const n = performance.now(); stageMs[k] = Math.round((n - tp) * 10) / 10; tp = n; };
     const builder = (key) => { let b = builders.get(key); if (!b) builders.set(key, b = vbNew()); return b; };
     const doorIndex = makeDoorIndex(g.doors.map((d) => linesOf(d[2]))), walls = [], unitPoints = [], frontRuns = [], poiNames = poiFasciaNames(g);
     const station = isStation(r), baseFloor = showcase ? 'mkShowcaseFloor' : station ? 'stationFloor' : 'mallFloor', publicUnits = publicUnitShapes(g, r.data), white = color('#ffffff');
@@ -9223,16 +9238,25 @@ window.IND = (() => {
       });
       const cp = centroid(rings); unitPoints.push({ u, unitIndex: i, cat, name, originalName, pos: cp, rings, shop, floorClass });
     }
+    mark('units');
     for (const rings of g.polys) for (const ring of rings) wallBuild(builder, ring, g.H, white, doorIndex, walls,
       { wallClass: station ? 'stationWall' : 'plasterWall', showcase: !!showcase });
     for (const rings of g.polys) builder('ceiling').flat(rings, g.H, white, false, 0.6);
+    mark('polyWalls');
     const grid = makeGrid(r, g, walls); g.walkable = !!(grid && grid.walkable.some((v) => v));
+    mark('grid');
     addFacilityProps(builder, unitPoints, grid);
+    mark('facility');
     const props = addMerchandise(root, r, g, unitPoints, frontRuns, grid, publicUnits, movementUnits, station, start, !!showcase);
+    mark('merchandise');
     const showcaseStats = showcase ? addMongKokCShowcase(root, r, g, unitPoints, grid, props, showcase, builder, start) : null;
+    mark('showcase');
     const gateStats = station ? addFareGates(builder, grid, r.data, g.o, props.gateInfo, showcase) : null;
+    mark('gates');
     if (station) addPlatformStrips(builder, g, r.data);
+    mark('platform');
     const lightCount = addCeilingLights(root, g, grid, publicUnits, showcase);
+    mark('lights');
     if (showcaseStats) {
       showcaseStats.lights = lightCount;
       showcaseStats.gateIndicators = gateStats?.indicators || 0;
@@ -9240,16 +9264,20 @@ window.IND = (() => {
       root.userData.showcaseStats = showcaseStats;
     }
     const labels = addLabels(root, g, r.data, frontRuns, unitPoints, grid); addRoutes(root, g, r.data);
+    mark('labels');
     for (const [key, b] of builders) if (b.triangles) {
       const mesh = new THREE.Mesh(b.geo(), materials[key]); mesh.frustumCulled = false; root.add(mesh);
     }
+    mark('meshes');
     const routePoints = station ? routeWalkTargets(r.data, g, grid, props.publicCells, !!showcase) : [];
+    mark('routePoints');
     root.traverse((o) => o.layers.set(1)); S.root.add(root);
     let tris = 0, drawCalls = 0; root.traverse((o) => {
       if (o.isMesh && o.geometry && o.geometry.attributes.position) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1);
       if ((o.isMesh || o.isLineSegments) && !o.isSprite) drawCalls++;
     });
-    return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), drawCalls, buildMs: performance.now() - t0, group: g, gateStats,
+    mark('stats');
+    return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), drawCalls, buildMs: performance.now() - t0, stageMs, group: g, gateStats,
       shopStats: props.shopStats, propStats: props.propStats, reachability: props.reachability, publicMask: props.publicMask,
       publicCells: props.publicCells, shopAnchors: props.shopAnchors, foodAnchors: props.foodAnchors, routePoints, showcaseConfig: showcase, showcaseStats };
   }
@@ -9562,7 +9590,7 @@ window.IND = (() => {
     const p = nearestCell(S.floor.grid, x, z) || { x: x, z: z };
     place(p.x, p.z, h); S.paid = paidAt(p.x, p.z); configureIndoorPeople();
     return { ...p, walkable: !!(S.floor.grid && S.floor.grid.walkable[S.floor.grid.idxAt(p.x, p.z)]), buildMs: S.floor.buildMs,
-      triangles: S.floor.triangles, drawCalls: S.floor.drawCalls, gateStats: S.floor.gateStats, shopStats: S.floor.shopStats,
+      stageMs: S.floor.stageMs, triangles: S.floor.triangles, drawCalls: S.floor.drawCalls, gateStats: S.floor.gateStats, shopStats: S.floor.shopStats,
       propStats: S.floor.propStats, reachability: S.floor.reachability, showcase: S.floor.showcaseStats };
   }
   function place(x, z, h = OPEN.hero.h) {
@@ -9946,14 +9974,14 @@ window.IND = (() => {
     if (!r) throw new Error('IND test venue not found: ' + id);
     return load(r).then(() => {
       const g = floorByOrdinal(r, o); if (!g) throw new Error('IND test floor not found: ' + o);
-      if (!groupWalkable(r, g)) return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: false, skipped: true, buildMs: 0, triangles: 0, drawCalls: 0, floors: r.groups.length };
+      if (!groupWalkable(r, g)) return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: false, skipped: true, buildMs: 0, stageMs: null, triangles: 0, drawCalls: 0, floors: r.groups.length };
       if (!S.root) init();
       if (S.inside) { hideIndoorPeople(); disposeFloor(); S.root.visible = false; }
       S.phase = null; S.busy = false; S.menu = false; $('indLift').hidden = true; $('indStair').hidden = true; fade(0);
       S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; indoorBackground(true); cameraLayers(true);
       const target = r.v.bb, p = showFloor(r, g, (target[0] + target[2]) / 2, (target[1] + target[3]) / 2);
       S.paid = paidAt(p.x, p.z);
-      return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: p.walkable, buildMs: p.buildMs, triangles: p.triangles,
+      return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: p.walkable, buildMs: p.buildMs, stageMs: p.stageMs, triangles: p.triangles,
         drawCalls: p.drawCalls, gateStats: p.gateStats, shopStats: p.shopStats, propStats: p.propStats, reachability: p.reachability, showcase: p.showcase,
         signDebug: S.floor.root.userData.signDebug,
         floorResources: { textures: S.floor.root.userData.ownedTextures?.length || 0, materials: S.floor.root.userData.ownedMaterials?.length || 0,
