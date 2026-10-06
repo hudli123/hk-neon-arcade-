@@ -3521,7 +3521,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   }
   addEventListener('keydown', (e) => { if (!active) return; const k = e.key.toLowerCase(); if (k === 'e' && !e.repeat) act(); if (k === 'escape') metro ? closeMetro() : exit(); if (k === ' ') e.preventDefault(); });
   $('ox').onclick = () => exit(); $('omtrx').onclick = () => closeMetro(); $('omtr').addEventListener('pointerdown', (e) => e.stopPropagation());
-  let misMin = false; try { misMin = localStorage.getItem('hkopen-mismin') === '1'; } catch (e) {}   // BG：任務框擋住畫面 → ✕ 縮做一行，再撳打開
+  let misMin = false, misHtml = null; try { misMin = localStorage.getItem('hkopen-mismin') === '1'; } catch (e) {}   // BG：任務框擋住畫面 → ✕ 縮做一行，再撳打開
   $('omis').addEventListener('pointerdown', (e) => { e.stopPropagation(); misMin = !misMin; try { localStorage.setItem('hkopen-mismin', misMin ? '1' : '0'); } catch (e) {} }); $('oq').onclick = () => window.showHelp && showHelp('open');
 
   // ---------- 聲音（WebAudio 即場合成，冇音檔）----------
@@ -4100,16 +4100,17 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
         x.fillStyle = 'rgba(255,255,255,.8)'; x.font = 'italic 700 13px sans-serif'; x.textAlign = 'center'; x.textBaseline = 'middle'; for (let v = 0; v <= mx; v += 40) { const aa = a0 + (a1 - a0) * v / mx; x.fillText(v, cx + Math.cos(aa) * (r - 24), cy + Math.sin(aa) * (r - 24)); }
         x.strokeStyle = '#ff5a3c'; x.lineWidth = 4; x.beginPath(); x.moveTo(cx + Math.cos(a) * 18, cy + Math.sin(a) * 18); x.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6)); x.stroke();
         x.shadowColor = '#000'; x.shadowBlur = 8; x.fillStyle = '#fff'; x.font = 'italic 900 46px sans-serif'; x.fillText(k, cx, cy + 4); x.shadowBlur = 0; x.font = '700 13px sans-serif'; x.fillStyle = 'rgba(255,255,255,.7)'; x.fillText('KM/H', cx, cy + 38); }; })()))(st); }   // v54：揸車速度錶（BG）   // 錢 + 惡名 ★（freefight.js）
-    const M = mission, box = $('omis');
-    if (!M.type) { box.hidden = false; box.innerHTML = window.IND && IND.inside ? IND.hint() : window.LIB && LIB.inside ? LIB.hint() : '<b>自由行</b><br>行去黃色光柱接任務：外賣・的士・追偷雞賊・小巴司機' + (MTR.ex.length ? '<br>🚇 行去地鐵出口（小地圖彩色方格）可以搭地鐵去第二個站' : '') + stormHint() + (window.RIFT ? RIFT.hint(hero) : '') + (window.LIB ? LIB.hint() : '') + (window.IND ? IND.hint() : ''); }
+    const M = mission, box = $('omis'); let html = '';
+    if (!M.type) { box.hidden = false; html = window.IND && IND.inside ? IND.hint() : window.LIB && LIB.inside ? LIB.hint() : '<b>自由行</b><br>行去黃色光柱接任務：外賣・的士・追偷雞賊・小巴司機' + (MTR.ex.length ? '<br>🚇 行去地鐵出口（小地圖彩色方格）可以搭地鐵去第二個站' : '') + stormHint() + (window.RIFT ? RIFT.hint(hero) : '') + (window.LIB ? LIB.hint() : '') + (window.IND ? IND.hint() : ''); }
     else {
       box.hidden = false; const tt = `<span class="t">${M.indoor && M.indoor.pending ? '載入目標…' : `${Math.ceil(M.t)} 秒`}</span>`;
       const to = M.to ? `${M.to.tc}（${Math.round(dist({ x: hero.x, z: hero.z }, M.to))} 米）` : '';
-      if (M.type === 'gmb') { const n = M.cps.length, st = M.cps[M.i]; box.innerHTML = `<b>小巴 ${M.route.n}</b> ${tt}<br>往 ${M.route.b || '總站'}：跟住光柱行（${M.i}/${n}）${st.stop ? '，下一個係<b>站</b>：停車上落客' : ''}${M.hint ? '<br>' + M.hint : ''}`; }
-      else box.innerHTML = M.type === 'food' ? `<b>外賣速遞</b> ${tt}<br>${M.indoor ? `送去：${M.indoor.tc} ${M.indoor.floor} 〈${M.indoor.name}〉${M.indoor.stage === 1 ? '・行入大廈' : '・送到指定樓層'}` : `送去：${to}`}` : M.type === 'taxi' ? (M.stage === 'pick' ? `<b>的士</b> ${tt}<br>接客：揸車去紅色「客」停低${M.hint ? '<br>' + M.hint : ''}` : `<b>的士</b> ${tt}<br>去：${to}，停車落客`) : `<b>追偷雞賊</b> ${tt}<br>揸車撞佢 3 次（${M.hits}/3）`;
+      if (M.type === 'gmb') { const n = M.cps.length, st = M.cps[M.i]; html = `<b>小巴 ${M.route.n}</b> ${tt}<br>往 ${M.route.b || '總站'}：跟住光柱行（${M.i}/${n}）${st.stop ? '，下一個係<b>站</b>：停車上落客' : ''}${M.hint ? '<br>' + M.hint : ''}`; }
+      else html = M.type === 'food' ? `<b>外賣速遞</b> ${tt}<br>${M.indoor ? `送去：${M.indoor.tc} ${M.indoor.floor} 〈${M.indoor.name}〉${M.indoor.stage === 1 ? '・行入大廈' : '・送到指定樓層'}` : `送去：${to}`}` : M.type === 'taxi' ? (M.stage === 'pick' ? `<b>的士</b> ${tt}<br>接客：揸車去紅色「客」停低${M.hint ? '<br>' + M.hint : ''}` : `<b>的士</b> ${tt}<br>去：${to}，停車落客`) : `<b>追偷雞賊</b> ${tt}<br>揸車撞佢 3 次（${M.hits}/3）`;
     }
-    if (M.type && window.IND && IND.inside) box.innerHTML += `<br>${IND.hint()}`;
-    box.innerHTML = misMin ? box.innerHTML.split('<br>')[0] + (window.IND && IND.inside ? ' <span class="ogo ind-ogo">🚪 出返街</span>' : '') + ' <span class="x">▸</span>' : '<span class="x">✕</span>' + box.innerHTML;
+    if (M.type && window.IND && IND.inside) html += `<br>${IND.hint()}`;
+    html = misMin ? html.split('<br>')[0] + (window.IND && IND.inside ? ' <span class="ogo ind-ogo">🚪 出返街</span>' : '') + ' <span class="x">▸</span>' : '<span class="x">✕</span>' + html;
+    if (html !== misHtml) { box.innerHTML = html; misHtml = html; }
     // 小地圖：北向上，半徑 250 米
     const x = mctx, S = 150 / 250, cx = hero.x, cz = hero.z;
     x.save(); x.clearRect(0, 0, 300, 300); x.beginPath(); x.arc(150, 150, 150, 0, 7); x.clip(); x.fillStyle = '#23252b'; x.fillRect(0, 0, 300, 300);
