@@ -44,7 +44,7 @@ window.BOOT = (p) => {
 };
 </script><script>window.BOOT && BOOT(0.000)</script>
 <div id="hud"><div id="street"></div></div>
-<div id="compass"><i id="compassR"><b>N</b><s></s></i></div><div id="modes"><button id="mFly" class="on">航拍</button><button id="mWalk">落街行</button><button id="mRace">賽車</button><button id="mOpen">開放世界</button></div>
+<div id="compass"><i id="compassR"><b>N</b><s></s></i></div><div id="modes"><button id="mFly" class="on">航拍</button><button id="mWalk">落街行</button><button id="mRace">賽車</button><button id="mOpen">開放世界</button><button id="mNet">🌐 網上聯機</button></div>
 <div id="time"><button id="tNight">夜晚</button><button id="tDay">日頭</button><button id="tHelp">❓ 玩法</button></div>
 <div id="helpbox" hidden><div class="hb"><div id="hbody"></div><button id="hclose">明白，開始！</button></div></div>
 <div id="help"></div>
@@ -2540,6 +2540,9 @@ ${T ? '' : `<li>🚗 揸車：${k('W')} 油・${k('S')} 剎・${k('A')}${k('D')}
   }; })();
 window.showHelp = (m) => { $('hbody').innerHTML = HELP[m] || HELP.fly; $('helpbox').hidden = false; };
 $('tHelp').onclick = () => showHelp(cam.mode === 'walk' ? 'walk' : 'fly');
+{ const on = /[?&]online=1(&|$)/.test(location.search), nb = $('mNet');
+  if (on) nb.textContent = '🔌 單機版';
+  nb.onclick = () => { const u = new URL(location.href); if (on) u.searchParams.delete('online'); else u.searchParams.set('online', '1'); location.href = u.href; }; }
 $('hclose').onclick = () => { $('helpbox').hidden = true; };
 $('helpbox').addEventListener('pointerdown', (e) => e.stopPropagation());
 try { if (!localStorage.getItem('hkcity-help')) { showHelp('fly'); localStorage.setItem('hkcity-help', 1); } } catch (e) {}
