@@ -9826,8 +9826,7 @@ window.IND = (() => {
     if (!S.inside) return;
     if (!S.floor || !S.floor.group || !S.state || !S.groups) { leave(true); return; }
     if (isStation(S.state)) {
-      const highest = Math.max(...S.groups.map((g) => g.o));
-      if (S.floor.group.o !== highest || S.paid || !nearUnit(['stairs', 'escalator', 'elevator'])) { OPEN.big('請到最高層未付費通道出站', '#ffca54'); return; }
+      if (S.paid) { OPEN.big('已入閘：請先行出閘再出站', '#ffca54'); return; }
       const k = [...stationVenue].find(([, r]) => r === S.state), exit = k && stationExit(k[0], OPEN.hero.x, OPEN.hero.z);
       if (exit) { OPEN.ride(exit, true, true); return; }
       OPEN.big('搵唔到車站出口', '#ff765e'); return;
