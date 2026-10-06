@@ -2481,7 +2481,7 @@ const PEOPLE = (() => {
       c.tx = dx / d; c.tz = dz / d; c.flee = 2.5 + Math.random() * 2; c.idle = false; c.st = 'walk'; c.lead = null; c.pair = null; anim(c, 'run'); }
   }
   const _look = new THREE.Vector3();
-  const api = { step, N, crowd, knock, scare, hide: null };   // hide(x, z)：暴風範圍入面嘅行人收起
+  const api = { step, N, crowd, knock, scare, hide: null, PP };
   return api;
 })();
 
@@ -7091,7 +7091,7 @@ window.IND = (() => {
   const FONT = '"PingFang HK","PingFang TC","Microsoft JhengHei","Noto Sans TC",sans-serif';
   const S = { inside: false, busy: false, menu: false, state: null, data: null, groups: null, floor: null, root: null,
     phase: null, t: 0, target: null, paid: false, goal: null, forceFood: false, notice: 0, resourceTimer: 0,
-    savedBackground: null, hasSavedBackground: false, lastPickLoads: 0 };
+    savedBackground: null, hasSavedBackground: false, lastPickLoads: 0, peoplePool: null };
   const records = D.venues.map((v) => ({ v, data: null, promise: null, groups: null, entries: null, markers: null }));
   const byId = new Map(records.map((r) => [r.v.id, r]));
   const byEn = new Map(records.map((r) => [r.v.en, r]));
@@ -7323,7 +7323,7 @@ window.IND = (() => {
   $('indLiftX').onclick = () => { S.menu = false; S.busy = false; $('indLift').hidden = true; };
   const C3 = new THREE.Color();
   const color = (hex, k = 1) => { C3.set(hex); return [C3.r * k, C3.g * k, C3.b * k]; };
-  let M = null, sharedAssets = null;
+  let M = null, sharedAssets = null, showcaseAssets = null, showcaseLightingActive = false;
   function tileTexture(draw) {
     const cv = document.createElement('canvas'); cv.width = 128; cv.height = 128;
     draw(cv.getContext('2d'), cv.width, cv.height);
@@ -7386,6 +7386,76 @@ window.IND = (() => {
     sharedAssets = { textures: [terrazzo, wood, beigeTile, granite, plaster, enamel, ceiling], materials };
     return sharedAssets;
   }
+  function ensureShowcaseAssets() {
+    if (showcaseAssets) return showcaseAssets;
+    const anisotropy = typeof renderer !== 'undefined' && renderer.capabilities ? renderer.capabilities.getMaxAnisotropy() : 4;
+    const canvasTexture = (canvas, role) => {
+      const texture = tagTexture(new THREE.CanvasTexture(canvas), role, 'session');
+      texture.wrapS = THREE.RepeatWrapping; texture.wrapT = THREE.RepeatWrapping;
+      texture.generateMipmaps = true; texture.minFilter = THREE.LinearMipmapLinearFilter; texture.magFilter = THREE.LinearFilter;
+      texture.anisotropy = anisotropy; texture.colorSpace = THREE.SRGBColorSpace;
+      return texture;
+    };
+    const mosaicCanvas = document.createElement('canvas'); mosaicCanvas.width = 128; mosaicCanvas.height = 128;
+    const mosaic = mosaicCanvas.getContext('2d'), tile = 32;
+    mosaic.fillStyle = '#b9b9b9'; mosaic.fillRect(0, 0, 128, 128);
+    for (let y = 0; y < 4; y++) for (let x = 0; x < 4; x++) {
+      const shade = 224 + ((x * 19 + y * 13 + (x * y * 7)) % 24);
+      mosaic.fillStyle = `rgb(${shade},${shade},${shade})`; mosaic.fillRect(x * tile + 2, y * tile + 2, tile - 4, tile - 4);
+      mosaic.fillStyle = 'rgba(255,255,255,.32)'; mosaic.fillRect(x * tile + 3, y * tile + 3, tile - 6, 2);
+    }
+    const nameCanvas = document.createElement('canvas'); nameCanvas.width = 512; nameCanvas.height = 112;
+    const name = nameCanvas.getContext('2d');
+    name.fillStyle = '#fff'; name.fillRect(0, 0, 512, 112); name.strokeStyle = '#d4d5d6'; name.lineWidth = 5; name.strokeRect(3, 3, 506, 106);
+    name.fillStyle = '#16191c'; name.textAlign = 'center'; name.textBaseline = 'middle'; name.font = `800 46px ${FONT}`;
+    name.fillText('旺角 Mong Kok', 256, 56);
+    const signCanvas = document.createElement('canvas'); signCanvas.width = 512; signCanvas.height = 256;
+    const sign = signCanvas.getContext('2d');
+    const signCell = (index, bg, border, lines, arrow = '') => {
+      const x = (index % 2) * 256, y = Math.floor(index / 2) * 128;
+      sign.fillStyle = bg; sign.fillRect(x, y, 256, 128); sign.strokeStyle = border; sign.lineWidth = 8; sign.strokeRect(x + 5, y + 5, 246, 118);
+      sign.fillStyle = '#fff'; sign.textAlign = 'center'; sign.textBaseline = 'middle';
+      if (arrow) {
+        sign.font = `900 43px ${FONT}`; sign.fillText(lines[0], x + 126, y + 43);
+        sign.font = '900 58px sans-serif'; sign.fillText(arrow, x + 218, y + 65);
+      } else {
+        sign.font = `900 ${lines[0].length > 14 ? 24 : 30}px ${FONT}`; sign.fillText(lines[0], x + 128, y + 43, 232);
+        sign.font = `800 ${lines[1].length > 15 ? 18 : 22}px ${FONT}`; sign.fillText(lines[1], x + 128, y + 86, 232);
+      }
+    };
+    signCell(0, '#f4cf45', '#332a17', ['出口 Exit'], '↑');
+    signCell(1, '#b2222a', '#f5d6a0', ['售票', 'Tickets']);
+    signCell(2, '#176a69', '#d3e2d4', ['增值', 'Add Value']);
+    signCell(3, '#f8f7f2', '#b9bfc2', ['客務中心', 'Customer Service']);
+    const textures = [
+      canvasTexture(mosaicCanvas, 'mk-c-mosaic'),
+      canvasTexture(nameCanvas, 'mk-c-name-strip'),
+      canvasTexture(signCanvas, 'mk-c-sign-atlas')
+    ];
+    const materials = M.assets.materials;
+    materials.mkMosaicWall = new THREE.MeshStandardMaterial({ map: textures[0], color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 0.82, fog: false });
+    materials.mkShowcaseFloor = new THREE.MeshStandardMaterial({ map: M.assets.textures[3], color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 0.42, metalness: 0.04, fog: false });
+    materials.mkShowcaseSolid = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, roughness: 0.64, metalness: 0.08, fog: false });
+    materials.mkShowcaseGlass = new THREE.MeshStandardMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, transparent: true, opacity: 0.33, depthWrite: false, roughness: 0.12, metalness: 0.12, fog: false });
+    materials.mkShowcaseEmissive = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, toneMapped: false, fog: false });
+    materials.mkShowcaseSigns = new THREE.MeshBasicMaterial({ map: textures[2], color: 0xffffff, side: THREE.DoubleSide, toneMapped: false, fog: false });
+    materials.mkShowcaseName = new THREE.MeshBasicMaterial({ map: textures[1], color: 0xffffff, side: THREE.DoubleSide, toneMapped: false, fog: false });
+    materials.mkGatePanels = new THREE.MeshBasicMaterial({ color: 0xffffff, vertexColors: true, side: THREE.DoubleSide, toneMapped: false, fog: false });
+    sharedAssets.textures.push(...textures);
+    showcaseAssets = { textures, createdTextures: textures.length, lightGeo: new THREE.BoxGeometry(2.4, 0.045, 0.1) };
+    return showcaseAssets;
+  }
+  function setShowcaseLighting(config) {
+    if (!M) return;
+    if (config) {
+      M.hemi.intensity = 1 + (config.lightBoost || 0.32);
+      M.sun.intensity = 0.35 + (config.lightBoost || 0.32) * 0.18;
+    } else if (showcaseLightingActive) {
+      M.hemi.intensity = 1;
+      M.sun.intensity = 0.35;
+    }
+    showcaseLightingActive = !!config;
+  }
   function init() {
     const assets = makeSharedAssets();
     M = { assets, hemi: new THREE.HemisphereLight(0xe4e9ee, 0x77746e, 0.9), sun: new THREE.DirectionalLight(0xfff0dc, 0.32),
@@ -7426,6 +7496,29 @@ window.IND = (() => {
   const NO_WALK = new Set(['opentobelow', 'elevator', 'vegetation']);
   const SHOP_CATEGORIES = new Set(['room', 'foodservice', 'classroom', 'office']);
   const PUBLIC_CATEGORIES = new Set(['walkway', 'lobby', 'unenclosedarea']);
+  const SHOP_TYPE_KEYWORDS = {
+    apparel: ['服', '裝', '鞋', 'wear', 'fashion', 'shoe', 'sport', 'locker', 'jeans', '衣'],
+    eyewear: ['眼鏡', 'optical', '珠寶', 'jewel', '錶', 'watch', 'gold', '金'],
+    convenience: ['7-eleven', 'circle k', 'ok便利', '便利', '超市', 'mart', 'wellcome', '百佳'],
+    pharmacy: ['藥', 'pharm', '莎莎', 'sasa', 'beauty', '化妝', 'watsons', '屈臣氏', 'mannings', '萬寧'],
+    electronics: ['電', 'phone', 'mobile', 'digital', 'camera', '數碼'],
+    foodservice: ['餐', '茶', 'cafe', 'coffee', '咖啡', 'restaurant', '麵', '粥', '飯', 'kitchen']
+  };
+  const INDOOR_SHOWCASES = Object.freeze({
+    'f0b802fd-28b0-40e3-abff-62090becf0d4': Object.freeze({
+      C: Object.freeze({
+        kind: 'mong-kok-c', lightBoost: 0.32, ceilingStep: 3,
+        poiKeywords: Object.freeze({
+          bank: ['銀行', 'bank', '恒生', '中國銀行'],
+          healthcare: ['醫療', '健康', '同仁堂', '澳至尊'],
+          foodservice: ['西餅', '泡芙']
+        })
+      })
+    })
+  });
+  const showcaseForFloor = (r, g) => INDOOR_SHOWCASES[r?.v?.id]?.[g?.name] || null;
+  const PROP_INSTANCE_CAP = 3000, PROP_TRIANGLE_CAP = 25000;
+  let indoorPropAssets = null;
   const GENERIC_SHOP_NAMES = new Set(['商店', '餐廳', 'shop', 'kitchen', '熟食檔', '電影院', '店舖']);
   const NONSHOP_NAMES = new Set(['中空', '走廊', '行車通道', '有蓋走廊', '有蓋行人通道', '大堂', '停車位( 一般)', '升降機',
     '升降機大堂', '樓梯', '扶手電梯', '防煙間', '垃圾房', '洗手間(男性)', '洗手間(女性)', '洗手間(女性及男性)',
@@ -7564,13 +7657,14 @@ window.IND = (() => {
     for (const q of p) { b[0] = Math.min(b[0], q[0]); b[1] = Math.min(b[1], q[1]); b[2] = Math.max(b[2], q[0]); b[3] = Math.max(b[3], q[1]); }
     return b;
   }
-  function publicUnitShapes(g, data) {
-    const out = { cell: 4, length: 0, buckets: new Map(), large: [] };
+  function publicUnitShapes(g, data, includePlatforms = false) {
+    const out = { cell: 4, length: 0, buckets: new Map(), large: [], shapes: [] };
     for (const u of g.units) {
-      if (!PUBLIC_CATEGORIES.has(data.cats[u[1]] || '')) continue;
+      const cat = data.cats[u[1]] || '';
+      if (!PUBLIC_CATEGORIES.has(cat) && !(includePlatforms && cat === 'platform')) continue;
       const rings = unitRings(u), bounds = unitBounds(rings); if (!Number.isFinite(bounds[0])) continue;
       const shape = { rings, bounds }, x0 = Math.floor(bounds[0] / out.cell), x1 = Math.floor(bounds[2] / out.cell), z0 = Math.floor(bounds[1] / out.cell), z1 = Math.floor(bounds[3] / out.cell);
-      out.length++;
+      out.length++; out.shapes.push(shape);
       if ((x1 - x0 + 1) * (z1 - z0 + 1) > 2000) { out.large.push(shape); continue; }
       for (let x = x0; x <= x1; x++) for (let z = z0; z <= z1; z++) {
         const key = `${x},${z}`; let bucket = out.buckets.get(key); if (!bucket) out.buckets.set(key, bucket = []); bucket.push(shape);
@@ -7613,6 +7707,69 @@ window.IND = (() => {
     ];
     for (const q of faces) builder.quad(q[0], q[1], q[2], q[3], c);
   }
+  function addTexturedPanel(builder, center, normal, width, height, atlasIndex) {
+    const right = [normal[1], -normal[0]], [x, y, z] = center, depth = 0.012, hw = width * 0.5, hh = height * 0.5;
+    const at = (u, v) => [x + right[0] * u + normal[0] * depth, y + v, z + right[1] * u + normal[1] * depth];
+    const col = atlasIndex % 2, row = Math.floor(atlasIndex / 2), u0 = col / 2, u1 = (col + 1) / 2;
+    const v0 = 1 - (row + 1) / 2, v1 = 1 - row / 2, white = color('#ffffff');
+    builder.quad(at(-hw, -hh), at(hw, -hh), at(hw, hh), at(-hw, hh), white, white, white, white,
+      [[u0, v0], [u1, v0], [u1, v1], [u0, v1]]);
+  }
+  function addShowcaseNameStrips(root, g) {
+    const signBuilder = vbNew(), baseY = 2.2, height = 0.36, width = 2.3;
+    let count = 0; const points = [];
+    for (const rings of g.polys) for (const ring of ringsOf(rings)) {
+      const p = point(ring);
+      for (let i = 0; i < p.length; i++) {
+        const A = p[i], B = p[(i + 1) % p.length], dx = B[0] - A[0], dz = B[1] - A[1], length = Math.hypot(dx, dz);
+        if (length < 8) continue;
+        const nx0 = -dz / length, nz0 = dx / length, mx = (A[0] + B[0]) * 0.5, mz = (A[1] + B[1]) * 0.5;
+        const insideSign = insideShape(rings, mx + nx0 * 0.12, mz + nz0 * 0.12) ? 1 : -1;
+        const normal = [nx0 * insideSign, nz0 * insideSign], right = [normal[1], -normal[0]];
+        const lo = Math.min(A[0] * right[0] + A[1] * right[1], B[0] * right[0] + B[1] * right[1]);
+        const hi = Math.max(A[0] * right[0] + A[1] * right[1], B[0] * right[0] + B[1] * right[1]);
+        const total = hi - lo, first = Math.ceil((lo + width * 0.5 + 5) / 12) * 12;
+        for (let s = first; s < hi - width * 0.5 - 4; s += 12) {
+          const offset = s - (A[0] * right[0] + A[1] * right[1]), x = A[0] + right[0] * offset;
+          const z = A[1] + right[1] * offset;
+          if (Math.hypot(x - mx, z - mz) > total * 0.55) continue;
+          const hw = width * 0.5, hh = height * 0.5;
+          const at = (u, v) => [x + right[0] * u + normal[0] * 0.035, baseY + v, z + right[1] * u + normal[1] * 0.035];
+          const white = color('#ffffff');
+          signBuilder.quad(at(-hw, -hh), at(hw, -hh), at(hw, hh), at(-hw, hh), white, white, white, white,
+            [[0, 0], [1, 0], [1, 1], [0, 1]]);
+          points.push({ x, z, normal }); count++;
+        }
+      }
+    }
+    if (count) {
+      const mesh = new THREE.Mesh(signBuilder.geo(), M.assets.materials.mkShowcaseName); mesh.name = 'mk-c-name-strips'; mesh.frustumCulled = false; root.add(mesh);
+    }
+    root.userData.showcaseNameStrips = count; root.userData.showcaseNameStripPoints = points;
+    return count;
+  }
+  function addShowcaseWallEdges(builder, g, H) {
+    const seen = new Set(), material = builder('mkShowcaseSolid'); let count = 0;
+    for (const rings of g.polys) for (const ring of ringsOf(rings)) {
+      const p = point(ring);
+      for (let i = 0; i < p.length; i++) {
+        const prev = p[(i + p.length - 1) % p.length], cur = p[i], next = p[(i + 1) % p.length];
+        const key = `${Math.round(cur[0] * 5)}:${Math.round(cur[1] * 5)}`; if (seen.has(key)) continue; seen.add(key);
+        const normals = [];
+        for (const [A, B] of [[prev, cur], [cur, next]]) {
+          const dx = B[0] - A[0], dz = B[1] - A[1], length = Math.hypot(dx, dz) || 1;
+          let nx = -dz / length, nz = dx / length;
+          if (!insideShape(rings, (A[0] + B[0]) * 0.5 + nx * 0.12, (A[1] + B[1]) * 0.5 + nz * 0.12)) { nx = -nx; nz = -nz; }
+          normals.push([nx, nz]);
+        }
+        let nx = normals[0][0] + normals[1][0], nz = normals[0][1] + normals[1][1], length = Math.hypot(nx, nz) || 1;
+        nx /= length; nz /= length;
+        addBox(material, [cur[0] + nx * 0.035, H * 0.5, cur[1] + nz * 0.035], [0.075, Math.min(H, 3), 0.075], [1, 0], color('#7a7d80'));
+        count++;
+      }
+    }
+    return count;
+  }
   function addWallBand(builder, A, B, y0, y1, tint, alongScale = 1.2, heightScale = 6) {
     const len = Math.hypot(B[0] - A[0], B[1] - A[1]) || 1, ux = (B[0] - A[0]) / len, uz = (B[1] - A[1]) / len;
     const s0 = (A[0] * ux + A[1] * uz) / alongScale, s1 = (B[0] * ux + B[1] * uz) / alongScale;
@@ -7626,6 +7783,12 @@ window.IND = (() => {
       walls.push([A[0], A[1], B[0], B[1]]);
       if (!getBuilder) return;
       if (!front) {
+        if (options.showcase) {
+          const dadoTop = Math.min(1.2, H);
+          addWallBand(getBuilder('mkMosaicWall'), A, B, 0, dadoTop, color('#7a7d80'), 0.2, 0.2);
+          if (H > dadoTop) addWallBand(getBuilder('mkMosaicWall'), A, B, dadoTop, H, color('#c41e2a'), 0.2, 0.2);
+          return;
+        }
         const key = options.wallClass || 'plasterWall';
         addWallBand(getBuilder(key), A, B, 0, H, options.wallTint || c, key === 'stationWall' ? 1.5 : 1.2, key === 'stationWall' ? 2 : 6);
         return;
@@ -7696,7 +7859,8 @@ window.IND = (() => {
     const x0 = Math.floor(minx / CS) * CS - CS, x1 = Math.ceil(maxx / CS) * CS + CS;
     const z0 = Math.floor(minz / CS) * CS - CS, z1 = Math.ceil(maxz / CS) * CS + CS;
     const nx = Math.ceil((x1 - x0) / CS), nz = Math.ceil((z1 - z0) / CS), n = nx * nz;
-    const walkable = new Uint8Array(n), paid = new Uint8Array(n), routed = new Uint8Array(n);
+    const walkable = new Uint8Array(n), paid = new Uint8Array(n), routed = new Uint8Array(n), routedCells = new Int32Array(n);
+    let routedCellCount = 0;
     const idxAt = (x, z) => { const i = Math.floor((x - x0) / CS), j = Math.floor((z - z0) / CS); return i < 0 || j < 0 || i >= nx || j >= nz ? -1 : j * nx + i; };
     for (const shape of shapes) fillShape({ nx, nz, walkable }, shape, x0, z0);
     for (const u of g.units) {
@@ -7730,14 +7894,15 @@ window.IND = (() => {
           for (let j = minz; j <= maxz; j++) for (let i = minx; i <= maxx; i++) {
             const k0 = j * nx + i, d = distToSeg(x0 + (i + 0.5) * CS, z0 + (j + 0.5) * CS, A, B);
             if (d <= 2.5) {
-              routed[k0] = 1;
+              if (!routed[k0]) { routed[k0] = 1; routedCells[routedCellCount++] = k0; }
               if (d < best[k0]) { best[k0] = d; paid[k0] = loc === 3 ? 1 : 0; }
             }
           }
         }
       }
     }
-    return { x0, z0, nx, nz, walkable, paid, routed, idxAt };
+    const orderedRoutedCells = routedCells.subarray(0, routedCellCount).sort();
+    return { x0, z0, nx, nz, walkable, paid, routed, routedCells: orderedRoutedCells, idxAt };
   }
   function groupWalkable(r, g) {
     if (typeof g.walkable === 'boolean') return g.walkable;
@@ -7857,17 +8022,18 @@ window.IND = (() => {
     }
     return listGroup.userData.labels.length ? listGroup : null;
   }
-  function addCeilingLights(root, g, grid, publicUnits) {
+  function addCeilingLights(root, g, grid, publicUnits, showcase = null) {
     if (!grid) return 0;
+    const step = showcase?.ceilingStep || 6, cap = showcase ? 900 : 300;
     const points = [], x1 = grid.x0 + grid.nx * CS, z1 = grid.z0 + grid.nz * CS;
-    for (let x = Math.ceil(grid.x0 / 6) * 6; x < x1 && points.length < 300; x += 6) {
-      for (let z = Math.ceil(grid.z0 / 6) * 6; z < z1 && points.length < 300; z += 6) {
+    for (let x = Math.ceil(grid.x0 / step) * step; x < x1 && points.length < cap; x += step) {
+      for (let z = Math.ceil(grid.z0 / step) * step; z < z1 && points.length < cap; z += step) {
         const i = grid.idxAt(x, z);
         if (i >= 0 && grid.walkable[i] && publicAt(publicUnits, x, z)) points.push([x, g.H - 0.075, z]);
       }
     }
     if (!points.length) return 0;
-    const mesh = new THREE.InstancedMesh(M.assets.materials.lightGeo, M.assets.materials.lightPanel, points.length), object = new THREE.Object3D();
+    const mesh = new THREE.InstancedMesh(showcase ? ensureShowcaseAssets().lightGeo : M.assets.materials.lightGeo, M.assets.materials.lightPanel, points.length), object = new THREE.Object3D();
     points.forEach(([x, y, z], i) => { object.position.set(x, y, z); object.updateMatrix(); mesh.setMatrixAt(i, object.matrix); });
     mesh.instanceMatrix.needsUpdate = true; mesh.frustumCulled = false; root.add(mesh);
     root.userData.ownedInstances = (root.userData.ownedInstances || []).concat(mesh);
@@ -7911,16 +8077,18 @@ window.IND = (() => {
   function gateTransitions(grid, data, ordinal) {
     if (!grid || !grid.routed) return { before: 0, candidates: 0, gates: [] };
     const oldRows = [], clusters = []; let candidates = 0, routeCandidates = 0;
-    for (let j = 0; j < grid.nz; j++) for (let i = 0; i < grid.nx; i++) {
-      const k = j * grid.nx + i; if (!grid.walkable[k] || !grid.routed[k]) continue;
-      for (const n of [i + 1 < grid.nx ? k + 1 : -1, j + 1 < grid.nz ? k + grid.nx : -1]) {
-        if (n < 0 || !grid.walkable[n] || !grid.routed[n] || grid.paid[k] === grid.paid[n]) continue;
-        const ax = grid.x0 + ((k % grid.nx) + 0.5) * CS, az = grid.z0 + (Math.floor(k / grid.nx) + 0.5) * CS;
-        const bx = grid.x0 + ((n % grid.nx) + 0.5) * CS, bz = grid.z0 + (Math.floor(n / grid.nx) + 0.5) * CS;
-        const x = (ax + bx) * 0.5, z = (az + bz) * 0.5, dx = grid.paid[k] ? bx - ax : ax - bx, dz = grid.paid[k] ? bz - az : az - bz;
-        const candidate = { x, z, dx, dz }; candidates++;
-        if (oldRows.length < 40 && !oldRows.some((q) => Math.hypot(q.x - x, q.z - z) < 2)) oldRows.push(candidate);
-      }
+    const consider = (k, n) => {
+      if (!grid.walkable[n] || !grid.routed[n] || grid.paid[k] === grid.paid[n]) return;
+      const ax = grid.x0 + ((k % grid.nx) + 0.5) * CS, az = grid.z0 + (Math.floor(k / grid.nx) + 0.5) * CS;
+      const bx = grid.x0 + ((n % grid.nx) + 0.5) * CS, bz = grid.z0 + (Math.floor(n / grid.nx) + 0.5) * CS;
+      const x = (ax + bx) * 0.5, z = (az + bz) * 0.5, dx = grid.paid[k] ? bx - ax : ax - bx, dz = grid.paid[k] ? bz - az : az - bz;
+      candidates++;
+      if (oldRows.length < 40 && !oldRows.some((q) => Math.hypot(q.x - x, q.z - z) < 2)) oldRows.push({ x, z, dx, dz });
+    };
+    for (const k of grid.routedCells || []) {
+      const i = k % grid.nx, j = Math.floor(k / grid.nx); if (!grid.walkable[k]) continue;
+      if (i + 1 < grid.nx) consider(k, k + 1);
+      if (j + 1 < grid.nz) consider(k, k + grid.nx);
     }
     const endpoints = { 2: [], 3: [] }, routes = data && data.net && data.net.r || [];
     for (const route of routes) {
@@ -7981,19 +8149,510 @@ window.IND = (() => {
     return { before: oldRows.length, candidates, routeCandidates,
       gates: clusters.map((q) => ({ x: q.x, z: q.z, dx: q.dx, dz: q.dz, transitions: q.count })) };
   }
-  function addFareGates(getBuilder, grid, data, ordinal) {
+  function addFareGates(getBuilder, grid, data, ordinal, stats = null, showcase = null) {
     const vb = getBuilder('gate'), grey = color('#9aa2a5');
-    const stats = gateTransitions(grid, data, ordinal);
+    stats = stats || gateTransitions(grid, data, ordinal);
+    const panels = showcase ? getBuilder('mkGatePanels') : null;
+    const panelColor = (hex) => color(hex);
+    const flatQuad = (cx, cz, tangent, normal, depth, u0, v0, u1, v1, tint) => {
+      const at = (u, v) => [cx + tangent[0] * u + normal[0] * depth, 1.2 + v, cz + tangent[1] * u + normal[1] * depth];
+      panels.quad(at(u0, v0), at(u1, v0), at(u1, v1), at(u0, v1), tint);
+    };
+    const line2d = (cx, cz, tangent, normal, points, tint, thickness = 0.022) => {
+      for (let i = 1; i < points.length; i++) {
+        const [u0, v0] = points[i - 1], [u1, v1] = points[i], dx = u1 - u0, dy = v1 - v0, len = Math.hypot(dx, dy) || 1;
+        const nx = -dy / len * thickness * 0.5, ny = dx / len * thickness * 0.5;
+        flatQuad(cx, cz, tangent, normal, 0.525, u0 + nx, v0 + ny, u1 + nx, v1 + ny, tint);
+        flatQuad(cx, cz, tangent, normal, 0.525, u1 - nx, v1 - ny, u0 - nx, v0 - ny, tint);
+      }
+    };
+    let indicatorCount = 0;
     for (const gate of stats.gates) {
       const L = Math.hypot(gate.dx, gate.dz) || 1, sx = -gate.dz / L, sz = gate.dx / L;
       for (let i = -1; i <= 1; i++) {
         const x = gate.x + sx * i * 0.9, z = gate.z + sz * i * 0.9;
         addBox(vb, [x, 0.8, z], [0.3, 1.6, 1.0], [sx, sz], grey);
         addBox(vb, [x, 1.625, z], [0.13, 0.05, 0.14], [sx, sz], color(i === 0 ? '#f2cb4e' : '#54c986'));
+      if (panels) {
+          const normal = [gate.dx / L, gate.dz / L], tangent = [normal[1], -normal[0]], cx = x + normal[0] * 0.505, cz = z + normal[1] * 0.505;
+          flatQuad(cx, cz, tangent, normal, 0.52, -0.13, -0.105, 0.13, 0.105, panelColor('#101619'));
+          line2d(cx, cz, tangent, normal, [[-0.075, -0.04], [-0.035, 0.04]], panelColor('#ff4b4b'), 0.022);
+          line2d(cx, cz, tangent, normal, [[-0.075, 0.04], [-0.035, -0.04]], panelColor('#ff4b4b'), 0.022);
+          line2d(cx, cz, tangent, normal, [[0.045, -0.055], [0.045, 0.015]], panelColor('#56ff84'), 0.022);
+          line2d(cx, cz, tangent, normal, [[0.015, -0.005], [0.045, 0.04], [0.075, -0.005]], panelColor('#56ff84'), 0.022);
+          indicatorCount++;
+        }
       }
     }
     return { beforeRows: stats.before, afterRows: stats.gates.length, candidates: stats.candidates,
-      beforeCabinets: stats.before * 3, afterCabinets: stats.gates.length * 3 };
+      beforeCabinets: stats.before * 3, afterCabinets: stats.gates.length * 3, indicators: indicatorCount };
+  }
+  function addMongKokCShowcase(root, r, g, unitPoints, grid, props, config, getBuilder, startPosition) {
+    const solid = getBuilder('mkShowcaseSolid'), glass = getBuilder('mkShowcaseGlass'), glow = getBuilder('mkShowcaseEmissive');
+    const signBuilder = getBuilder('mkShowcaseSigns'), data = r.data;
+    const stat = { kind: config.kind, textures: ensureShowcaseAssets().createdTextures, boxes: 0, triangles: 0, collisions: 0, visualOnlyFixtures: 0,
+      nameStrips: 0, exitSigns: 0, machines: { tickets: 0, addValue: 0, vending: 0 }, customerService: 0, shopTypes: {},
+      serviceDiagnostics: [],
+      shopFixtures: 0, gateIndicators: 0, lights: 0, npcPlan: [],
+      machineWallCandidates: 0, wallSpawnCandidates: 0, serviceUnitsFound: 0, publicCellsBlocked: 0,
+      landmarks: { csc: [], machines: [], shops: [], walls: [], gates: [] } };
+    const facilityUnits = unitPoints.filter((u) => ['elevator', 'stairs', 'escalator'].includes(u.cat));
+    const doorSegments = g.doors.flatMap((d) => linesOf(d[2]));
+    const gateInfo = props.gateInfo || { gates: [] }, publicMask = props.publicMask;
+    const start = props.publicStart, baselineReachable = new Set(props.publicCells);
+    const blockedPublic = new Set();
+    const startPoint = nearestCell(grid, startPosition.x, startPosition.z) || startPosition;
+    const randFor = (key) => {
+      let seed = 2166136261; for (const ch of String(key)) seed = Math.imul(seed ^ ch.charCodeAt(0), 16777619);
+      return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    };
+    const part = (b, center, size, axis, tint, triangles = 12) => {
+      if (props.propStats.total + stat.boxes >= PROP_INSTANCE_CAP) return false;
+      addBox(b, center, size, axis, color(tint)); stat.boxes++; stat.triangles += triangles; return true;
+    };
+    const hasFacilityClearance = (x, z, radius = 1.2) => facilityUnits.every((u) => shapeDistance(x, z, u.rings) >= radius);
+    const hasGateClearance = (x, z, radius = 1.7) => gateInfo.gates.every((q) => Math.hypot(x - q.x, z - q.z) >= radius);
+    const inBuilding = (x, z) => g.polys.some((rings) => insideShape(rings, x, z));
+    const canBlock = (unit, x, z, sx, sz, axis, clearance = 0.25) => {
+      if (!grid) return false;
+      const ix = grid.idxAt(x, z); if (ix < 0 || !grid.walkable[ix]) return false;
+      const [ux, uz] = axis || [1, 0], nx = -uz, nz = ux, hx = sx * 0.5 + 0.12, hz = sz * 0.5 + 0.12;
+      const rx = Math.abs(ux) * hx + Math.abs(nx) * hz, rz = Math.abs(uz) * hx + Math.abs(nz) * hz;
+      if (unit && !insideShape(unit.rings, x, z)) return false;
+      if (!unit && (!inBuilding(x, z) || !hasFacilityClearance(x, z, Math.hypot(sx, sz) * 0.5 + 0.5) ||
+          !hasGateClearance(x, z, Math.max(1.7, Math.hypot(sx, sz) * 0.45)))) return false;
+      if (doorSegments.some(([a, b]) => distToSeg(x, z, a, b) < Math.max(sx, sz) * 0.5 + clearance)) return false;
+      if (unit) {
+        for (const [dx, dz] of [[-rx, -rz], [rx, -rz], [rx, rz], [-rx, rz]]) if (!insideShape(unit.rings, x + dx, z + dz)) return false;
+      }
+      const x0 = Math.max(0, Math.floor((x - rx - grid.x0) / CS)), x1 = Math.min(grid.nx - 1, Math.ceil((x + rx - grid.x0) / CS));
+      const z0 = Math.max(0, Math.floor((z - rz - grid.z0) / CS)), z1 = Math.min(grid.nz - 1, Math.ceil((z + rz - grid.z0) / CS));
+      const changed = [];
+      for (let j = z0; j <= z1; j++) for (let i = x0; i <= x1; i++) {
+        const k = j * grid.nx + i; if (!grid.walkable[k]) continue;
+        const dx = grid.x0 + (i + 0.5) * CS - x, dz = grid.z0 + (j + 0.5) * CS - z;
+        if (Math.abs(dx * ux + dz * uz) <= hx && Math.abs(dx * nx + dz * nz) <= hz && (!unit || insideShape(unit.rings, x + dx, z + dz))) {
+          grid.walkable[k] = 0; changed.push(k);
+        }
+      }
+      if (changed.some((k) => baselineReachable.has(k))) {
+        let nextBlockedCount = blockedPublic.size;
+        for (const k of changed) if (baselineReachable.has(k) && !blockedPublic.has(k)) nextBlockedCount++;
+        const reachable = publicReachCells(grid, publicMask, start);
+        const expectedReachable = baselineReachable.size - nextBlockedCount;
+        if (!grid.walkable[start] || reachable.length !== expectedReachable) {
+          for (const k of changed) grid.walkable[k] = 1;
+          return false;
+        }
+        for (const k of changed) if (baselineReachable.has(k)) blockedPublic.add(k);
+      }
+      stat.collisions += changed.length;
+      stat.publicCellsBlocked = blockedPublic.size;
+      return true;
+    };
+    const canRenderUnitFixture = (unit, x, z, sx, sz, axis) => {
+      if (!unit || !insideShape(unit.rings, x, z)) return false;
+      const [ux, uz] = axis || [1, 0], nx = -uz, nz = ux, hx = sx * 0.5 + 0.12, hz = sz * 0.5 + 0.12;
+      if (doorSegments.some(([a, b]) => distToSeg(x, z, a, b) < Math.max(sx, sz) * 0.5 + 0.25)) return false;
+      const rx = Math.abs(ux) * hx + Math.abs(nx) * hz, rz = Math.abs(uz) * hx + Math.abs(nz) * hz;
+      return [[-rx, -rz], [rx, -rz], [rx, rz], [-rx, rz]].every(([dx, dz]) => insideShape(unit.rings, x + dx, z + dz));
+    };
+    const addSolid = (center, size, axis, tint, unit = null, blocking = false, b = solid) => {
+      if (blocking && !canBlock(unit, center[0], center[2], size[0], size[2], axis)) {
+        if (!canRenderUnitFixture(unit, center[0], center[2], size[0], size[2], axis)) return false;
+        stat.visualOnlyFixtures++;
+      }
+      return part(b, center, size, axis, tint);
+    };
+    const addSign = (center, normal, width, height, index) => {
+      addTexturedPanel(signBuilder, center, normal, width, height, index);
+      stat.boxes++; stat.triangles += 2;
+    };
+    const unitDoors = (unit) => g.doors.filter((door) => linesOf(door[2]).some(([a, b]) => {
+      const x = (a[0] + b[0]) * 0.5, z = (a[1] + b[1]) * 0.5;
+      return shapeDistance(x, z, unit.rings) < 0.45;
+    }));
+    const freeFrontage = (unit, frame) => {
+      const ux = (frame.B[0] - frame.A[0]) / frame.length, uz = (frame.B[1] - frame.A[1]) / frame.length, blocked = [];
+      for (const d of unitDoors(unit)) {
+        const p = point(d[2]); if (p.length < 2) continue;
+        const vals = p.map((q) => (q[0] - frame.A[0]) * ux + (q[1] - frame.A[1]) * uz);
+        const lo = Math.max(0, Math.min(...vals) - 0.3), hi = Math.min(frame.length, Math.max(...vals) + 0.3);
+        if (hi > lo) blocked.push([lo, hi]);
+      }
+      blocked.sort((a, b) => a[0] - b[0]);
+      let cursor = 0, best = [0, frame.length];
+      for (const [lo, hi] of blocked) {
+        if (lo - cursor > best[1] - best[0]) best = [cursor, lo];
+        cursor = Math.max(cursor, hi);
+      }
+      if (frame.length - cursor > best[1] - best[0]) best = [cursor, frame.length];
+      return { ...frame, ux, uz, span: best, spanLength: Math.max(0, best[1] - best[0]) };
+    };
+    const pointOnFrame = (frame, s, normalOffset = 0) => ({
+      x: frame.A[0] + frame.ux * s + frame.nx * normalOffset,
+      z: frame.A[1] + frame.uz * s + frame.nz * normalOffset
+    });
+    const addShelf = (unit, center, axis, length, key) => {
+      const sx = Math.max(1.2, Math.min(length, 2.6)), depth = 0.42;
+      if (!addSolid([center.x, 0.88, center.z], [sx, 1.76, depth], axis, '#6b5746', unit, true)) return false;
+      addSolid([center.x, 0.24, center.z], [sx, 0.07, depth + 0.04], axis, '#a68b69');
+      const rng = randFor(key), palette = ['#d94841', '#e0ad32', '#48a0ad', '#739b57', '#9675b4', '#df8140'];
+      for (const y of [0.43, 0.91, 1.39]) {
+        addSolid([center.x, y, center.z], [sx, 0.045, depth + 0.04], axis, '#d4c5ad');
+        const count = Math.max(4, Math.min(10, Math.floor(sx / 0.25)));
+        for (let i = 0; i < count; i++) {
+          const along = -sx * 0.5 + 0.14 + i * (sx - 0.28) / Math.max(1, count - 1);
+          const p = [center.x + axis[0] * along, y + 0.11 + rng() * 0.04, center.z + axis[1] * along];
+          addSolid(p, [0.16 + rng() * 0.07, 0.17 + rng() * 0.09, 0.16], axis, palette[Math.floor(rng() * palette.length)]);
+        }
+      }
+      return true;
+    };
+    const machine = (center, axis, type, labelIndex, unit = null, blocking = true) => {
+      const bodySize = type === 'vending' ? [0.9, 1.95, 0.55] : [0.62, 1.82, 0.48];
+      if (!addSolid([center.x, bodySize[1] * 0.5, center.z], bodySize, axis, type === 'vending' ? '#7e8b88' : '#7a8388', unit, blocking)) return null;
+      const normal = [-axis[1], axis[0]], face = [center.x + normal[0] * (bodySize[2] * 0.5 + 0.014), center.z + normal[1] * (bodySize[2] * 0.5 + 0.014)];
+      addSolid([face[0], 1.36, face[1]], [bodySize[0] * 0.62, 0.42, 0.025], axis, type === 'vending' ? '#287f8c' : '#142b35', null, false, glow);
+      addSolid([face[0], 0.87, face[1]], [bodySize[0] * 0.43, 0.055, 0.028], axis, '#292d31', null, false, glow);
+      if (labelIndex !== null) {
+        addSolid([center.x, 1.86, center.z], [bodySize[0] * 0.82, 0.08, 0.12], axis, '#656f73', unit, false);
+        addSign([center.x, 2.08, center.z], normal, Math.min(0.8, bodySize[0] * 1.15), 0.3, labelIndex);
+      }
+      if (type === 'vending') for (let i = 0; i < 3; i++) addSolid([center.x - axis[0] * 0.18 + axis[0] * i * 0.18, 1.32, center.z - axis[1] * 0.18 + axis[1] * i * 0.18],
+        [0.12, 0.23, 0.07], axis, ['#df6d4e', '#d9bd45', '#5297bc'][i], null, false, glow);
+      return { x: center.x, z: center.z, normal, axis, type };
+    };
+    const drawNameStrips = () => {
+      stat.nameStrips = addShowcaseNameStrips(root, g);
+      stat.boxes += stat.nameStrips; stat.triangles += stat.nameStrips * 2;
+      stat.landmarks.walls = root.userData.showcaseNameStripPoints || [];
+    };
+    const drawExitSigns = () => {
+      const upward = [];
+      for (const route of data.net?.r || []) {
+        if (![8, 12].includes(route[0])) continue;
+        const points = route[4], floors = [];
+        for (let k = 0; k + 2 < points.length; k += 3) floors.push({ o: routeFloor(data, points[k + 1]), x: points[k], z: points[k + 2] });
+        const here = floors.find((p) => p.o === g.o), above = floors.some((p) => p.o > g.o);
+        if (!here || !above) continue;
+        const category = route[0] === 8 ? 'escalator' : 'stairs';
+        let best = null, distance = Infinity;
+        for (const u of facilityUnits) if (u.cat === category) {
+          const d = shapeDistance(here.x, here.z, u.rings);
+          if (d < distance) { distance = d; best = u; }
+        }
+        if (best && distance <= 2.2 && !upward.includes(best)) upward.push(best);
+      }
+      for (const unit of upward) {
+        const frame = facingEdge(unit, grid); if (!frame) continue;
+        const tangent = [frame.nz, -frame.nx], center = [(frame.A[0] + frame.B[0]) * 0.5 + frame.nx * 0.72,
+          2.63, (frame.A[1] + frame.B[1]) * 0.5 + frame.nz * 0.72];
+        addSolid([center[0] - tangent[0] * 0.48, 3.08, center[2] - tangent[1] * 0.48], [0.045, 0.84, 0.045], tangent, '#60686c');
+        addSolid([center[0] + tangent[0] * 0.48, 3.08, center[2] + tangent[1] * 0.48], [0.045, 0.84, 0.045], tangent, '#60686c');
+        addSign(center, [frame.nx, frame.nz], 1.2, 0.4, 0); stat.exitSigns++;
+      }
+    };
+    let publicPointCache = null;
+    const publicPoints = () => {
+      if (!publicPointCache) publicPointCache = props.publicCells.map((k) => ({ index: k, x: grid.x0 + ((k % grid.nx) + 0.5) * CS,
+        z: grid.z0 + (Math.floor(k / grid.nx) + 0.5) * CS }));
+      return publicPointCache;
+    };
+    const unitFrame = (unit, minimumSpan = 0.9, requireSpan = false) => {
+      const frame = facingEdge(unit, grid);
+      const validFrame = (candidate) => candidate && [candidate.A[0], candidate.A[1], candidate.B[0], candidate.B[1],
+        candidate.nx, candidate.nz, candidate.length].every(Number.isFinite);
+      if (validFrame(frame) && freeFrontage(unit, frame).spanLength >= minimumSpan) return frame;
+      let best = null, bestScore = -Infinity;
+      for (const ring of unit.rings) {
+        const points = point(ring);
+        for (let i = 0; i < points.length; i++) {
+          const A = points[i], B = points[(i + 1) % points.length], dx = B[0] - A[0], dz = B[1] - A[1], length = Math.hypot(dx, dz);
+          if (length < 0.45) continue;
+          let nx = -dz / length, nz = dx / length;
+          if (insideShape(unit.rings, (A[0] + B[0]) * 0.5 + nx * 0.12, (A[1] + B[1]) * 0.5 + nz * 0.12)) { nx = -nx; nz = -nz; }
+          let score = 0;
+          for (let s = 0.25; s < length - 0.2; s += 0.55) {
+            const x = A[0] + dx * s / length, z = A[1] + dz * s / length;
+            for (const offset of [0.32, 0.62, 0.95]) {
+              const index = grid.idxAt(x + nx * offset, z + nz * offset);
+              if (index >= 0 && grid.walkable[index]) score += 1 / offset;
+            }
+          }
+          const candidate = { A, B, nx, nz, ux: dx / length, uz: dz / length, length, score };
+          const spanLength = freeFrontage(unit, candidate).spanLength;
+          if (score > 0 && spanLength >= minimumSpan) {
+            const rank = score + Math.min(4, spanLength) * 0.2;
+            if (rank > bestScore) { best = candidate; bestScore = rank; }
+          }
+        }
+      }
+      if (best) return best;
+      if (requireSpan) return null;
+      if (validFrame(frame)) return frame;
+      const box = orientedBounds(unit.rings); if (!box) return null;
+      const nearest = publicPoints().reduce((best, p) => {
+        const distance = Math.hypot(p.x - unit.pos.x, p.z - unit.pos.z);
+        return distance < best.distance ? { ...p, distance } : best;
+      }, { distance: Infinity });
+      if (!Number.isFinite(nearest.distance)) return null;
+      const alongS = box.length >= box.width, axis = alongS ? [box.ux, box.uz] : [box.nx, box.nz];
+      let nx = -axis[1], nz = axis[0];
+      const toPublic = [nearest.x - unit.pos.x, nearest.z - unit.pos.z];
+      if (nx * toPublic[0] + nz * toPublic[1] < 0) { nx = -nx; nz = -nz; }
+      const side = alongS ? (nx * box.nx + nz * box.nz >= 0 ? box.maxT : box.minT) :
+        (nx * box.ux + nz * box.uz >= 0 ? box.maxS : box.minS);
+      const a = alongS ? localPoint(box, box.minS, side) : localPoint(box, side, box.minT);
+      const b = alongS ? localPoint(box, box.maxS, side) : localPoint(box, side, box.maxT);
+      const length = Math.hypot(b.x - a.x, b.z - a.z);
+      if (length < 0.45) return null;
+      const fallback = { A: [a.x, a.z], B: [b.x, b.z], nx, nz, ux: (b.x - a.x) / length, uz: (b.z - a.z) / length, length, score: 0 };
+      return !requireSpan || freeFrontage(unit, fallback).spanLength >= minimumSpan ? fallback : null;
+    };
+    const poiKinds = { apparel: 0, eyewear: 0, convenience: 0, pharmacy: 0, electronics: 0, foodservice: 0, bank: 0, healthcare: 0, retail: 0 };
+    const classifyPoi = (poi) => {
+      const text = String(poi[2] || '').toLowerCase();
+      for (const [kind, words] of Object.entries({ ...SHOP_TYPE_KEYWORDS, ...config.poiKeywords })) if (words.some((word) => text.includes(word.toLowerCase()))) return kind;
+      if (poi[1] === 'conveniencestore') return 'convenience';
+      if (poi[1] === 'bank') return 'bank';
+      if (poi[1] === 'healthcare') return 'healthcare';
+      if (poi[1] === 'restaurant') return 'foodservice';
+      return 'retail';
+    };
+    for (const poi of g.pois) {
+      const type = classifyPoi(poi); if (!poiKinds[type] && poiKinds[type] !== 0) continue;
+      poiKinds[type]++;
+      const unit = unitPoints.find((q) => q.shop && insideShape(q.rings, poi[3], poi[4]));
+      if (!unit) continue;
+      const frame = unitFrame(unit); if (!frame) continue;
+      const frontage = freeFrontage(unit, frame), spanLength = Number.isFinite(frontage.spanLength) ? frontage.spanLength : frame.length;
+      const spanStart = Number.isFinite(frontage.span[0]) ? frontage.span[0] : 0;
+      const spanWidth = Math.min(spanLength - 0.18, 2.55);
+      const baseAlong = spanStart + spanLength * 0.5, inward = [-frame.nx, -frame.nz], axis = [frontage.ux, frontage.uz];
+      const projectedFront = pointOnFrame(frontage, baseAlong, -0.28);
+      const front = Number.isFinite(projectedFront.x) && Number.isFinite(projectedFront.z) ? projectedFront :
+        pointOnFrame(frontage, frame.length * 0.5, -0.28);
+      const insideCenter = { x: poi[3] + inward[0] * 0.45, z: poi[4] + inward[1] * 0.45 };
+      if (![front.x, front.z, insideCenter.x, insideCenter.z].every(Number.isFinite)) continue;
+      stat.landmarks.shops.push({ type, name: poi[2], x: front.x, z: front.z, target: insideCenter, normal: [frame.nx, frame.nz] });
+      const noDoorRoom = spanWidth > 0.7;
+      if (type === 'convenience' || type === 'pharmacy' || type === 'healthcare' || type === 'retail') {
+        const box = orientedBounds(unit.rings), shelfLength = Math.min(2.2, Math.max(1.1, (box && Math.min(box.length, box.width) * 0.74) || 1.5));
+        const shelfAxis = box && box.length >= box.width ? [box.ux, box.uz] : box ? [box.nx, box.nz] : axis;
+        const shelfNormal = [-shelfAxis[1], shelfAxis[0]];
+        const center = { x: insideCenter.x + inward[0] * 0.35, z: insideCenter.z + inward[1] * 0.35 };
+        const built = addShelf(unit, center, shelfAxis, shelfLength, `${poi[2]}:main`);
+        if (built && (type === 'convenience' || type === 'healthcare' || type === 'pharmacy')) {
+          addShelf(unit, { x: center.x + shelfNormal[0] * 0.62, z: center.z + shelfNormal[1] * 0.62 }, shelfAxis, shelfLength * 0.9, `${poi[2]}:side`);
+        }
+        if (type === 'convenience' && noDoorRoom) {
+          const fridge = machine({ x: front.x + frontage.ux * (spanWidth * 0.38) + inward[0] * 1.3, z: front.z + frontage.uz * (spanWidth * 0.38) + inward[1] * 1.3 },
+            axis, 'vending', null, unit, true);
+          if (fridge) stat.shopFixtures++;
+        }
+        stat.shopFixtures += built ? 1 : 0;
+      } else if (type === 'foodservice' && noDoorRoom) {
+        const center = { x: front.x + inward[0] * 1.3, z: front.z + inward[1] * 1.3 }, width = Math.max(1.0, Math.min(2.25, spanWidth));
+        if (addSolid([center.x, 0.46, center.z], [width, 0.88, 0.68], axis, '#765a45', unit, true)) {
+          addSolid([center.x, 0.94, center.z], [width + 0.05, 0.09, 0.72], axis, '#e6e1d8', unit, false);
+          addSolid([center.x, 1.32, center.z], [width * 0.88, 0.62, 0.035], axis, '#9ad6dd', unit, false, glass);
+          for (let k = 0; k < 5; k++) {
+            const dx = (k - 2) * Math.min(0.34, width / 6), cake = [center.x + axis[0] * dx, 1.04, center.z + axis[1] * dx];
+            addSolid(cake, [0.18, 0.13, 0.18], axis, ['#f4c76e', '#db8e91', '#cba2dc', '#f2e7c2', '#e99558'][k], unit, false, glow);
+          }
+          addSolid([center.x, 1.96, center.z], [Math.min(1.75, width), 0.3, 0.045], axis, '#a8865c', unit, false, glow);
+          stat.shopFixtures++;
+        }
+      } else if (type === 'bank' && noDoorRoom) {
+        const count = spanWidth > 3.4 ? 3 : 2, bodyWidth = 0.55, gap = 0.18;
+        for (let i = 0; i < count; i++) {
+          const along = baseAlong + (i - (count - 1) * 0.5) * (bodyWidth + gap), p = pointOnFrame(frontage, along, -1.35);
+          if (!addSolid([p.x, 0.93, p.z], [bodyWidth, 1.86, 0.48], axis, '#777f84', unit, true)) continue;
+          addSolid([p.x, 1.34, p.z], [0.34, 0.28, 0.025], axis, '#15859a', unit, false, glow);
+          addSolid([p.x, 0.72, p.z], [0.19, 0.04, 0.025], axis, '#41484b', unit, false, glow);
+          stat.shopFixtures++;
+        }
+      }
+    }
+    const serviceUnits = unitPoints.filter((u) => /customer service centre/i.test(`${u.name} ${u.originalName}`));
+    stat.serviceUnitsFound = serviceUnits.length;
+    const serviceSpots = [];
+    for (const unit of serviceUnits.slice(0, 2)) {
+      const diagnostic = { unitIndex: unit.unitIndex, name: unit.name };
+      let frame = unitFrame(unit, 2.4, true), preferredWidth = !!frame;
+      if (!frame) frame = unitFrame(unit, 1.6, true);
+      if (!frame) { diagnostic.reason = 'no-frontage-at-least-1.6m'; stat.serviceDiagnostics.push(diagnostic); continue; }
+      const frontage = freeFrontage(unit, frame), spanLength = Number.isFinite(frontage.spanLength) ? frontage.spanLength : frame.length;
+      const spanStart = Number.isFinite(frontage.span[0]) ? frontage.span[0] : 0;
+      let width = preferredWidth ? Math.min(1.85, spanLength - 0.16) : Math.min(1.6, spanLength);
+      diagnostic.frameLength = frame.length; diagnostic.freeSpan = spanLength; diagnostic.width = width;
+      diagnostic.frontageTier = preferredWidth ? '2.4m' : '1.6m-fallback';
+      if (width < 1.6) { diagnostic.reason = 'frontage-too-short'; stat.serviceDiagnostics.push(diagnostic); continue; }
+      const along = spanStart + spanLength * 0.5, edge = pointOnFrame(frontage, along, -0.22), inward = [-frame.nx, -frame.nz], axis = [frontage.ux, frontage.uz];
+      const center = { x: edge.x + inward[0] * 0.65, z: edge.z + inward[1] * 0.65 };
+      if (!addSolid([center.x, 0.48, center.z], [width, 0.96, 0.62], axis, '#6a6660', unit, true)) {
+        if (!preferredWidth) { diagnostic.reason = 'counter-does-not-fit'; stat.serviceDiagnostics.push(diagnostic); continue; }
+        width = Math.min(1.6, spanLength);
+        diagnostic.width = width; diagnostic.frontageTier = '1.6m-fallback';
+        if (!addSolid([center.x, 0.48, center.z], [width, 0.96, 0.62], axis, '#6a6660', unit, true)) {
+          diagnostic.reason = 'counter-does-not-fit'; stat.serviceDiagnostics.push(diagnostic); continue;
+        }
+      }
+      addSolid([center.x, 1.0, center.z], [width, 0.08, 0.68], axis, '#d9d5c9', unit, false);
+      addSolid([center.x, 1.42, center.z], [width * 0.94, 0.72, 0.026], axis, '#b8e3e7', unit, false, glass);
+      addSign([center.x, 2.1, center.z], [frame.nx, frame.nz], Math.min(2.15, width + 0.28), 0.38, 3);
+      const customer = { x: center.x + frame.nx * 1.45, z: center.z + frame.nz * 1.45, normal: [frame.nx, frame.nz] };
+      const staff = { x: center.x + inward[0] * 0.78, z: center.z + inward[1] * 0.78, unit };
+      serviceSpots.push({ customer, staff, unit, frame, counter: center });
+      stat.landmarks.csc.push({ x: center.x, z: center.z, normal: [frame.nx, frame.nz], customer, staff });
+      stat.customerService++;
+      diagnostic.reason = 'built'; stat.serviceDiagnostics.push(diagnostic);
+    }
+    const gateApproach = (gate) => {
+      const length = Math.hypot(gate.dx, gate.dz) || 1, x = gate.x + gate.dx / length * 4.0, z = gate.z + gate.dz / length * 4.0;
+      return { x, z };
+    };
+    const chosenGates = [];
+    for (const gate of gateInfo.gates) {
+      if (chosenGates.length >= 3) break;
+      if (!chosenGates.length || Math.min(...chosenGates.map((q) => Math.hypot(q.x - gate.x, q.z - gate.z))) >= 9) chosenGates.push(gate);
+    }
+    const firstGate = chosenGates[0] ? gateApproach(chosenGates[0]) : { x: 0, z: 0 };
+    const cscTarget = serviceSpots[0]?.customer || firstGate;
+    const otherCscTarget = serviceSpots[1]?.customer || firstGate;
+    const machineGroupTargets = [firstGate, otherCscTarget, cscTarget];
+    const insideShapes = g.polys.flatMap((q) => ringsOf(q));
+    const wallCandidates = [], wallSpawnCandidates = [], wallCandidateCells = new Set();
+    for (const shape of insideShapes) {
+      const ring = point(shape);
+      for (let i = 0; i < ring.length; i++) {
+        const a = ring[i], b = ring[(i + 1) % ring.length], dx = b[0] - a[0], dz = b[1] - a[1], length = Math.hypot(dx, dz);
+        if (length < 1.2) continue;
+        const ux = dx / length, uz = dz / length, midX = (a[0] + b[0]) * 0.5, midZ = (a[1] + b[1]) * 0.5;
+        let nx = -uz, nz = ux;
+        if (!inBuilding(midX + nx * 0.12, midZ + nz * 0.12)) { nx = -nx; nz = -nz; }
+        for (let along = 0.55; along <= length - 0.55; along += 0.7) {
+          const x = a[0] + ux * along + nx * 0.52, z = a[1] + uz * along + nz * 0.52, index = grid.idxAt(x, z);
+          if (index < 0 || !grid.walkable[index] || !props.publicMask[index] || grid.paid[index] ||
+              facilityUnits.some((u) => shapeDistance(x, z, u.rings) < 2.6) ||
+              gateInfo.gates.some((q) => Math.hypot(x - q.x, z - q.z) < 2.7) ||
+              doorSegments.some(([p, q]) => distToSeg(x, z, p, q) < 1.45) || wallCandidateCells.has(index)) continue;
+          wallCandidateCells.add(index);
+          const candidate = { x, z, normal: [nx, nz], axis: [ux, uz], length, along };
+          wallSpawnCandidates.push(candidate);
+          if (machineGroupTargets.some((target) => Math.hypot(x - target.x, z - target.z) <= 22)) wallCandidates.push(candidate);
+        }
+      }
+    }
+    stat.machineWallCandidates = wallCandidates.length;
+    stat.wallSpawnCandidates = wallSpawnCandidates.length;
+    const placedMachines = [], machineTargets = [];
+    const placeMachineGroup = (type, count, labelIndex, target) => {
+      let best = null, bestScore = Infinity;
+      for (const candidate of wallCandidates) {
+        const endClearance = (count - 1) * 0.5 + 0.55;
+        if (candidate.length < count * 0.9 + 1.2 || candidate.along < endClearance || candidate.length - candidate.along < endClearance) continue;
+        const base = { x: candidate.x, z: candidate.z }, normal = candidate.normal, axis = candidate.axis;
+        const targetDistance = Math.hypot(base.x - target.x, base.z - target.z);
+        if (targetDistance > 22) continue;
+        if (placedMachines.some((q) => Math.hypot(q.x - base.x, q.z - base.z) < count * 0.9 + 1.0)) continue;
+        const score = targetDistance;
+        if (score < bestScore) { bestScore = score; best = { base, normal, axis, near: { d: 0.52 } }; }
+      }
+      if (!best) return [];
+      const rows = [];
+      for (let i = 0; i < count; i++) {
+        const offset = (i - (count - 1) * 0.5) * 1.0;
+        const center = { x: best.base.x + best.axis[0] * offset, z: best.base.z + best.axis[1] * offset };
+        const placed = machine(center, best.axis, type, labelIndex, null, true);
+        if (placed) {
+          rows.push(placed); placedMachines.push(placed);
+          stat.landmarks.machines.push({ x: placed.x, z: placed.z, normal: placed.normal, type, labelIndex });
+        }
+      }
+      stat.machines[type === 'ticket' ? 'tickets' : type === 'add-value' ? 'addValue' : 'vending'] += rows.length;
+      if (rows.length) machineTargets.push(...rows.slice(0, 2).map((q) => ({ x: q.x + q.normal[0] * 1.02, z: q.z + q.normal[1] * 1.02 })));
+      return rows;
+    };
+    placeMachineGroup('ticket', 4, 1, firstGate);
+    placeMachineGroup('add-value', 2, 2, otherCscTarget);
+      placeMachineGroup('vending', 1, null, cscTarget);
+      placeMachineGroup('vending', 1, null, otherCscTarget);
+    drawNameStrips();
+    drawExitSigns();
+    stat.shopTypes = poiKinds;
+    stat.gateIndicators = gateInfo.gates.length * 3;
+    stat.landmarks.gates = gateInfo.gates.map(({ x, z, dx, dz }) => ({ x, z, dx, dz }));
+    stat.npcPlan = [];
+    const facilities = facilityUnits;
+    const taken = [];
+    const nearestNpcCell = (x, z, options = {}) => {
+      const candidates = options.publicOnly === false ? null : publicPoints();
+      let best = null, distance = options.radius || 2;
+      const cells = candidates || (() => {
+        const out = []; let i0 = 0, i1 = grid.nx - 1, j0 = 0, j1 = grid.nz - 1;
+        if (options.unit) {
+          const bounds = unitBounds(options.unit.rings);
+          i0 = Math.max(0, Math.floor((bounds[0] - grid.x0) / CS)); i1 = Math.min(grid.nx - 1, Math.floor((bounds[2] - grid.x0) / CS));
+          j0 = Math.max(0, Math.floor((bounds[1] - grid.z0) / CS)); j1 = Math.min(grid.nz - 1, Math.floor((bounds[3] - grid.z0) / CS));
+        }
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const k = j * grid.nx + i; if (!grid.walkable[k]) continue;
+          out.push({ index: k, x: grid.x0 + (i + 0.5) * CS, z: grid.z0 + (j + 0.5) * CS });
+        }
+        return out;
+      })();
+      for (const p of cells) {
+        if (!grid.walkable[p.index] || (options.publicOnly !== false && !publicMask[p.index])) continue;
+        if (options.unpaid && grid.paid[p.index]) continue;
+        if (options.unit && !insideShape(options.unit.rings, p.x, p.z)) continue;
+        if (facilities.some((u) => insideShape(u.rings, p.x, p.z))) continue;
+        if (options.publicOnly !== false && !hasGateClearance(p.x, p.z, 1.15)) continue;
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d > distance || taken.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 1.5)) continue;
+        if (Math.hypot(startPoint.x - p.x, startPoint.z - p.z) < 3) continue;
+        if (d < (best ? Math.hypot(best.x - x, best.z - z) : Infinity)) best = p;
+      }
+      return best;
+    };
+    const addNpcRole = (role, target, options = {}) => {
+      const pos = nearestNpcCell(target.x, target.z, options);
+      if (!pos) return false;
+      taken.push(pos); stat.npcPlan.push({ role, x: pos.x, z: pos.z, yaw: options.yaw || 0, unit: options.unit ? options.unit.unitIndex : null });
+      return true;
+    };
+    for (const gate of chosenGates) {
+      const direction = Math.hypot(gate.dx, gate.dz) || 1;
+      const ux = gate.dx / direction, uz = gate.dz / direction;
+      for (const distance of [2.0, 3.65]) addNpcRole('queue', { x: gate.x + ux * distance, z: gate.z + uz * distance }, { unpaid: true, radius: 2.0, yaw: Math.atan2(-ux, -uz) });
+    }
+    for (const target of machineTargets.slice(0, 2)) addNpcRole('machine', target, { unpaid: true, radius: 1.5 });
+    for (const item of serviceSpots) {
+      addNpcRole('customer', item.customer, { unpaid: true, radius: 1.7, yaw: Math.atan2(item.frame.nx, item.frame.nz) });
+      addNpcRole('staff', item.staff, { publicOnly: false, unit: item.unit, radius: 1.4, role: 'staff', yaw: Math.atan2(-item.frame.nx, -item.frame.nz) });
+    }
+    const edgeCandidates = wallSpawnCandidates.map(({ x, z }) => ({ x, z }))
+      .sort((a, b) => Math.hypot(a.x - cscTarget.x, a.z - cscTarget.z) - Math.hypot(b.x - cscTarget.x, b.z - cscTarget.z));
+    for (const p of edgeCandidates) {
+      if (stat.npcPlan.filter((q) => q.role === 'wall').length >= 2) break;
+      addNpcRole('wall', p, { unpaid: true, radius: 0.5 });
+    }
+    stat.npcPlan = stat.npcPlan.slice(0, TOUCH ? 12 : 24);
+    props.publicCells = [...publicReachCells(grid, publicMask, start)];
+    const edgeCount = addShowcaseWallEdges(getBuilder, g, g.H);
+    stat.boxes += edgeCount; stat.triangles += edgeCount * 12;
+    props.reachability.after = props.publicCells.length;
+    props.reachability.unchanged = props.reachability.after === props.reachability.before;
+    props.reachability.publicCellsBlocked = blockedPublic.size;
+    props.reachability.expectedReachableAfterProps = baselineReachable.size - blockedPublic.size;
+    props.reachability.connectivityPreserved = props.reachability.after === props.reachability.expectedReachableAfterProps &&
+      props.publicCells.every((k) => baselineReachable.has(k) && !blockedPublic.has(k));
+    props.propStats.total += stat.boxes;
+    props.propStats.triangles += stat.triangles;
+    stat.reachability = { ...props.reachability };
+    stat.publicCells = props.publicCells.length;
+    return stat;
   }
   function addBeam(builder, A, B, width, height, tint) {
     const dx = B[0] - A[0], dy = B[1] - A[1], dz = B[2] - A[2], len = Math.hypot(dx, dy, dz);
@@ -8082,11 +8741,442 @@ window.IND = (() => {
     }
     return count;
   }
+  function propAssets() {
+    if (!indoorPropAssets) {
+      indoorPropAssets = {
+        geometry: { box: new THREE.BoxGeometry(1, 1, 1), cylinder: new THREE.CylinderGeometry(0.5, 0.5, 1, 8) },
+        material: {
+          box: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.78, metalness: 0.04, emissive: 0x171717, emissiveIntensity: 0.35 }),
+          cylinder: new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.68, metalness: 0.08, emissive: 0x111111, emissiveIntensity: 0.25 })
+        }
+      };
+    }
+    return indoorPropAssets;
+  }
+  function shopTypeFor(unit) {
+    if (unit.cat === 'foodservice') return 'foodservice';
+    const name = String(unit.name || unit.originalName || '').toLowerCase();
+    for (const type of ['apparel', 'eyewear', 'convenience', 'pharmacy', 'electronics', 'foodservice']) {
+      if (SHOP_TYPE_KEYWORDS[type].some((word) => name.includes(word.toLowerCase()))) return type;
+    }
+    return unit.shop ? 'retail' : null;
+  }
+  function publicCellData(grid, units, x, z) {
+    if (!grid) return { mask: new Uint8Array(0), cells: [], start: -1, reachable: 0 };
+    const mask = new Uint8Array(grid.nx * grid.nz), cells = [];
+    for (const shape of units.shapes) {
+      const bounds = shape.bounds;
+      const i0 = Math.max(0, Math.floor((bounds[0] - grid.x0) / CS)), i1 = Math.min(grid.nx - 1, Math.floor((bounds[2] - grid.x0) / CS));
+      const j0 = Math.max(0, Math.floor((bounds[1] - grid.z0) / CS)), j1 = Math.min(grid.nz - 1, Math.floor((bounds[3] - grid.z0) / CS));
+      for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+        const k = j * grid.nx + i; if (!grid.walkable[k] || mask[k]) continue;
+        const px = grid.x0 + (i + 0.5) * CS, pz = grid.z0 + (j + 0.5) * CS;
+        if (px >= bounds[0] && px <= bounds[2] && pz >= bounds[1] && pz <= bounds[3] && insideShape(shape.rings, px, pz)) {
+          mask[k] = 1; cells.push(k);
+        }
+      }
+    }
+    let start = -1, best = Infinity;
+    for (const k of cells) {
+      const px = grid.x0 + ((k % grid.nx) + 0.5) * CS, pz = grid.z0 + (Math.floor(k / grid.nx) + 0.5) * CS, d = (px - x) ** 2 + (pz - z) ** 2;
+      if (d < best || (d === best && (start < 0 || k < start))) { best = d; start = k; }
+    }
+    const reachableCells = publicReachCells(grid, mask, start);
+    return { mask, cells, reachableCells, start, reachable: reachableCells.length };
+  }
+  const reachabilityScratch = new WeakMap();
+  function publicReachCells(grid, mask, start) {
+    if (!grid || start < 0 || !mask[start] || !grid.walkable[start]) return [];
+    let scratch = reachabilityScratch.get(grid);
+    if (!scratch || scratch.seen.length !== mask.length) {
+      scratch = { seen: new Uint32Array(mask.length), queue: new Int32Array(mask.length), stamp: 0 };
+      reachabilityScratch.set(grid, scratch);
+    }
+    let stamp = (scratch.stamp + 1) >>> 0;
+    if (!stamp) { scratch.seen.fill(0); stamp = 1; }
+    scratch.stamp = stamp;
+    const { seen, queue } = scratch; let head = 0, tail = 0;
+    queue[tail++] = start; seen[start] = stamp;
+    while (head < tail) {
+      const k = queue[head++], i = k % grid.nx, j = Math.floor(k / grid.nx);
+      let n;
+      if (i) { n = k - 1; if (seen[n] !== stamp && mask[n] && grid.walkable[n]) { seen[n] = stamp; queue[tail++] = n; } }
+      if (i + 1 < grid.nx) { n = k + 1; if (seen[n] !== stamp && mask[n] && grid.walkable[n]) { seen[n] = stamp; queue[tail++] = n; } }
+      if (j) { n = k - grid.nx; if (seen[n] !== stamp && mask[n] && grid.walkable[n]) { seen[n] = stamp; queue[tail++] = n; } }
+      if (j + 1 < grid.nz) { n = k + grid.nx; if (seen[n] !== stamp && mask[n] && grid.walkable[n]) { seen[n] = stamp; queue[tail++] = n; } }
+    }
+    return queue.subarray(0, tail);
+  }
+  function addMerchandise(root, r, g, unitPoints, frontRuns, grid, publicUnits, movementUnits, station, start, skipShopFixtures = false) {
+    const assets = propAssets(), batches = { box: [], cylinder: [] }, collisions = [], shopAnchors = [], foodAnchors = [];
+    const shopStats = { apparel: 0, eyewear: 0, convenience: 0, pharmacy: 0, electronics: 0, foodservice: 0, retail: 0 };
+    const frontByUnit = new Map();
+    for (const run of frontRuns) { const old = frontByUnit.get(run.unitIndex); if (!old || run.length > old.length) frontByUnit.set(run.unitIndex, run); }
+    const publicBefore = publicCellData(grid, movementUnits, start.x, start.z), doorSegments = g.doors.flatMap((d) => linesOf(d[2]));
+    const circulation = unitPoints.filter((u) => ['elevator', 'stairs', 'escalator'].includes(u.cat));
+    const trackUnits = unitPoints.filter((u) => /鐵路路軌|路軌|track/i.test(`${u.name} ${u.cat}`));
+    const gateInfo = station ? gateTransitions(grid, r.data, g.o) : { gates: [] };
+    let instanceCount = 0, triangleEstimate = 0, shopUnitCount = 0, fallbackUnitCount = 0;
+    const fallbackDiagnostics = [];
+    const colorList = [0xd95e58, 0xe6af3d, 0x54a7b4, 0x80a85a, 0xa277bd, 0xe27f42, 0x5f83c4, 0xe3d36d, 0xdd7ca8, 0x83c3a1];
+    if (skipShopFixtures) for (const unit of unitPoints) {
+      if (!unit.shop || polygonArea(unit.rings) < 12) continue;
+      const type = shopTypeFor(unit); if (!type) continue; shopStats[type]++; shopUnitCount++;
+    }
+    const rngFor = (key) => {
+      let seed = 2166136261; for (const ch of String(key)) seed = Math.imul(seed ^ ch.charCodeAt(0), 16777619);
+      return () => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed / 4294967296; };
+    };
+    const clearOfDoor = (x, z, gap) => doorSegments.every(([a, b]) => distToSeg(x, z, a, b) >= gap);
+    const clearOfCirculation = (x, z, gap) => circulation.every((u) => shapeDistance(x, z, u.rings) >= gap);
+    const clearOfGates = (x, z, gap) => gateInfo.gates.every((q) => Math.hypot(x - q.x, z - q.z) >= gap);
+    const safePoint = (unit, x, z, spec, blocking) => {
+      if (unit && !insideShape(unit.rings, x, z)) return false;
+      if (!clearOfDoor(x, z, 0.7) || !clearOfCirculation(x, z, 1.0) || !clearOfGates(x, z, 1.4)) return false;
+      if (!blocking) return true;
+      if (!clearOfDoor(x, z, 1.45) || !clearOfCirculation(x, z, 2.2) || !clearOfGates(x, z, 2.25)) return false;
+      if (spec && spec.frontAxis === 's' && (x * spec.box.ux + z * spec.box.uz - spec.face) * spec.frontSign < 1.25) return false;
+      if (spec && spec.frontAxis === 't' && (x * spec.box.nx + z * spec.box.nz - spec.face) * spec.frontSign < 1.25) return false;
+      return true;
+    };
+    const pointDiagnostic = (unit, x, z, box, longMin, longMax, depthMin, depthMax, alongIsS) => {
+      const s = x * box.ux + z * box.uz, t = x * box.nx + z * box.nz, a = alongIsS ? s : t, d = alongIsS ? t : s;
+      return {
+        x, z, inside: insideShape(unit.rings, x, z), public: publicAt(publicUnits, x, z),
+        bounds: a >= longMin + 0.35 && a <= longMax - 0.35 && d >= depthMin + 0.35 && d <= depthMax - 0.35,
+        door: clearOfDoor(x, z, 1.45), circulation: clearOfCirculation(x, z, 2.2), gates: clearOfGates(x, z, 2.25),
+        safe: safePoint(unit, x, z, { box, frontAxis: null }, true)
+      };
+    };
+    const put = (kind, unit, box, along, depth, y, sx, sy, sz, tint, blocking = false, spec = null, axis = 's') => {
+      if (instanceCount >= PROP_INSTANCE_CAP) return null;
+      const p = localPoint(box, along, depth), dir = axis === 's' ? [box.ux, box.uz] : [box.nx, box.nz];
+      if (!safePoint(unit, p.x, p.z, spec, blocking)) return null;
+      const tri = kind === 'box' ? 12 : 32; if (triangleEstimate + tri > PROP_TRIANGLE_CAP) return null;
+      const row = { x: p.x, y, z: p.z, sx, sy, sz, axis: dir, tint };
+      batches[kind].push(row);
+      instanceCount++; triangleEstimate += tri;
+      if (blocking) collisions.push({ x: p.x, z: p.z, sx, sz, axis: dir, rings: unit && unit.rings, row, kind, tri });
+      return p;
+    };
+    const putAlong = (kind, unit, box, along, depth, y, sx, sy, sz, tint, blocking = false, spec = null, axis = 's') =>
+      axis === 's' ? put(kind, unit, box, along, depth, y, sx, sy, sz, tint, blocking, spec, axis) :
+        put(kind, unit, box, depth, along, y, sx, sy, sz, tint, blocking, spec, axis);
+    const shelf = (unit, box, spec, along, depth, length, depthSize, random, accent, axis = 's') => {
+      if (length < 0.7 || depthSize < 0.28) return null;
+      putAlong('box', unit, box, along, depth, 0.15, length, 0.3, depthSize, 0x66584b, true, spec, axis);
+      const levels = [0.46, 0.92, 1.38];
+      for (const y of levels) putAlong('box', unit, box, along, depth, y, length, 0.055, depthSize, accent, false, spec, axis);
+      const rows = Math.max(3, Math.min(18, Math.floor(length / 0.24)));
+      for (let level = 0; level < 3; level++) for (let i = 0; i < rows; i++) {
+        const a = along - length * 0.43 + length * 0.86 * (i + 0.5) / rows, size = 0.12 + random() * 0.07;
+        putAlong('box', unit, box, a, depth, levels[level] + 0.11 + random() * 0.035, size, 0.16 + random() * 0.1, Math.min(0.18, depthSize * 0.42), colorList[Math.floor(random() * colorList.length)], false, spec, axis);
+      }
+      const p = axis === 's' ? localPoint(box, along, depth) : localPoint(box, depth, along);
+      const q = axis === 's' ? localPoint(box, along, depth + depthSize * 0.5 + 0.48) : localPoint(box, depth + depthSize * 0.5 + 0.48, along);
+      if (insideShape(unit.rings, q.x, q.z)) shopAnchors.push({ x: q.x, z: q.z, shelf: p, axis: axis === 's' ? box.ux : box.nx, unit });
+      return p;
+    };
+    const table = (unit, box, spec, along, depth, random, axis = 's') => {
+      const p = putAlong('box', unit, box, along, depth, 0.43, 0.8, 0.08, 0.8, 0x8b684b, true, spec, axis);
+      if (!p) return null;
+      for (const da of [-0.28, 0.28]) for (const dd of [-0.28, 0.28]) putAlong('box', unit, box, along + da, depth + dd, 0.2, 0.07, 0.4, 0.07, 0x55483d, false, spec, axis);
+      const around = [[-0.62, 0], [0.62, 0], [0, -0.62], [0, 0.62]];
+      const stoolPoints = [];
+      for (let k = 0; k < (random() < 0.5 ? 2 : 4); k++) {
+        const [da, dd] = around[k], q = putAlong('cylinder', unit, box, along + da, depth + dd, 0.27, 0.3, 0.34, 0.3, 0x494d52, true, spec, axis);
+        if (q) stoolPoints.push(q);
+      }
+      foodAnchors.push({ x: p.x, z: p.z, points: stoolPoints, axis, unit, box, along, depth });
+      return p;
+    };
+    const findSafeShopPoint = (unit, box, spec, alongIsS, longMin, longMax, depthMin, depthMax, along, depth, reserved = [], front = null, preferred = []) => {
+      for (const poi of preferred) for (const [dx, dz] of [[0, 0], [0.45, 0], [-0.45, 0], [0, 0.45], [0, -0.45], [0.9, 0], [-0.9, 0], [0, 0.9], [0, -0.9]]) {
+        const x = poi[3] + dx, z = poi[4] + dz;
+        if (publicAt(publicUnits, x, z) || !safePoint(unit, x, z, spec, true)) continue;
+        const s = x * box.ux + z * box.uz, t = x * box.nx + z * box.nz, a = alongIsS ? s : t, d = alongIsS ? t : s;
+        if (a < longMin + 0.35 || a > longMax - 0.35 || d < depthMin + 0.35 || d > depthMax - 0.35) continue;
+        if (reserved.some((q) => Math.hypot(a - q.along, d - q.depth) < 1.55)) continue;
+        return { along: a, depth: d, x, z };
+      }
+      if (front && front.length > 1.1) {
+        const cx = (front.A[0] + front.B[0]) * 0.5, cz = (front.A[1] + front.B[1]) * 0.5, half = Math.max(0.25, front.length * 0.5 - 0.45);
+        for (const depthOffset of [1.6, 2.1, 2.8, 3.7, 5, 6.5, 8, 10]) for (let lateral = -half; lateral <= half; lateral += 0.8) {
+          const x = cx - front.nx * depthOffset + front.ux * lateral, z = cz - front.nz * depthOffset + front.uz * lateral;
+          if (publicAt(publicUnits, x, z) || !safePoint(unit, x, z, spec, true)) continue;
+          const s = x * box.ux + z * box.uz, t = x * box.nx + z * box.nz, a = alongIsS ? s : t, d = alongIsS ? t : s;
+          if (a < longMin + 0.35 || a > longMax - 0.35 || d < depthMin + 0.35 || d > depthMax - 0.35) continue;
+          if (reserved.some((q) => Math.hypot(a - q.along, d - q.depth) < 1.55)) continue;
+          return { along: a, depth: d, x, z };
+        }
+      }
+      const step = 0.55, maxRing = 15;
+      for (let ring = 0; ring <= maxRing; ring++) for (let da = -ring; da <= ring; da++) for (let dd = -ring; dd <= ring; dd++) {
+        if (Math.max(Math.abs(da), Math.abs(dd)) !== ring) continue;
+        const a = along + da * step, d = depth + dd * step;
+        if (a < longMin + 0.35 || a > longMax - 0.35 || d < depthMin + 0.35 || d > depthMax - 0.35) continue;
+        if (reserved.some((q) => Math.hypot(a - q.along, d - q.depth) < 1.55)) continue;
+        const p = alongIsS ? localPoint(box, a, d) : localPoint(box, d, a);
+        if (!publicAt(publicUnits, p.x, p.z) && safePoint(unit, p.x, p.z, spec, true)) return { along: a, depth: d, x: p.x, z: p.z };
+      }
+      return null;
+    };
+    for (const unit of skipShopFixtures ? [] : unitPoints) {
+      if (!unit.shop || shopUnitCount >= 150 || polygonArea(unit.rings) < 12) continue;
+      const type = shopTypeFor(unit); if (!type) continue; shopStats[type]++; shopUnitCount++;
+      const box = orientedBounds(unit.rings); if (!box || box.length < 1.6 || box.width < 1.2) continue;
+      const unitInstanceStart = instanceCount;
+      const random = rngFor(`${r.v.id}:${g.o}:${unit.unitIndex}:${unit.originalName || unit.name}`), front = frontByUnit.get(unit.unitIndex);
+      const midS = (box.minS + box.maxS) * 0.5, midT = (box.minT + box.maxT) * 0.5;
+      let frontAxis = null, face = 0, frontSign = 1;
+      if (front) {
+        const fs = ((front.A[0] + front.B[0]) * 0.5) * box.ux + ((front.A[1] + front.B[1]) * 0.5) * box.uz;
+        const ft = ((front.A[0] + front.B[0]) * 0.5) * box.nx + ((front.A[1] + front.B[1]) * 0.5) * box.nz;
+        if (Math.abs(fs - midS) > Math.abs(ft - midT)) { frontAxis = 's'; face = fs; frontSign = Math.sign(midS - fs) || 1; }
+        else { frontAxis = 't'; face = ft; frontSign = Math.sign(midT - ft) || 1; }
+      }
+      const spec = { box, frontAxis, face, frontSign }, alongIsS = box.length >= box.width;
+      const longMin = alongIsS ? box.minS + 0.55 : box.minT + 0.55, longMax = alongIsS ? box.maxS - 0.55 : box.maxT - 0.55;
+      const depthMin = alongIsS ? box.minT + 0.55 : box.minS + 0.55, depthMax = alongIsS ? box.maxT - 0.55 : box.maxS - 0.55;
+      const longMid = (longMin + longMax) * 0.5, depthMid = (depthMin + depthMax) * 0.5;
+      const coords = (a, d) => alongIsS ? [a, d] : [d, a], axis = alongIsS ? 's' : 't';
+      const depthSpan = depthMax - depthMin, longSpan = longMax - longMin;
+      const depthNear = frontAxis === (alongIsS ? 't' : 's') ? face + frontSign * 1.5 : depthMin + 0.35;
+      const backDepth = frontAxis === (alongIsS ? 't' : 's') ? (frontSign > 0 ? depthMax - 0.55 : depthMin + 0.55) : depthMax - 0.45;
+      const itemColors = () => colorList[Math.floor(random() * colorList.length)];
+      if (type === 'apparel') {
+        const racks = 2 + Math.floor(random() * 3), rackLen = Math.min(1.35, Math.max(0.7, longSpan / (racks + 1) * 0.72));
+        for (let i = 0; i < racks; i++) {
+          const along = longMin + longSpan * (i + 1) / (racks + 1), [s, t] = coords(along, depthMid);
+          const [lps, lpt] = coords(along - rackLen * 0.43, depthMid), [rps, rpt] = coords(along + rackLen * 0.43, depthMid);
+          put('box', unit, box, s, t, 0.18, rackLen, 0.12, 0.48, 0x4b5154, true, spec, axis);
+          put('cylinder', unit, box, lps, lpt, 0.79, 0.07, 1.42, 0.07, 0x51575b, true, spec, axis);
+          put('cylinder', unit, box, rps, rpt, 0.79, 0.07, 1.42, 0.07, 0x51575b, true, spec, axis);
+          put('box', unit, box, s, t, 1.48, rackLen, 0.055, 0.055, 0x6a7073, false, spec, axis);
+          const hangers = 6 + Math.floor(random() * 5);
+          for (let k = 0; k < hangers; k++) {
+            const [hs, ht] = coords(along - rackLen * 0.42 + rackLen * 0.84 * (k + 0.5) / hangers, depthMid);
+            put('box', unit, box, hs, ht, 1.07, Math.min(0.14, rackLen / hangers * 0.8), 0.64, 0.08, itemColors(), false, spec, axis);
+          }
+          const [as, at] = coords(along, depthMid + (depthMax - depthMin > 1.8 ? 0.55 : -0.55)), stand = localPoint(box, as, at);
+          shopAnchors.push({ x: stand.x, z: stand.z, shelf: localPoint(box, s, t), axis: box.ux, unit });
+        }
+        const mannequins = 1 + Math.floor(random() * 2);
+        for (let i = 0; i < mannequins; i++) {
+          const [s, t] = coords(longMin + longSpan * (i + 1) / (mannequins + 1), depthNear);
+          put('cylinder', unit, box, s, t, 0.08, 0.24, 0.08, 0.24, 0x35383b, true, spec, axis);
+          put('box', unit, box, s, t, 1.08, 0.32, 0.56, 0.18, 0xc89c7f, false, spec, axis);
+          put('box', unit, box, s, t, 0.58, 0.28, 0.48, 0.16, 0x273243, false, spec, axis);
+          put('cylinder', unit, box, s, t, 1.48, 0.14, 0.22, 0.14, 0xd9b79e, false, spec, axis);
+          put('box', unit, box, s, t, 0.29, 0.34, 0.48, 0.18, 0x343940, false, spec, axis);
+        }
+        if (/shoe|鞋|locker/i.test(unit.name || unit.originalName || '')) shelf(unit, box, spec, longMid, backDepth, Math.min(longSpan, 2.0), Math.min(0.32, depthSpan * 0.3), random, 0x67584c, axis);
+      } else if (type === 'eyewear') {
+        const counters = Math.max(1, Math.min(3, Math.floor(longSpan / 1.7)));
+        for (let i = 0; i < counters; i++) {
+          const along = longMin + longSpan * (i + 1) / (counters + 1), [s, t] = coords(along, depthNear);
+          put('box', unit, box, s, t, 0.48, 1.25, 0.9, 0.62, 0x5f5146, true, spec, axis);
+          put('box', unit, box, s, t, 0.96, 1.25, 0.035, 0.62, 0x9fd1d6, false, spec, axis);
+          for (let k = 0; k < 7; k++) {
+            const [is, it] = coords(along - 0.48 + k * 0.16, depthNear);
+            put('box', unit, box, is, it, 1.03, 0.09, 0.08, 0.08, itemColors(), false, spec, axis);
+          }
+        }
+      } else if (type === 'convenience' || type === 'pharmacy') {
+        const aisles = type === 'convenience' ? (depthSpan > 4.6 ? 3 : 2) : 2;
+        for (let i = 0; i < aisles; i++) {
+          const depth = type === 'pharmacy' ? (i === 0 ? backDepth : depthMid) : depthMin + depthSpan * (i + 1) / (aisles + 1);
+          shelf(unit, box, spec, longMid, depth, Math.min(longSpan - 0.5, 3.8), type === 'convenience' ? 0.65 : 0.46, random, 0x746454, axis);
+        }
+        if (type === 'convenience') {
+          const centerAlong = longMin + longSpan * 0.5, [s, t] = coords(centerAlong, backDepth), [gs, gt] = coords(centerAlong, backDepth - 0.29);
+          put('box', unit, box, s, t, 1.05, Math.min(2.2, longSpan * 0.65), 2.1, 0.55, 0x343b40, true, spec, axis);
+          put('box', unit, box, gs, gt, 1.05, Math.min(1.9, longSpan * 0.56), 1.78, 0.045, 0x57b8cb, false, spec, axis);
+          for (let k = 0; k < 5; k++) {
+            const [bs, bt] = coords(centerAlong - 0.72 + k * 0.36, backDepth - 0.33);
+            put('box', unit, box, bs, bt, 1.05, 0.22, 0.3, 0.025, itemColors(), false, spec, axis);
+          }
+        }
+      } else if (type === 'electronics') {
+        const displays = Math.max(1, Math.min(3, Math.floor(longSpan / 1.8)));
+        for (let i = 0; i < displays; i++) {
+          const along = longMin + longSpan * (i + 1) / (displays + 1), [s, t] = coords(along, depthNear);
+          put('box', unit, box, s, t, 0.48, 1.3, 0.88, 0.72, 0x343b43, true, spec, axis);
+          for (let k = 0; k < 3; k++) {
+            const [is, it] = coords(along - 0.38 + k * 0.38, depthNear);
+            put('box', unit, box, is, it, 0.98, 0.31, 0.055, 0.25, 0x202936, false, spec, axis);
+          }
+        }
+        for (let k = 0; k < 5; k++) {
+          const [s, t] = coords(longMin + longSpan * (k + 1) / 6, backDepth);
+          put('box', unit, box, s, t, 1.8, 0.78, 1.05, 0.12, [0x2d5f78, 0x496c8a, 0x865b7e, 0x3d7977, 0x735e40][k], false, spec, axis);
+        }
+      } else if (type === 'foodservice') {
+        const rows = Math.max(1, Math.min(3, Math.floor(depthSpan / 1.55))), cols = Math.max(1, Math.min(4, Math.floor(longSpan / 1.55)));
+        const stepA = Math.max(1.45, longSpan / (cols + 1)), stepD = Math.max(1.45, depthSpan / (rows + 1));
+        for (let row = 0; row < rows; row++) for (let col = 0; col < cols; col++) {
+          table(unit, box, spec, longMin + stepA * (col + 1), depthMin + stepD * (row + 1), random, axis);
+        }
+        const [cs, ct] = coords(longMid, backDepth);
+        put('box', unit, box, cs, ct, 0.52, Math.min(2.5, longSpan * 0.72), 1.04, 0.55, 0x7e563b, true, spec, axis);
+        put('box', unit, box, cs, ct, 1.72, Math.min(2.2, longSpan * 0.62), 0.82, 0.1, 0x21404a, false, spec, axis);
+        for (let k = 0; k < 4; k++) {
+          const [ms, mt] = coords(longMid - 0.65 + k * 0.43, backDepth - 0.06);
+          put('box', unit, box, ms, mt, 1.72, 0.28, 0.18, 0.025, [0xffb33b, 0x55c8d0, 0xe1656b, 0xffe174][k], false, spec, axis);
+        }
+      } else {
+        const shelves = Math.max(1, Math.min(3, Math.floor(depthSpan / 1.15)));
+        for (let i = 0; i < shelves; i++) shelf(unit, box, spec, longMid, depthMin + depthSpan * (i + 1) / (shelves + 1), Math.min(longSpan - 0.4, 3.8), 0.34, random, 0x6c5d50, axis);
+        const along = longMin + longSpan * 0.62, [s, t] = coords(along, depthNear);
+        put('box', unit, box, s, t, 0.46, Math.min(1.25, longSpan * 0.48), 0.9, 0.68, 0x87694e, true, spec, axis);
+        for (let k = 0; k < 6; k++) {
+          const [is, it] = coords(along - 0.45 + k * 0.18, depthNear);
+          put('box', unit, box, is, it, 0.98, 0.12, 0.16 + random() * 0.08, 0.12, itemColors(), false, spec, axis);
+        }
+      }
+      if (instanceCount === unitInstanceStart) {
+        const fallbackSpec = { ...spec, frontAxis: null };
+        const preferred = g.pois.filter((p) => signableName(p[2] || '') && String(p[2]).trim().toLowerCase() === String(unit.name || '').trim().toLowerCase() && insideShape(unit.rings, p[3], p[4]));
+        const anchor = findSafeShopPoint(unit, box, fallbackSpec, alongIsS, longMin, longMax, depthMin, depthMax, longMid, depthMid, [], front, preferred);
+        if (!anchor && fallbackDiagnostics.length < 12) {
+          const center = localPoint(box, midS, midT);
+          fallbackDiagnostics.push({ unitIndex: unit.unitIndex, name: unit.name, type, preferredPois: preferred.map((p) => pointDiagnostic(unit, p[3], p[4], box, longMin, longMax, depthMin, depthMax, alongIsS)), center: pointDiagnostic(unit, center.x, center.z, box, longMin, longMax, depthMin, depthMax, alongIsS) });
+        }
+        if (anchor) {
+          fallbackUnitCount++;
+          if (type === 'apparel') {
+            const rackLength = Math.min(1.3, Math.max(0.7, longSpan * 0.45));
+            putAlong('box', unit, box, anchor.along, anchor.depth, 0.18, rackLength, 0.12, 0.48, 0x4b5154, true, fallbackSpec, axis);
+            putAlong('cylinder', unit, box, anchor.along - rackLength * 0.43, anchor.depth, 0.79, 0.07, 1.42, 0.07, 0x51575b, true, fallbackSpec, axis);
+            putAlong('cylinder', unit, box, anchor.along + rackLength * 0.43, anchor.depth, 0.79, 0.07, 1.42, 0.07, 0x51575b, true, fallbackSpec, axis);
+            putAlong('box', unit, box, anchor.along, anchor.depth, 1.48, rackLength, 0.055, 0.055, 0x6a7073, false, fallbackSpec, axis);
+            for (let k = 0; k < 8; k++) {
+              const along = anchor.along - rackLength * 0.42 + rackLength * 0.84 * (k + 0.5) / 8;
+              putAlong('box', unit, box, along, anchor.depth, 1.07, Math.min(0.14, rackLength / 8 * 0.8), 0.64, 0.08, itemColors(), false, fallbackSpec, axis);
+            }
+            if (/shoe|鞋|locker/i.test(unit.name || unit.originalName || '')) {
+              const shoe = findSafeShopPoint(unit, box, fallbackSpec, alongIsS, longMin, longMax, depthMin, depthMax, longMid, depthMid, [anchor], front, preferred);
+              if (shoe) shelf(unit, box, fallbackSpec, shoe.along, shoe.depth, Math.min(longSpan, 2.0), Math.min(0.32, depthSpan * 0.3), random, 0x67584c, axis);
+            }
+            shopAnchors.push({ x: anchor.x, z: anchor.z, shelf: localPoint(box, ...(alongIsS ? [anchor.along, anchor.depth] : [anchor.depth, anchor.along])), axis: alongIsS ? box.ux : box.nx, unit });
+          } else if (type === 'foodservice') {
+            table(unit, box, fallbackSpec, anchor.along, anchor.depth, random, axis);
+          } else {
+            shelf(unit, box, fallbackSpec, anchor.along, anchor.depth, Math.min(longSpan, 2.0), Math.min(0.34, depthSpan * 0.3), random, 0x6c5d50, axis);
+          }
+        }
+      }
+      if (type !== 'foodservice' && !shopAnchors.some((q) => q.unit === unit)) {
+        const [s, t] = coords(longMid, depthNear), [as, at] = coords(longMid, depthNear + (frontSign > 0 ? 0.72 : -0.72));
+        const shelfPos = localPoint(box, s, t), stand = localPoint(box, as, at);
+        if (insideShape(unit.rings, stand.x, stand.z)) shopAnchors.push({ x: stand.x, z: stand.z, shelf: shelfPos, axis: alongIsS ? box.ux : box.nx, unit });
+      }
+    }
+    const putWorld = (unit, x, z, y, sx, sy, sz, tint, blocking = true, kind = 'box', axis = [1, 0]) => {
+      if (!unit || !safePoint(unit, x, z, null, blocking) || instanceCount >= PROP_INSTANCE_CAP) return null;
+      const tri = kind === 'box' ? 12 : 32; if (triangleEstimate + tri > PROP_TRIANGLE_CAP) return null;
+      const row = { x, y, z, sx, sy, sz, axis, tint };
+      batches[kind].push(row); instanceCount++; triangleEstimate += tri;
+      if (blocking) collisions.push({ x, z, sx, sz, axis, rings: unit.rings, row, kind, tri });
+      return { x, z };
+    };
+    for (const unit of unitPoints) {
+      const box = orientedBounds(unit.rings); if (!box) continue;
+      const alongS = box.length >= box.width, len = alongS ? box.length : box.width, wide = alongS ? box.width : box.length, axis = alongS ? [box.ux, box.uz] : [box.nx, box.nz];
+      const min = alongS ? box.minS : box.minT, max = alongS ? box.maxS : box.maxT, d0 = alongS ? box.minT : box.minS, d1 = alongS ? box.maxT : box.maxS;
+      const at = (a, d) => localPoint(box, alongS ? a : d, alongS ? d : a);
+      const cellPointSafe = (p) => {
+        const i = grid && grid.idxAt(p.x, p.z);
+        return i >= 0 && !!grid.walkable[i] && publicAt(movementUnits, p.x, p.z) && safePoint(unit, p.x, p.z, null, true);
+      };
+      if (station && unit.cat === 'platform' && len >= 8 && wide >= 2.6) {
+        const count = Math.max(1, Math.floor(len / 12));
+        for (let i = 0; i < count; i++) {
+          const p = at(min + len * (i + 0.5) / count, (d0 + d1) * 0.5);
+          if (trackUnits.some((t) => shapeDistance(p.x, p.z, t.rings) < 1.5) || !cellPointSafe(p)) continue;
+          putWorld(unit, p.x, p.z, 0.48, 1.6, 0.12, 0.42, 0x766b5d, true, 'box', axis);
+        }
+      }
+      if (!station && PUBLIC_CATEGORIES.has(unit.cat) && len >= 16 && wide >= 4) {
+        const count = Math.max(1, Math.floor(len / 15));
+        for (let i = 0; i < count; i++) {
+          const along = min + len * (i + 0.5) / count;
+          for (const side of [-1, 1]) {
+            const depth = side > 0 ? d1 - 0.82 : d0 + 0.82, p = at(along, depth);
+            if (!cellPointSafe(p)) continue;
+            if ((i + side) % 2 === 0) {
+              putWorld(unit, p.x, p.z, 0.22, 0.82, 0.44, 0.82, 0x71614f, true, 'box', axis);
+              putWorld(unit, p.x, p.z, 0.72, 0.65, 0.72, 0.65, 0x477354, false, 'box', axis);
+            } else {
+              putWorld(unit, p.x, p.z, 0.49, 1.2, 0.12, 0.42, 0x775d47, true, 'box', axis);
+              putWorld(unit, p.x - axis[1] * 0.47, p.z + axis[0] * 0.47, 0.25, 0.09, 0.42, 0.09, 0x49433e, false, 'box', axis);
+              putWorld(unit, p.x + axis[1] * 0.47, p.z - axis[0] * 0.47, 0.25, 0.09, 0.42, 0.09, 0x49433e, false, 'box', axis);
+            }
+          }
+        }
+      }
+      if (station && ['walkway', 'lobby', 'unenclosedarea'].includes(unit.cat) && len >= 20) {
+        const count = Math.max(1, Math.floor(len / 20));
+        for (let i = 0; i < count; i++) {
+          const along = min + len * (i + 0.5) / count, depth = i % 2 ? d1 - 0.38 : d0 + 0.38, p = at(along, depth);
+          if (!cellPointSafe(p)) continue;
+          putWorld(unit, p.x, p.z, 0.4, 0.38, 0.8, 0.38, 0x555b5e, true, 'cylinder', axis);
+          const board = at(along + 2.0, depth);
+          if (cellPointSafe(board)) {
+            putWorld(unit, board.x, board.z, 1.55, 1.25, 1.55, 0.14, 0x23404a, false, 'box', axis);
+            for (let k = 0; k < 4; k++) putWorld(unit, board.x - 0.38 + k * 0.25, board.z, 1.55, 0.16, 0.7, 0.025, [0x61a8be, 0xdd9854, 0x6e8f76, 0xcb6971][k], false, 'box', axis);
+          }
+        }
+      }
+    }
+    let restoredPublicCells = 0, collisionCells = 0, afterReachable = publicBefore.reachable;
+    let afterCells = publicBefore.reachableCells;
+    if (grid) {
+      for (const q of collisions) {
+        const [ux, uz] = q.axis, nx = -uz, nz = ux, hx = q.sx * 0.5 + CS * 0.35, hz = q.sz * 0.5 + CS * 0.35;
+        const rx = Math.abs(ux) * hx + Math.abs(nx) * hz, rz = Math.abs(uz) * hx + Math.abs(nz) * hz;
+        const x0 = Math.max(0, Math.floor((q.x - rx - grid.x0) / CS)), x1 = Math.min(grid.nx - 1, Math.ceil((q.x + rx - grid.x0) / CS));
+        const z0 = Math.max(0, Math.floor((q.z - rz - grid.z0) / CS)), z1 = Math.min(grid.nz - 1, Math.ceil((q.z + rz - grid.z0) / CS));
+        const changed = [], publicChanged = [];
+        for (let j = z0; j <= z1; j++) for (let i = x0; i <= x1; i++) {
+          const k = j * grid.nx + i; if (!grid.walkable[k]) continue;
+          const x = grid.x0 + (i + 0.5) * CS - q.x, z = grid.z0 + (j + 0.5) * CS - q.z;
+          if (Math.abs(x * ux + z * uz) <= hx && Math.abs(x * nx + z * nz) <= hz && (!q.rings || insideShape(q.rings, q.x + x, q.z + z))) {
+            grid.walkable[k] = 0; changed.push(k); if (publicBefore.mask[k]) publicChanged.push(k);
+          }
+        }
+        if (publicChanged.length) {
+          for (const k of changed) grid.walkable[k] = 1;
+          restoredPublicCells += publicChanged.length;
+          const index = batches[q.kind].indexOf(q.row);
+          if (index >= 0) { batches[q.kind].splice(index, 1); instanceCount--; triangleEstimate -= q.tri; }
+        } else collisionCells += changed.length;
+      }
+      afterCells = publicBefore.reachableCells;
+      afterReachable = publicBefore.reachable;
+    }
+    const reachability = { before: publicBefore.reachable, after: afterReachable, unchanged: afterReachable === publicBefore.reachable, collisionCells, restoredPublicCells };
+    for (const kind of ['box', 'cylinder']) {
+      const rows = batches[kind]; if (!rows.length) continue;
+      const mesh = new THREE.InstancedMesh(assets.geometry[kind], assets.material[kind], rows.length), object = new THREE.Object3D();
+      rows.forEach((q, i) => {
+        object.position.set(q.x, q.y, q.z); object.scale.set(q.sx, q.sy, q.sz);
+        object.rotation.y = Math.atan2(-q.axis[1], q.axis[0]); object.updateMatrix();
+        mesh.setMatrixAt(i, object.matrix); mesh.setColorAt(i, new THREE.Color(q.tint));
+      });
+      mesh.instanceMatrix.needsUpdate = true; if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      mesh.frustumCulled = false; root.add(mesh);
+      root.userData.ownedInstances = (root.userData.ownedInstances || []).concat(mesh);
+    }
+    const publicCells = grid ? [...afterCells] : [];
+    return { shopStats, propStats: { total: instanceCount, triangles: triangleEstimate, shops: shopUnitCount, fallbackUnits: fallbackUnitCount, cap: PROP_INSTANCE_CAP, primitiveTypes: Object.fromEntries(Object.entries(batches).map(([k, v]) => [k, v.length])), fallbackDiagnostics },
+      reachability, publicMask: publicBefore.mask, publicCells, publicStart: publicBefore.start, shopAnchors, foodAnchors, gateInfo };
+  }
   function poiFasciaNames(g) {
     const names = new Map();
     for (let i = 0; i < g.units.length; i++) {
       const u = g.units[i], cat = unitKind(u), name = unitName(u), rings = unitRings(u);
-      if (!isShopLike(cat, name) || signableName(name)) continue;
+      if ((!isShopLike(cat, name) && !(cat === 'unspecified' && !name)) || signableName(name)) continue;
       const center = centroid(rings), matches = g.pois.filter((p) => signableName(p[2] || '') && insideShape(rings, p[3], p[4]));
       if (matches.length) {
         matches.sort((a, b) => Math.hypot(a[3] - center.x, a[4] - center.z) - Math.hypot(b[3] - center.x, b[4] - center.z));
@@ -8112,42 +9202,322 @@ window.IND = (() => {
       const line = new THREE.LineSegments(geo, loc === 3 ? M.line3 : M.line2); if (loc === 3) line.computeLineDistances(); line.frustumCulled = false; root.add(line);
     }
   }
-  function buildFloor(r, g) {
+  function buildFloor(r, g, start = { x: 0, z: 0 }) {
     if (!M) init();
+    const showcase = showcaseForFloor(r, g);
+    if (showcase) ensureShowcaseAssets();
     const t0 = performance.now(), root = new THREE.Group(), builders = new Map(), materials = M.assets.materials;
     const builder = (key) => { let b = builders.get(key); if (!b) builders.set(key, b = vbNew()); return b; };
     const doorIndex = makeDoorIndex(g.doors.map((d) => linesOf(d[2]))), walls = [], unitPoints = [], frontRuns = [], poiNames = poiFasciaNames(g);
-    const station = isStation(r), baseFloor = station ? 'stationFloor' : 'mallFloor', publicUnits = publicUnitShapes(g, r.data), white = color('#ffffff');
+    const station = isStation(r), baseFloor = showcase ? 'mkShowcaseFloor' : station ? 'stationFloor' : 'mallFloor', publicUnits = publicUnitShapes(g, r.data), white = color('#ffffff');
+    const movementUnits = station ? publicUnitShapes(g, r.data, true) : publicUnits;
     for (const rings of g.polys) builder(baseFloor).flat(rings, 0, white, true, 0.6);
     for (let i = 0; i < g.units.length; i++) {
       const u = g.units[i], cat = unitKind(u), originalName = unitName(u), name = signableName(originalName) ? originalName : poiNames.get(i) || originalName;
-      const rings = unitRings(u), shop = isShopLike(cat, originalName), floorClass = floorMaterialClass(cat, station, originalName);
+      const rings = unitRings(u), shop = isShopLike(cat, name), floorClass = floorMaterialClass(cat, station, name);
       const uvScale = floorClass === 'woodFloor' ? 1.2 : 0.6;
       builder(floorClass).flat(rings, 0.01, white, true, uvScale);
       if (!NO_WALL.has(cat) || shop) for (const ring of rings) wallBuild(builder, ring, Math.min(g.H, 3), white, doorIndex, walls, {
-        wallClass: station ? 'stationWall' : 'plasterWall', shopLike: shop, publicUnits, frontRuns,
+        wallClass: station ? 'stationWall' : 'plasterWall', showcase: !!showcase, shopLike: shop, publicUnits, frontRuns,
         unitIndex: i, category: cat, name, fasciaTint: color(UNIT_COLOR[cat] || '#6f777a')
       });
-      const cp = centroid(rings); unitPoints.push({ u, cat, name, originalName, pos: cp, rings, shop, floorClass });
+      const cp = centroid(rings); unitPoints.push({ u, unitIndex: i, cat, name, originalName, pos: cp, rings, shop, floorClass });
     }
-    for (const rings of g.polys) for (const ring of rings) wallBuild(builder, ring, g.H, white, doorIndex, walls, { wallClass: station ? 'stationWall' : 'plasterWall' });
+    for (const rings of g.polys) for (const ring of rings) wallBuild(builder, ring, g.H, white, doorIndex, walls,
+      { wallClass: station ? 'stationWall' : 'plasterWall', showcase: !!showcase });
     for (const rings of g.polys) builder('ceiling').flat(rings, g.H, white, false, 0.6);
     const grid = makeGrid(r, g, walls); g.walkable = !!(grid && grid.walkable.some((v) => v));
     addFacilityProps(builder, unitPoints, grid);
-    addShopFurniture(builder, unitPoints, frontRuns);
-    const gateStats = station ? addFareGates(builder, grid, r.data, g.o) : null;
+    const props = addMerchandise(root, r, g, unitPoints, frontRuns, grid, publicUnits, movementUnits, station, start, !!showcase);
+    const showcaseStats = showcase ? addMongKokCShowcase(root, r, g, unitPoints, grid, props, showcase, builder, start) : null;
+    const gateStats = station ? addFareGates(builder, grid, r.data, g.o, props.gateInfo, showcase) : null;
     if (station) addPlatformStrips(builder, g, r.data);
-    addCeilingLights(root, g, grid, publicUnits);
+    const lightCount = addCeilingLights(root, g, grid, publicUnits, showcase);
+    if (showcaseStats) {
+      showcaseStats.lights = lightCount;
+      showcaseStats.gateIndicators = gateStats?.indicators || 0;
+      showcaseStats.reachability = { ...props.reachability };
+      root.userData.showcaseStats = showcaseStats;
+    }
     const labels = addLabels(root, g, r.data, frontRuns, unitPoints, grid); addRoutes(root, g, r.data);
     for (const [key, b] of builders) if (b.triangles) {
       const mesh = new THREE.Mesh(b.geo(), materials[key]); mesh.frustumCulled = false; root.add(mesh);
     }
+    const routePoints = station ? routeWalkTargets(r.data, g, grid, props.publicCells, !!showcase) : [];
     root.traverse((o) => o.layers.set(1)); S.root.add(root);
     let tris = 0, drawCalls = 0; root.traverse((o) => {
       if (o.isMesh && o.geometry && o.geometry.attributes.position) tris += (o.geometry.index ? o.geometry.index.count : o.geometry.attributes.position.count) / 3 * (o.isInstancedMesh ? o.count : 1);
       if ((o.isMesh || o.isLineSegments) && !o.isSprite) drawCalls++;
     });
-    return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), drawCalls, buildMs: performance.now() - t0, group: g, gateStats };
+    return { root, grid, labels, unitPoints, H: g.H, triangles: Math.round(tris), drawCalls, buildMs: performance.now() - t0, group: g, gateStats,
+      shopStats: props.shopStats, propStats: props.propStats, reachability: props.reachability, publicMask: props.publicMask,
+      publicCells: props.publicCells, shopAnchors: props.shopAnchors, foodAnchors: props.foodAnchors, routePoints, showcaseConfig: showcase, showcaseStats };
+  }
+  function routeWalkTargets(data, g, grid, reachableCells, useSpatialDedup = false) {
+    if (!grid || !data || !data.net || !reachableCells) return [];
+    const reachable = new Set(reachableCells);
+    const out = [], buckets = useSpatialDedup ? new Map() : null, bucketSize = 0.7;
+    for (const route of data.net.r || []) {
+      if (route[1] !== 2 && route[1] !== 3) continue;
+      const points = route[4] || [];
+      for (let k = 0; k + 5 < points.length && out.length < 1200; k += 3) {
+        const y0 = points[k + 1], y1 = points[k + 4];
+        if (routeFloor(data, (y0 + y1) * 0.5) !== g.o) continue;
+        const ax = points[k], az = points[k + 2], bx = points[k + 3], bz = points[k + 5], len = Math.hypot(bx - ax, bz - az);
+        for (let d = 0; d <= len; d += 2) {
+          const x = ax + (bx - ax) * d / (len || 1), z = az + (bz - az) * d / (len || 1), i = grid.idxAt(x, z);
+          let duplicate = false, bucketX = 0, bucketZ = 0;
+          if (i >= 0 && grid.walkable[i] && reachable.has(i)) {
+            if (buckets) {
+              bucketX = Math.floor(x / bucketSize); bucketZ = Math.floor(z / bucketSize);
+              for (let oz = -1; oz <= 1 && !duplicate; oz++) for (let ox = -1; ox <= 1 && !duplicate; ox++) {
+                for (const q of buckets.get(`${bucketX + ox}:${bucketZ + oz}`) || []) {
+                  if (Math.hypot(q.x - x, q.z - z) < 0.7) { duplicate = true; break; }
+                }
+              }
+            } else duplicate = out.some((q) => Math.hypot(q.x - x, q.z - z) < 0.7);
+            if (!duplicate) {
+              const target = { x, z }; out.push(target);
+              if (buckets) {
+                const key = `${bucketX}:${bucketZ}`; let bucket = buckets.get(key);
+                if (!bucket) buckets.set(key, bucket = []);
+                bucket.push(target);
+              }
+            }
+          }
+          if (out.length >= 1200) break;
+        }
+      }
+    }
+    return out;
+  }
+  function ensureIndoorPeople() {
+    if (S.peoplePool) return S.peoplePool;
+    const PP = PEOPLE && PEOPLE.PP;
+    if (!PP || !S.root) return null;
+    const started = performance.now(), textureBefore = typeof renderer !== 'undefined' && renderer.info ? renderer.info.memory.textures : null;
+    const root = new THREE.Group(), count = TOUCH ? 12 : 24, npcs = [];
+    root.name = 'IND indoor crowd'; root.visible = false;
+    for (let i = 0; i < count; i++) {
+      const p = PP.make(i % PP.count), seed = ((i + 1) * 2654435761) >>> 0;
+      p.root.visible = false; p.root.scale.setScalar(1.7 / PP.height * (0.92 + 0.14 * ((seed % 1000) / 1000)));
+      p.actions.idle.reset().play();
+      p.root.traverse((o) => o.layers.set(1));
+      root.add(p.root);
+      npcs.push({ p, id: i, seed, randomState: seed || 1, kind: 'walker', target: null, retargetTimer: 0, heroBlocked: false, shift: null, shiftTimer: 0, speed: 0.65 + (i % 5) * 0.12, anim: 'idle', anchor: null, visible: false });
+    }
+    S.root.add(root);
+    const textureAfter = typeof renderer !== 'undefined' && renderer.info ? renderer.info.memory.textures : null;
+    S.peoplePool = { root, npcs, count, createdMs: performance.now() - started, makeMsPerCharacter: (performance.now() - started) / Math.max(1, count),
+      textureDelta: textureBefore === null || textureAfter === null ? null : textureAfter - textureBefore, assignments: null, spawnMetrics: null, error: null };
+    return S.peoplePool;
+  }
+  function npcRandom(npc) {
+    npc.randomState = (Math.imul(npc.randomState, 1664525) + 1013904223) >>> 0;
+    return npc.randomState / 4294967296;
+  }
+  function setNpcAnimation(npc, name) {
+    const actions = npc.p.actions, next = actions[name] || actions.walk, previous = actions[npc.anim];
+    if (!next || npc.anim === name) return;
+    npc.anim = name; next.reset().play(); if (previous && previous !== next) previous.crossFadeTo(next, 0.25, false);
+  }
+  function nearestWalkableInUnit(grid, x, z, rings, limit = 1.6) {
+    if (!grid) return null;
+    const radius = Math.ceil(limit / CS), i0 = Math.floor((x - grid.x0) / CS), j0 = Math.floor((z - grid.z0) / CS);
+    let best = null, bd = limit * limit;
+    for (let dz = -radius; dz <= radius; dz++) for (let dx = -radius; dx <= radius; dx++) {
+      const i = i0 + dx, j = j0 + dz; if (i < 0 || j < 0 || i >= grid.nx || j >= grid.nz) continue;
+      const k = j * grid.nx + i; if (!grid.walkable[k]) continue;
+      const px = grid.x0 + (i + 0.5) * CS, pz = grid.z0 + (j + 0.5) * CS;
+      if (rings && !insideShape(rings, px, pz)) continue;
+      const d = (px - x) ** 2 + (pz - z) ** 2;
+      if (d < bd) { bd = d; best = { x: px, z: pz, index: k }; }
+    }
+    return best;
+  }
+  function chooseNpcTarget(npc, floor, x, z) {
+    const candidates = floor.routePoints.length ? floor.routePoints : floor.publicCells;
+    if (!candidates.length) return null;
+    let target = null;
+    for (let attempt = 0; attempt < 36; attempt++) {
+      const q = candidates[Math.floor(npcRandom(npc) * candidates.length)];
+      const p = typeof q === 'number' ? { x: floor.grid.x0 + ((q % floor.grid.nx) + 0.5) * CS, z: floor.grid.z0 + (Math.floor(q / floor.grid.nx) + 0.5) * CS } : q;
+      const d = Math.hypot(p.x - x, p.z - z);
+      if (d >= 8 && d <= 30) { target = p; break; }
+    }
+    if (!target) {
+      let farthest = null, best = 0;
+      for (const q of candidates) {
+        const p = typeof q === 'number' ? { x: floor.grid.x0 + ((q % floor.grid.nx) + 0.5) * CS, z: floor.grid.z0 + (Math.floor(q / floor.grid.nx) + 0.5) * CS } : q;
+        const d = Math.hypot(p.x - x, p.z - z); if (d > best && d >= 8 && d <= 30) { best = d; farthest = p; }
+      }
+      target = farthest;
+    }
+    return target;
+  }
+  function configureIndoorPeople() {
+    const floor = S.floor;
+    if (!S.inside || !floor || !floor.group || !floor.grid) { hideIndoorPeople(); return; }
+    const pool = ensureIndoorPeople(); if (!pool) return;
+    pool.root.visible = false; pool.spawnMetrics = null;
+    for (const npc of pool.npcs) { npc.p.root.visible = false; npc.visible = false; npc.target = null; npc.shift = null; }
+    if (!floor.publicCells.length) { pool.assignments = { walkers: 0, browsers: 0, patrons: 0 }; return; }
+    const heroSpawn = { x: OPEN.hero.x, z: OPEN.hero.z };
+    const facilityUnits = floor.unitPoints.filter((u) => ['elevator', 'stairs', 'escalator'].includes(u.cat));
+    const inFacility = (p) => facilityUnits.some((u) => insideShape(u.rings, p.x, p.z));
+    const validSpawn = (p) => p && Math.hypot(heroSpawn.x - p.x, heroSpawn.z - p.z) >= 3 && !inFacility(p);
+    const showcasePlan = floor.showcaseStats?.npcPlan || null, showcaseMode = !!floor.showcaseConfig;
+    const browserAnchors = floor.shopAnchors.filter((a) => signableName(a.unit.name)).map((a) => {
+      const positions = [];
+      for (const radius of [0.75, 1.15, 1.55, 1.95]) for (let k = 0; k < 8; k++) {
+        const angle = k * Math.PI / 4, p = nearestWalkableInUnit(floor.grid, a.x + Math.cos(angle) * radius, a.z + Math.sin(angle) * radius, a.unit.rings, 0.55);
+        if (validSpawn(p) && !positions.some((q) => q.index === p.index)) positions.push(p);
+      }
+      return positions.length ? { ...a, pos: positions[0], positions } : null;
+    }).filter(Boolean);
+    const tableAnchors = floor.foodAnchors.map((a) => {
+      const rings = a.unit && a.unit.rings, positions = [];
+      for (const radius of [0.85, 1.1, 1.35, 1.6]) for (let k = 0; k < 8; k++) {
+        const angle = k * Math.PI / 4, p = nearestWalkableInUnit(floor.grid, a.x + Math.cos(angle) * radius, a.z + Math.sin(angle) * radius, rings, 0.55);
+        if (validSpawn(p) && !positions.some((q) => q.index === p.index)) positions.push(p);
+      }
+      return positions.length ? { ...a, positions } : null;
+    }).filter(Boolean);
+    const publicCandidates = [], seenCells = new Set();
+    for (const k of floor.publicCells) {
+      if (seenCells.has(k)) continue;
+      seenCells.add(k);
+      const p = { x: floor.grid.x0 + ((k % floor.grid.nx) + 0.5) * CS, z: floor.grid.z0 + (Math.floor(k / floor.grid.nx) + 0.5) * CS, index: k };
+      if (validSpawn(p)) publicCandidates.push(p);
+    }
+    const browserOptions = browserAnchors.flatMap((anchor) => anchor.positions.map((pos) => ({ anchor, pos })));
+    const patronOptions = tableAnchors.flatMap((anchor) => anchor.positions.map((pos) => ({ anchor, pos })));
+    const hasBrowsers = browserOptions.length > 0, hasPatrons = patronOptions.length > 0, n = pool.count;
+    const plannedCount = showcaseMode ? Math.min(n, showcasePlan.length) : 0;
+    const browserCount = showcaseMode ? 0 : hasBrowsers ? Math.round(n * 0.25) : 0;
+    const patronCount = showcaseMode ? 0 : hasPatrons ? Math.round(n * 0.15) : 0;
+    const walkerCount = showcaseMode ? n - plannedCount : n - browserCount - patronCount;
+    const assignments = { walkers: 0, browsers: 0, patrons: 0, queues: 0, machines: 0, customers: 0, staff: 0, walls: 0,
+      requested: { walkers: walkerCount, browsers: browserCount, patrons: patronCount, showcaseRoles: plannedCount }, unspawned: 0 };
+    const spawns = [];
+    const chooseSeparated = (options, npc) => {
+      let bestDistance = -1, choices = [];
+      for (const option of options) {
+        const p = option.pos || option;
+        if (!validSpawn(p)) continue;
+        let distance = 1000;
+        if (spawns.length) {
+          distance = Infinity;
+          for (const q of spawns) distance = Math.min(distance, Math.hypot(q.x - p.x, q.z - p.z));
+        }
+        if (distance < 1.5) continue;
+        if (distance > bestDistance + 1e-6) { bestDistance = distance; choices = [option]; }
+        else if (Math.abs(distance - bestDistance) <= 1e-6) choices.push(option);
+      }
+      return choices.length ? choices[Math.floor(npcRandom(npc) * choices.length)] : null;
+    };
+    for (let i = 0; i < n; i++) {
+      const npc = pool.npcs[i], planned = showcaseMode && i < plannedCount ? showcasePlan[i] : null;
+      const kind = showcaseMode ? 'walker' : i < walkerCount ? 'walker' : i < walkerCount + browserCount ? 'browser' : 'patron';
+      let actualKind = kind, choice = null, yaw = null;
+      if (planned) {
+        const index = floor.grid.idxAt(planned.x, planned.z), unit = planned.unit == null ? null : floor.unitPoints.find((u) => u.unitIndex === planned.unit);
+        const pos = { x: planned.x, z: planned.z, index };
+        const publicRole = planned.role !== 'staff';
+        const separated = spawns.every((q) => Math.hypot(q.x - pos.x, q.z - pos.z) >= 1.5);
+        if (index >= 0 && floor.grid.walkable[index] && (!publicRole || floor.publicMask[index]) &&
+            (!unit || insideShape(unit.rings, pos.x, pos.z)) && validSpawn(pos) && separated) {
+          actualKind = planned.role; choice = { pos, role: planned.role }; yaw = planned.yaw;
+        }
+      }
+      if (!choice) {
+        actualKind = kind;
+        choice = kind === 'browser' ? chooseSeparated(browserOptions, npc) : kind === 'patron' ? chooseSeparated(patronOptions, npc) : null;
+      }
+      if (choice && (actualKind === 'browser' || actualKind === 'patron')) npc.anchor = choice.anchor;
+      else if (!choice || actualKind === 'walker') { if (actualKind !== 'walker') actualKind = 'walker'; npc.anchor = null; choice = chooseSeparated(publicCandidates, npc); }
+      if (!choice) { npc.p.root.visible = false; npc.visible = false; assignments.unspawned++; continue; }
+      const pos = choice.pos || choice;
+      npc.kind = actualKind; npc.floor = floor; npc.heroBlocked = false; npc.shiftTimer = 2 + npcRandom(npc) * 7;
+      npc.role = planned && actualKind !== 'walker' ? actualKind : null;
+      npc.p.root.position.set(pos.x, 0, pos.z);
+      if (yaw !== null) npc.p.root.rotation.y = yaw;
+      else if (actualKind === 'browser' && npc.anchor) npc.p.root.rotation.y = Math.atan2(npc.anchor.shelf.x - pos.x, npc.anchor.shelf.z - pos.z);
+      else if (actualKind === 'patron' && npc.anchor) npc.p.root.rotation.y = Math.atan2(npc.anchor.x - pos.x, npc.anchor.z - pos.z);
+      else npc.p.root.rotation.y = npcRandom(npc) * Math.PI * 2;
+      npc.p.root.visible = true; npc.visible = true; spawns.push(pos);
+      const assignmentKey = actualKind === 'queue' ? 'queues' : actualKind === 'machine' ? 'machines' : actualKind === 'staff' ? 'staff' : `${actualKind}s`;
+      assignments[assignmentKey]++;
+      npc.target = actualKind === 'walker' ? chooseNpcTarget(npc, floor, pos.x, pos.z) : null; npc.retargetTimer = npc.target ? 0 : 2;
+      setNpcAnimation(npc, actualKind === 'walker' && npc.target ? 'walk' : 'idle');
+    }
+    let minPairDistance = Infinity, minHeroDistance = Infinity;
+    for (let i = 0; i < spawns.length; i++) {
+      minHeroDistance = Math.min(minHeroDistance, Math.hypot(heroSpawn.x - spawns[i].x, heroSpawn.z - spawns[i].z));
+      for (let j = i + 1; j < spawns.length; j++) minPairDistance = Math.min(minPairDistance, Math.hypot(spawns[i].x - spawns[j].x, spawns[i].z - spawns[j].z));
+    }
+    pool.assignments = assignments;
+    pool.spawnMetrics = { floor: floor.group.o, visible: spawns.length, minPairDistance: Number.isFinite(minPairDistance) ? minPairDistance : null,
+      minHeroDistance: Number.isFinite(minHeroDistance) ? minHeroDistance : null, facilityViolations: spawns.filter(inFacility).length };
+    pool.root.visible = spawns.length > 0;
+  }
+  function hideIndoorPeople() {
+    const pool = S.peoplePool; if (!pool) return;
+    pool.root.visible = false; for (const npc of pool.npcs) { npc.p.root.visible = false; npc.visible = false; }
+  }
+  function updateIndoorPeople(dt) {
+    const pool = S.peoplePool, floor = S.floor;
+    if (!pool || !S.inside || !floor || !pool.root.visible) return;
+    const hero = OPEN.hero, camPos = camera.position, frameDt = Math.min(0.08, Math.max(0, dt || 0));
+    const crowdBlocked = (npc, x, z) => pool.npcs.some((other) => {
+      if (!other.visible || other === npc) return false;
+      const ox = other.p.root.position.x, oz = other.p.root.position.z;
+      const currentDistance = Math.hypot(npc.p.root.position.x - ox, npc.p.root.position.z - oz);
+      return Math.hypot(x - ox, z - oz) < 0.7 && Math.hypot(x - ox, z - oz) <= currentDistance;
+    });
+    for (const npc of pool.npcs) {
+      if (!npc.visible) continue;
+      const root = npc.p.root, x = root.position.x, z = root.position.z, cameraDistance = Math.hypot(camPos.x - x, camPos.z - z);
+      root.visible = cameraDistance <= 45;
+      if (!root.visible || cameraDistance > 35) continue;
+      const heroDistance = Math.hypot(hero.x - x, hero.z - z);
+      if (heroDistance <= 0.8) {
+        setNpcAnimation(npc, 'idle'); npc.shift = null;
+        if (!npc.heroBlocked && npc.kind === 'walker') { npc.target = chooseNpcTarget(npc, floor, x, z); npc.retargetTimer = npc.target ? 0 : 2; }
+        npc.heroBlocked = true; npc.shiftTimer = 2 + npcRandom(npc) * 4; npc.p.mixer.update(frameDt); continue;
+      }
+      npc.heroBlocked = false;
+      if (npc.kind === 'walker') {
+        if (!npc.target) {
+          npc.retargetTimer -= frameDt;
+          if (npc.retargetTimer <= 0) { npc.target = chooseNpcTarget(npc, floor, x, z); npc.retargetTimer = npc.target ? 0 : 2; }
+        } else if (Math.hypot(npc.target.x - x, npc.target.z - z) < 0.9) {
+          npc.target = chooseNpcTarget(npc, floor, x, z); npc.retargetTimer = npc.target ? 0 : 2;
+        }
+        if (npc.target) {
+          const dx = npc.target.x - x, dz = npc.target.z - z, d = Math.hypot(dx, dz) || 1, step = Math.min(d, npc.speed * frameDt), nx = x + dx / d * step, nz = z + dz / d * step, idx = floor.grid.idxAt(nx, nz);
+          if (Math.hypot(hero.x - nx, hero.z - nz) <= 0.8 || crowdBlocked(npc, nx, nz)) {
+            npc.target = null; npc.retargetTimer = 0.35 + npcRandom(npc) * 0.45; setNpcAnimation(npc, 'idle');
+          } else if (idx >= 0 && floor.grid.walkable[idx] && floor.publicMask[idx]) {
+            root.position.set(nx, 0, nz); root.rotation.y = Math.atan2(dx, dz); setNpcAnimation(npc, 'walk');
+          } else { npc.target = chooseNpcTarget(npc, floor, x, z); npc.retargetTimer = npc.target ? 0 : 2; setNpcAnimation(npc, npc.target ? 'walk' : 'idle'); }
+        }
+      } else if (npc.kind === 'browser') {
+        npc.shiftTimer -= frameDt;
+        if (!npc.shift && npc.shiftTimer <= 0 && npc.anchor) {
+          const angle = npcRandom(npc) * Math.PI * 2, p = nearestWalkableInUnit(floor.grid, x + Math.cos(angle), z + Math.sin(angle), npc.anchor.unit.rings, 0.6);
+          if (p && Math.hypot(p.x - x, p.z - z) > 0.55) npc.shift = p;
+          npc.shiftTimer = 5 + npcRandom(npc) * 7;
+        }
+        if (npc.shift) {
+          const dx = npc.shift.x - x, dz = npc.shift.z - z, d = Math.hypot(dx, dz) || 1, step = Math.min(d, 0.45 * frameDt), nx = x + dx / d * step, nz = z + dz / d * step, idx = floor.grid.idxAt(nx, nz);
+          if (d < 0.08) { npc.shift = null; setNpcAnimation(npc, 'idle'); }
+          else if (idx >= 0 && floor.grid.walkable[idx] && Math.hypot(hero.x - nx, hero.z - nz) > 0.8 && !crowdBlocked(npc, nx, nz)) { root.position.set(nx, 0, nz); root.rotation.y = Math.atan2(npc.anchor.shelf.x - nx, npc.anchor.shelf.z - nz); setNpcAnimation(npc, 'walk'); }
+          else { npc.shift = null; setNpcAnimation(npc, 'idle'); }
+        } else setNpcAnimation(npc, 'idle');
+      } else setNpcAnimation(npc, 'idle');
+      npc.p.mixer.update(frameDt);
+    }
   }
   function disposeFloor() {
     if (!S.floor) return;
@@ -8176,7 +9546,7 @@ window.IND = (() => {
     S.goalObj = null; S.goal = null;
   }
   function addGoal() {
-    if (!S.floor || !S.goal || S.goal.venue !== S.state.v.id || S.goal.o !== S.floor.group.o || S.goalObj) return;
+    if (!S.floor || !S.state || !S.state.v || !S.floor.group || !S.goal || S.goal.venue !== S.state.v.id || S.goal.o !== S.floor.group.o || S.goalObj) return;
     const g = new THREE.Group(), bm = new THREE.MeshBasicMaterial({ color: 0x3cff8a, transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide }), rm = new THREE.MeshBasicMaterial({ color: 0x3cff8a });
     g.name = 'indoorDeliveryGoal';
     const beam = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.55, 4, 12, 1, true), bm);
@@ -8186,12 +9556,14 @@ window.IND = (() => {
     S.floor.root.userData.ownedMaterials = (S.floor.root.userData.ownedMaterials || []).concat(bm, rm);
   }
   function showFloor(r, g, x, z, h = Number.isFinite(OPEN.hero.h) ? OPEN.hero.h : 0) {
-    disposeFloor(); S.state = r; S.data = r.data; S.groups = r.groups;
-    S.floor = buildFloor(r, g); S.root.visible = true; addGoal();
+    hideIndoorPeople(); ensureIndoorPeople(); setShowcaseLighting(null); disposeFloor(); S.state = r; S.data = r.data; S.groups = r.groups;
+    S.floor = buildFloor(r, g, { x, z }); S.root.visible = true; addGoal();
+    setShowcaseLighting(S.floor.showcaseConfig);
     const p = nearestCell(S.floor.grid, x, z) || { x: x, z: z };
-    place(p.x, p.z, h); S.paid = paidAt(p.x, p.z);
+    place(p.x, p.z, h); S.paid = paidAt(p.x, p.z); configureIndoorPeople();
     return { ...p, walkable: !!(S.floor.grid && S.floor.grid.walkable[S.floor.grid.idxAt(p.x, p.z)]), buildMs: S.floor.buildMs,
-      triangles: S.floor.triangles, drawCalls: S.floor.drawCalls, gateStats: S.floor.gateStats };
+      triangles: S.floor.triangles, drawCalls: S.floor.drawCalls, gateStats: S.floor.gateStats, shopStats: S.floor.shopStats,
+      propStats: S.floor.propStats, reachability: S.floor.reachability, showcase: S.floor.showcaseStats };
   }
   function place(x, z, h = OPEN.hero.h) {
     const H = OPEN.hero; H.x = x; H.z = z; H.y = 0; H.vy = 0; H.h = h;
@@ -8263,6 +9635,7 @@ window.IND = (() => {
       if (best && mission && mission.indoor && mission.indoor.venue !== best.r.v.id) return null;
       return best;
     }
+    if (!S.floor || !S.floor.group || !S.state || !S.groups) return null;
     const o = S.floor.group.o, max = Math.max(...S.groups.map((g) => g.o));
     if (isStation(S.state) && o === max && !S.paid && nearUnit(['stairs', 'escalator', 'elevator'])) return { type: 'stationExit' };
     if (nearPlatform()) return { type: 'board' };
@@ -8333,7 +9706,7 @@ window.IND = (() => {
     showFloor(r, g, p.x, p.z, p.h); S.paid = false; OPEN.big(`${r.v.tc} ${g.name}`, '#ffd98a');
   }
   function doLeave(entry) {
-    clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.paid = false; S.root.visible = false; indoorBackground(false); cameraLayers(false); $('indLift').hidden = true; $('indStair').hidden = true; S.menu = false;
+    hideIndoorPeople(); setShowcaseLighting(null); clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.paid = false; S.root.visible = false; indoorBackground(false); cameraLayers(false); $('indLift').hidden = true; $('indStair').hidden = true; S.menu = false;
     if (entry) place(entry.out.x, entry.out.z, Math.atan2(entry.nx, entry.nz));
     else { const q = S.target && S.target.entry; if (q) place(q.out.x, q.out.z, Math.atan2(q.nx, q.nz)); }
     fade(0);
@@ -8351,6 +9724,7 @@ window.IND = (() => {
       const x = OPEN.hero.x, z = OPEN.hero.z;
       for (const r of records) if (!r.data && bboxDist(r.v.bb, x, z) <= 150) load(r).catch(() => {});
     }
+    updateIndoorPeople(dt);
     if (!S.phase) { refreshPanels(); return; }
     if ((S.t -= dt) > 0) return;
     const phase = S.phase, target = S.target; S.phase = null;
@@ -8361,7 +9735,9 @@ window.IND = (() => {
     fade(0); S.busy = false; S.target = null; refreshPanels();
   }
   function refreshPanels() {
-    if (!S.inside || S.busy || !S.floor) { $('indStair').hidden = true; return; }
+    if (!S.inside || S.busy || !S.floor || !S.floor.group || !S.state || !S.groups) {
+      $('indStair').hidden = true; $('indLift').hidden = true; return;
+    }
     const q = nearUnit(['stairs', 'escalator']), lift = nearUnit(['elevator']);
     $('indStair').hidden = !q;
     if (q) {
@@ -8374,6 +9750,7 @@ window.IND = (() => {
     if (!lift && !S.menu) $('indLift').hidden = true;
   }
   function changeByUnit(source, ordinal) {
+    if (!S.inside || !S.floor || !S.floor.group || !S.state || !S.groups) return;
     const g = floorByOrdinal(S.state, ordinal); if (!g) return;
     if (!groupWalkable(S.state, g)) { OPEN.big('呢層入唔到', '#ff765e'); return; }
     const options = g.units.filter((u) => ['stairs', 'escalator'].includes(unitKind(u))).map((u) => ({ u, p: centroid(unitRings(u)) }));
@@ -8382,6 +9759,7 @@ window.IND = (() => {
     $('indStair').hidden = true; begin('floor', { o: ordinal, x: p.p.x, z: p.p.z });
   }
   function openLift(unit) {
+    if (!unit || !S.inside || !S.floor || !S.floor.group || !S.state || !S.groups) return;
     const floors = [];
     for (const g of S.groups) {
       const lifts = g.units.filter((u) => unitKind(u) === 'elevator').map((u) => centroid(unitRings(u)));
@@ -8390,6 +9768,7 @@ window.IND = (() => {
     const list = floors.length ? floors : S.groups.filter((g) => groupWalkable(S.state, g));
     $('indLiftL').innerHTML = list.slice().sort((a, b) => b.o - a.o).map((g) => `<button data-o="${g.o}" class="${g.o === S.floor.group.o ? 'here' : ''}">${g.name}<small>${g.o === 0 ? 'G/F・出入口' : `樓層 ${g.o}`}</small></button>`).join('');
     for (const b of $('indLiftL').querySelectorAll('button')) b.onclick = () => {
+      if (!S.inside || !S.floor || !S.floor.group || !S.state || !S.groups) return;
       const o = +b.dataset.o; if (o === S.floor.group.o) return;
       const g = floorByOrdinal(S.state, o); if (!g || !groupWalkable(S.state, g)) { OPEN.big('呢層入唔到', '#ff765e'); return; }
       const u = g.units.filter((q) => unitKind(q) === 'elevator').map((q) => centroid(unitRings(q))).sort((a, c) => Math.hypot(a.x - unit.pos.x, a.z - unit.pos.z) - Math.hypot(c.x - unit.pos.x, c.z - unit.pos.z))[0];
@@ -8416,6 +9795,7 @@ window.IND = (() => {
   }
   function forceLeave() {
     if (!S.inside) return;
+    if (!S.floor || !S.floor.group || !S.state || !S.groups) { leave(true); return; }
     if (isStation(S.state)) {
       const highest = Math.max(...S.groups.map((g) => g.o));
       if (S.floor.group.o !== highest || S.paid || !nearUnit(['stairs', 'escalator', 'elevator'])) { OPEN.big('請到最高層未付費通道出站', '#ffca54'); return; }
@@ -8430,7 +9810,7 @@ window.IND = (() => {
   function leave(hard = false) {
     if (!S.inside && !S.phase) return;
     if (hard) {
-      clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.phase = null; S.busy = false; S.menu = false;
+      hideIndoorPeople(); setShowcaseLighting(null); clearGoal(); disposeFloor(); S.inside = false; S.state = null; S.data = null; S.groups = null; S.phase = null; S.busy = false; S.menu = false;
       if (S.root) S.root.visible = false; indoorBackground(false); $('indLift').hidden = true; $('indStair').hidden = true; fade(0); cameraLayers(false); return;
     }
     forceLeave();
@@ -8463,9 +9843,12 @@ window.IND = (() => {
       }
     }
   }
-  function label() { return S.inside && S.floor ? `📍 ${S.state.v.tc} ${S.floor.group.name}<small>${S.state.v.en}</small>` : ''; }
+  function label() { return S.inside && S.floor && S.floor.group && S.state && S.state.v ? `📍 ${S.state.v.tc} ${S.floor.group.name}<small>${S.state.v.en}</small>` : ''; }
   function hint() {
-    if (S.inside) return `<b>${S.state.v.tc} ${S.floor.group.name}</b><br>${S.state.v.en}<br>行去升降機／樓梯轉樓層<br><span class="ogo ind-ogo">🚪 出返街</span>`;
+    if (S.inside) {
+      if (!S.floor || !S.floor.group || !S.state || !S.state.v) return '<span class="ogo ind-ogo">🚪 出返街</span>';
+      return `<b>${S.state.v.tc} ${S.floor.group.name}</b><br>${S.state.v.en}<br>行去升降機／樓梯轉樓層<br><span class="ogo ind-ogo">🚪 出返街</span>`;
+    }
     let best = null, bd = 1e9;
     for (const r of records) if (r.data && !isStation(r)) { const q = nearestDoorEntry(r, OPEN.hero.x, OPEN.hero.z); if (q && q.d < bd) { best = { r, q }; bd = q.d; } }
     return best ? `<br>🏢 ${best.r.v.tc}（${Math.round(bd)} 米）` : '';
@@ -8476,7 +9859,7 @@ window.IND = (() => {
     else { const n = currentNear(); if (n && n.type === 'enter') act(); }
   }, true);
   function map(ctx, cx, cz) {
-    if (!S.inside || !S.floor) {
+    if (!S.inside || !S.floor || !S.floor.group || !S.state || !S.data) {
       let best = null, bd = Infinity;
       for (const r of records) if (r.data && !isStation(r)) for (const m of r.markers || []) { const d = Math.hypot(m.entry.out.x - cx, m.entry.out.z - cz); if (d < bd) { bd = d; best = m.entry; } }
       if (best) { let dx = (best.out.x - cx) * (150 / 250), dz = (best.out.z - cz) * (150 / 250), l = Math.hypot(dx, dz); if (l > 136) { dx *= 136 / l; dz *= 136 / l; }
@@ -8565,13 +9948,14 @@ window.IND = (() => {
       const g = floorByOrdinal(r, o); if (!g) throw new Error('IND test floor not found: ' + o);
       if (!groupWalkable(r, g)) return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: false, skipped: true, buildMs: 0, triangles: 0, drawCalls: 0, floors: r.groups.length };
       if (!S.root) init();
-      if (S.inside) { disposeFloor(); S.root.visible = false; }
+      if (S.inside) { hideIndoorPeople(); disposeFloor(); S.root.visible = false; }
       S.phase = null; S.busy = false; S.menu = false; $('indLift').hidden = true; $('indStair').hidden = true; fade(0);
       S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; indoorBackground(true); cameraLayers(true);
       const target = r.v.bb, p = showFloor(r, g, (target[0] + target[2]) / 2, (target[1] + target[3]) / 2);
       S.paid = paidAt(p.x, p.z);
       return { id: r.v.id, venue: r.v.en, ordinal: g.o, name: g.name, walkable: p.walkable, buildMs: p.buildMs, triangles: p.triangles,
-        drawCalls: p.drawCalls, gateStats: p.gateStats, signDebug: S.floor.root.userData.signDebug,
+        drawCalls: p.drawCalls, gateStats: p.gateStats, shopStats: p.shopStats, propStats: p.propStats, reachability: p.reachability, showcase: p.showcase,
+        signDebug: S.floor.root.userData.signDebug,
         floorResources: { textures: S.floor.root.userData.ownedTextures?.length || 0, materials: S.floor.root.userData.ownedMaterials?.length || 0,
           geometries: S.floor.root.userData.ownedGeometries?.length || 0 }, floors: r.groups.length };
     });
@@ -8598,11 +9982,29 @@ window.IND = (() => {
   function nearOutside() { return currentNear(); }
   return { walk, foot, prompt, act, leave, step, camera: camera3, label, hint, map,
     get inside() { return S.inside; }, get busy() { return S.busy; }, get menu() { return S.menu; }, get fading() { return !!S.phase; },
-    get venue() { return S.state && S.state.v; }, get floor() { return S.floor && S.floor.group.o; }, get paid() { return S.paid; },
+    get venue() { return S.state && S.state.v; }, get floor() { return S.floor && S.floor.group && S.floor.group.o; }, get paid() { return S.paid; },
     canMove, setGoal, hasStation, stationVenueId: (k) => stationForIndex(k)?.v.id || null, enterStation, pickDelivery, setForceFood, consumeForceFood: () => { const q = S.forceFood; S.forceFood = false; return q; }, nearOutside,
     _load: (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); return r && load(r); },
     _goto: testGoto, _stats: testStats, _resources: resourceStats, _textures: textureStats, _signs: () => S.floor?.root.userData.signDebug || null,
     _gateStats: () => S.floor?.gateStats || null, _lastPickLoads: () => S.lastPickLoads, _walkable: gridWalkable,
+    _shopStats: () => S.floor?.shopStats || null, _propStats: () => S.floor?.propStats || null, _reachability: () => S.floor?.reachability || null,
+    _showcaseStats: () => S.floor?.showcaseStats || null,
+    _anchors: () => S.floor ? {
+      shops: S.floor.shopAnchors.map((a) => ({ x: a.x, z: a.z, shelf: a.shelf, rings: a.unit.rings, axis: a.axis, unitIndex: a.unit.unitIndex, name: a.unit.name, category: a.unit.cat })),
+      food: S.floor.foodAnchors.map((a) => ({ x: a.x, z: a.z, points: a.points, rings: a.unit.rings, unitIndex: a.unit.unitIndex, name: a.unit.name, category: a.unit.cat }))
+    } : { shops: [], food: [] },
+    _npcStats: () => {
+      if (!S.peoplePool) return null;
+      const visibleByKind = S.peoplePool.npcs.filter((n) => n.visible).reduce((out, n) => (out[n.kind] = (out[n.kind] || 0) + 1, out), {});
+      return { count: S.peoplePool.count, createdMs: S.peoplePool.createdMs, makeMsPerCharacter: S.peoplePool.makeMsPerCharacter,
+        textureDelta: S.peoplePool.textureDelta, assignments: S.peoplePool.assignments, spawnMetrics: S.peoplePool.spawnMetrics,
+        skeletonCount: new Set(S.peoplePool.npcs.map((n) => n.p.mesh.skeleton)).size, poolVisible: S.peoplePool.root.visible,
+        visible: S.peoplePool.npcs.filter((n) => n.visible).length,
+        visibleByKind, npcs: S.peoplePool.npcs.map((n) => ({ id: n.id, modelIndex: n.id % (PEOPLE?.PP?.count || 1), model: n.p.name, kind: n.kind, anim: n.anim, visible: n.p.root.visible,
+          actions: Object.entries(n.p.actions).filter(([, a]) => a.isRunning()).map(([name, a]) => ({ name, weight: a.getEffectiveWeight() })),
+          x: n.p.root.position.x, y: n.p.root.position.y, z: n.p.root.position.z, scale: n.p.root.scale.x, target: n.target, shift: n.shift })),
+        layers: S.peoplePool.npcs.map((n) => { let ok = true; n.p.root.traverse((o) => { if (o.layers.mask !== 2) ok = false; }); return ok; }) };
+    },
     _entries: async (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); if (!r) return []; await load(r); return getEntries(r).map((e) => ({ mid: e.mid, out: e.out, nx: e.nx, nz: e.nz, code: e.code })); },
     _gatePairs: testGatePairs, _setPaid: (v) => { S.paid = !!v; },
     _triangleCount: () => S.floor ? S.floor.triangles : 0,
