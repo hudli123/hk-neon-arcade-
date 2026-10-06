@@ -2337,7 +2337,7 @@ const PEOPLE = (() => {
     RAIN_NO: ['冇帶遮呀！', '又落雨…', '早知帶遮啦', '濕晒喇！', '落雨收衫呀！'],
     RAIN_YES: ['好彩帶咗遮', '小心路滑呀', '雨好大呀']
   };
-  const bubbleLast = Object.create(null), bubbleCooldown = new Map(), nearSince = new Map(), knockedSinceScare = new Set();
+  const BUBBLE_H = 0.8, bubbleLast = Object.create(null), bubbleCooldown = new Map(), nearSince = new Map(), knockedSinceScare = new Set();
   let bubbleTime = 0, lastAmbientBubble = -Infinity, lastKnockTime = -1, talkTimer = 4 + Math.random() * 4, rainTimer = 5 + Math.random() * 4, wasRaining = false, rainStartPending = false, bubbleSerial = 0;
   const bubblePool = Array.from({ length: 3 }, () => {
     const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 160;
@@ -2363,7 +2363,7 @@ const PEOPLE = (() => {
     bubblePath(ctx, left, boxW); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#222'; ctx.stroke();
     ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(chosen, 256, 64, boxW - 32);
     b.texture.needsUpdate = true;
-    b.sprite.scale.set(Math.min(3.2, 0.55 * boxW / 160), 0.55, 1);
+    b.sprite.scale.set(BUBBLE_H * 512 / 160, BUBBLE_H, 1);
   }
   function bubbleFocus(cx, cz) {
     if (window.OPEN && OPEN.active && OPEN.hero) return [OPEN.hero.x, OPEN.hero.z];
@@ -2485,9 +2485,9 @@ const PEOPLE = (() => {
     const umbrellaOpen = !!(c.kit && c.kit.ik === 'umbrella' && c.kit.obj && c.kit.obj.visible);
     const walking = c.on && !c.idle && c.down <= 0 && c.flee <= 0 && c.st !== 'wait' && c.anim !== 'talk' && (c.anim === 'walk' || c.anim === 'formal' || c.anim === 'jog');
     if (raining && !umbrellaOpen && walking) {
-      if (!c.rainJog && c.gait !== 'jog') { c.rainGait = c.gait; c.rainJog = true; c.gait = 'jog'; anim(c, 'jog'); }
+      if (!c.rainJog && c.gait !== 'jog') { c.rainGait = c.gait; c.rainV = c.v; c.rainJog = true; c.gait = 'jog'; c.v = Math.max(c.v, 2.5 + Math.random() * 0.5); anim(c, 'jog'); }
     } else if (c.rainJog) {
-      c.gait = c.rainGait || 'walk'; c.rainGait = null; c.rainJog = false;
+      c.gait = c.rainGait || 'walk'; c.v = c.rainV ?? c.v; c.rainGait = null; c.rainV = null; c.rainJog = false;
       if (walking) anim(c, c.gait);
     }
   }
@@ -2511,7 +2511,7 @@ const PEOPLE = (() => {
       if (crowd.some((o) => o !== c && o.on && (o.x - x) ** 2 + (o.z - z) ** 2 < 2.6)) continue;   // 唔好生喺其他人身上（1.6 米內）
       const dir = Math.random() < 0.5 ? 1 : -1;
       const K = c.kit || {}, jog = K.jog && Math.random() < 0.5;   // 行路款式：上班族 formal；後生仔有時緩跑；老人家行慢啲
-      Object.assign(c, { x, z, tx: sp.tx * dir, tz: sp.tz * dir, v: jog ? 2.5 + Math.random() * 0.5 : (0.95 + Math.random() * 0.65) * (K.slow || 1), idle: !jog && Math.random() < 0.14, on: true, down: 0, flee: 0, tilt: 0, hop: 0, st: 'walk', lead: null, pair: null,
+      Object.assign(c, { x, z, tx: sp.tx * dir, tz: sp.tz * dir, v: jog ? 2.5 + Math.random() * 0.5 : (0.95 + Math.random() * 0.65) * (K.slow || 1), idle: !jog && Math.random() < 0.14, on: true, down: 0, flee: 0, tilt: 0, hop: 0, rainJog: false, rainGait: null, rainV: null, st: 'walk', lead: null, pair: null,
         gait: jog ? 'jog' : K.formal ? 'formal' : 'walk', anim: null, yaw: Math.atan2(sp.tx * dir, sp.tz * dir) });
       if (c.idle) { c.tx = -nx; c.tz = -nz; c.yaw = Math.atan2(c.tx, c.tz); }   // 企定嘅人面向馬路
       reset(c, c.idle ? 'idle' : c.gait);
@@ -2748,13 +2748,15 @@ window.WEATHER = (() => {
     if (autoLeft > 0) autoLeft = Math.max(0, autoLeft - dt);
     const target = manual || autoLeft > 0 ? 1 : 0;
     k += Math.sign(target - k) * Math.min(Math.abs(target - k), dt / 3);
-    const storm = !!(window.STORM && STORM.active), show = k > 0.01 && !storm;
+    const indoor = !!((window.IND && IND.inside) || (window.LIB && LIB.inside)), storm = !!(window.STORM && STORM.active), show = k > 0.01 && !storm && !indoor;
     rain.visible = show; rain.material.opacity = 0.35 * k;
-    const scale = 1 - 0.4 * k;
-    scene.fog.near *= scale; scene.fog.far *= scale;
-    U.fogNear.value = scene.fog.near; U.fogFar.value = scene.fog.far;
-    scene.fog.color.lerp(fogRain, 0.35 * k); U.fogCol.value.copy(scene.fog.color);
-    hemi.intensity *= 1 - 0.25 * k; sunL.intensity *= 1 - 0.25 * k;
+    if (!indoor) {
+      const scale = 1 - 0.4 * k;
+      scene.fog.near *= scale; scene.fog.far *= scale;
+      U.fogNear.value = scene.fog.near; U.fogFar.value = scene.fog.far;
+      scene.fog.color.lerp(fogRain, 0.35 * k); U.fogCol.value.copy(scene.fog.color);
+      hemi.intensity *= 1 - 0.25 * k; sunL.intensity *= 1 - 0.25 * k;
+    }
     if (show) {
       const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, fall = 26 * dt, wx = 3 * dt;
       for (let i = 0; i < NR; i++) {
