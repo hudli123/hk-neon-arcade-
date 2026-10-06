@@ -3969,16 +3969,35 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   function ride(o, freeRide = metroFreeRide, fromInside = metroFromInside) {
     if (!freeRide) {
       if (money < 5) { big('八達通唔夠錢（要 $5）', '#ff765e'); return false; }
-      addMoney(-5, 'mtr'); big('搭地鐵 −$5', '#ffd23f');
+      addMoney(-5, 'mtr'); big('搭地鐵 −$5', '#ffd23f'); beep(1050, 0.12, 'sine', 0.09);
     }
     metroFreeRide = false;
-    $('omtr').hidden = true; metro = 'ride'; $('ofade').style.opacity = 1; beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200);
-    setTimeout(() => {
-      if (fromInside && window.IND) IND.leave(true);
-      let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
-      for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
-      hero.x = x; hero.z = z; hero.y = 0; hero.vy = 0; hero.h = o.yaw; cam.wyaw = o.yaw + Math.PI; cam.wx = x; cam.wz = z;
-      spawnGivers(); $('ofade').style.opacity = 0; metro = null; big(`${MTR.st[o.e[0]][0]} ${o.e[1]} 出口`, stCol(o.e[0]));
+    $('omtr').hidden = true; metro = 'ride'; $('ofade').style.opacity = 1;
+    if (fromInside) {
+      for (let i = 0; i < 4; i++) setTimeout(() => beep(880, 0.09, 'sine', 0.07), i * 150);
+    } else {
+      beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200);
+    }
+    setTimeout(async () => {
+      try {
+        if (fromInside && window.IND && IND.arriveStation) {
+          let ok = false;
+          try { ok = await IND.arriveStation(o.e[0]); } catch (e) {}
+          if (ok) {
+            metro = null;
+            beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200);
+            return;
+          }
+        }
+        if (fromInside && window.IND) IND.leave(true);
+        let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
+        for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
+        hero.x = x; hero.z = z; hero.y = 0; hero.vy = 0; hero.h = o.yaw; cam.wyaw = o.yaw + Math.PI; cam.wx = x; cam.wz = z;
+        spawnGivers(); big(`${MTR.st[o.e[0]][0]} ${o.e[1]} 出口`, stCol(o.e[0]));
+        if (fromInside) { beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200); }
+      } finally {
+        $('ofade').style.opacity = 0; metro = null;
+      }
     }, 700);
     return true;
   }
@@ -9910,11 +9929,11 @@ window.IND = (() => {
       const toPaid = !!S.floor.grid.paid[i];
       if (!S.paid && toPaid) {
         if (OPEN.money < FARE) {
-          if (performance.now() - S.notice > 1100) { S.notice = performance.now(); OPEN.big('八達通唔夠錢（要 $5）', '#ff765e'); }
+          if (performance.now() - S.notice > 1100) { S.notice = performance.now(); OPEN.big('八達通唔夠錢（要 $5）', '#ff765e'); OPEN.beep(420, 0.16, 'square', 0.06); setTimeout(() => OPEN.beep(420, 0.16, 'square', 0.06), 220); }
           return true;
         }
-        OPEN.addMoney(-FARE, 'mtr'); S.paid = true; OPEN.big('嘟！八達通 −$5', '#ffd23f');
-      } else if (S.paid && !toPaid) S.paid = false;
+        OPEN.addMoney(-FARE, 'mtr'); S.paid = true; OPEN.big('嘟！八達通 −$5', '#ffd23f'); OPEN.beep(1050, 0.12, 'sine', 0.09);
+      } else if (S.paid && !toPaid) { S.paid = false; OPEN.beep(1050, 0.1, 'sine', 0.07); }
     }
     return false;
   }
@@ -10226,6 +10245,57 @@ window.IND = (() => {
     try { await load(r); } catch (e) { return false; }
     OPEN.closeMetro(); begin('station', { r, exit }); return true;
   }
+  function platformCenter(u) {
+    const rings = unitRings(u).map(point).filter((p) => p.length);
+    if (!rings.length) return null;
+    let areaTotal = 0, xTotal = 0, zTotal = 0, outer = null;
+    rings.forEach((p, ri) => {
+      let twiceArea = 0, cx = 0, cz = 0, xMean = 0, zMean = 0;
+      for (let i = 0; i < p.length; i++) {
+        const a = p[i], b = p[(i + 1) % p.length], cross = a[0] * b[1] - b[0] * a[1];
+        twiceArea += cross; cx += (a[0] + b[0]) * cross; cz += (a[1] + b[1]) * cross; xMean += a[0]; zMean += a[1];
+      }
+      const area = Math.abs(twiceArea) * 0.5, center = Math.abs(twiceArea) > 1e-9
+        ? { x: cx / (3 * twiceArea), z: cz / (3 * twiceArea) }
+        : { x: xMean / p.length, z: zMean / p.length };
+      if (!ri) outer = { ...center, area };
+      const weight = ri ? -area : area;
+      areaTotal += weight; xTotal += center.x * weight; zTotal += center.z * weight;
+    });
+    if (Math.abs(areaTotal) < 1e-9) return outer;
+    return { x: xTotal / areaTotal, z: zTotal / areaTotal, area: Math.abs(areaTotal) };
+  }
+  async function arriveStation(k) {
+    if (window.FREEFIGHT && FREEFIGHT.stars) return false;
+    const r = stationForIndex(k); if (!r) return false;
+    try { await load(r); } catch (e) { return false; }
+    const isPlatform = (u) => (r.data.cats[u[1]] || '') === 'platform' || /月台|platform/i.test(unitName(u));
+    let best = null;
+    for (const g of r.groups) {
+      if (!groupWalkable(r, g)) continue;
+      const units = g.units.filter(isPlatform);
+      if (units.length && (!best || units.length > best.units.length)) best = { g, units };
+    }
+    if (!best) return false;
+    const platforms = best.units.map((u) => platformCenter(u)).filter(Boolean).sort((a, b) => b.area - a.area);
+    if (!platforms.length) return false;
+    if (!S.root) init();
+    S.inside = true; S.state = r; S.data = r.data; S.groups = r.groups; indoorBackground(true); cameraLayers(true);
+    S.phase = null; S.busy = false; S.menu = false; $('indLift').hidden = true; $('indStair').hidden = true;
+    let tries = 1, spawn = showFloor(r, best.g, platforms[0].x, platforms[0].z), first = { x: spawn.x, z: spawn.z };
+    if (!S.paid) {
+      let paid = false;
+      for (const p of platforms.slice(1, 5)) {
+        tries++;
+        spawn = showFloor(r, best.g, p.x, p.z);
+        if (S.paid) { paid = true; break; }
+      }
+      if (!paid) showFloor(r, best.g, first.x, first.z);
+    }
+    S.arrival = { k, venue: r.v.en, ordinal: best.g.o, x: OPEN.hero.x, z: OPEN.hero.z, paid: S.paid, tries };
+    OPEN.big(`${r.v.tc} 月台`, '#ffd98a');
+    return true;
+  }
   async function pickDelivery(from) {
     const choices = records.map((r) => {
       const c = r.v.outline && r.v.outline.length ? centroid(r.v.outline) : { x: (r.v.bb[0] + r.v.bb[2]) / 2, z: (r.v.bb[1] + r.v.bb[3]) / 2 };
@@ -10299,7 +10369,8 @@ window.IND = (() => {
   return { walk, foot, prompt, act, leave, step, camera: camera3, label, hint, map,
     get inside() { return S.inside; }, get busy() { return S.busy; }, get menu() { return S.menu; }, get fading() { return !!S.phase; },
     get venue() { return S.state && S.state.v; }, get floor() { return S.floor && S.floor.group && S.floor.group.o; }, get paid() { return S.paid; },
-    canMove, setGoal, hasStation, stationVenueId: (k) => stationForIndex(k)?.v.id || null, enterStation, pickDelivery, setForceFood, consumeForceFood: () => { const q = S.forceFood; S.forceFood = false; return q; }, nearOutside,
+    canMove, setGoal, hasStation, stationVenueId: (k) => stationForIndex(k)?.v.id || null, enterStation, arriveStation, pickDelivery, setForceFood, consumeForceFood: () => { const q = S.forceFood; S.forceFood = false; return q; }, nearOutside,
+    get _arrival() { return S.arrival || null; },
     _load: (id) => { const r = byId.get(id) || records.find((q) => q.v.file.includes(id) || q.v.en === id || q.v.tc === id); return r && load(r); },
     _goto: testGoto, _stats: testStats, _resources: resourceStats, _textures: textureStats, _signs: () => S.floor?.root.userData.signDebug || null,
     _gateStats: () => S.floor?.gateStats || null, _lastPickLoads: () => S.lastPickLoads, _walkable: gridWalkable,
