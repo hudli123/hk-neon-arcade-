@@ -46,7 +46,7 @@ window.BOOT = (p) => {
 </script><script>window.BOOT && BOOT(0.000)</script>
 <div id="hud"><div id="street"></div></div>
 <div id="compass"><i id="compassR"><b>N</b><s></s></i></div><div id="modes"><button id="mFly" class="on">航拍</button><button id="mWalk">落街行</button><button id="mRace">賽車</button><button id="mOpen">開放世界</button></div>
-<div id="time"><button id="tNight">夜晚</button><button id="tDay">日頭</button><button id="tHelp">❓ 玩法</button></div>
+<div id="time"><button id="tNight">夜晚</button><button id="tDay">日頭</button><button id="tRain">🌧 落雨</button><button id="tHelp">❓ 玩法</button></div>
 <div id="helpbox" hidden><div class="hb"><div id="hbody"></div><button id="hclose">明白，開始！</button></div></div>
 <div id="help"></div>
 <div id="credit"></div><button id="credbtn">ⓘ 資料來源</button>
@@ -374,7 +374,7 @@ window.PedProps = (() => {
     const B = p.B, root = p.root; root.updateMatrixWorld(true);
     const loc = (b) => root.worldToLocal(pos(b, new V3()));
     const S = loc(B.upperarm_r), arm = S.distanceTo(loc(B.lowerarm_r)) + loc(B.lowerarm_r).distanceTo(loc(B.hand_r)), head = loc(B.Head).y;
-    const K = { ik: null, obj: null, hang: [], T: new V3(), pole: new V3(), off: new V3(), formal: false, slow: 1, jog: false };
+    const K = { ik: null, obj: null, hang: [], T: new V3(), pole: new V3(), off: new V3(), formal: false, slow: 1, jog: false, rainPlan: null, rainApplied: false, rainStash: null };
     const R = (i) => rnd(k, i), n = p.name;
     const setIK = (kind, t, pole, obj, off) => { K.ik = kind; K.T.copy(S).addScaledVector(new V3(...t), arm); K.pole.copy(S).add(new V3(...pole)); K.obj = obj; K.off.set(...off); root.add(obj); };
     const hang = (g, side) => { const o = new THREE.Mesh(g, MAT); root.add(o); K.hang.push({ o, b: side < 0 ? B.hand_r : B.hand_l, x: side * 0.03, sw: 0 }); };
@@ -397,6 +397,19 @@ window.PedProps = (() => {
       else K.jog = R(18) < 0.2;
       if (R(19) < 0.45) hang(R(20) < 0.4 ? rwb() : plastic(pick([0xf0f0ea, 0xf4b6c2], R(21))), 1); }
     else if (n === 'worker' || n === 'rider') { if (R(22) < 0.3) hang(plastic(0xf0f0ea), n === 'worker' ? -1 : 1); if (n === 'rider' && r < 0.35) setIK('phone', [0.4, -0.55, 0.62], [-0.5, -1, -0.3], new THREE.Mesh(phone(), SCREEN), [0.02, 0.05, 0.06]); }
+    if (K.ik !== 'umbrella' && K.ik !== 'cane' && K.ik !== 'case' && R(30) < 0.8) {
+      const col = pick([0x1a1a1a, 0x1f2d55, 0xa82828, 0x2f6a5a, 0x5a3a6a, 0xe8a0b0], R(31));
+      const obj = new THREE.Mesh(umbrella(col), MAT2);
+      obj.visible = false;
+      root.add(obj);
+      K.rainPlan = {
+        ik: 'umbrella',
+        obj,
+        T: new V3().copy(S).addScaledVector(new V3(0.3, -0.62, 0.55), arm),
+        pole: new V3().copy(S).add(new V3(-0.6, -1, -0.2)),
+        off: new V3(0, -0.03, 0.02)
+      };
+    }
     if (K.bp) {   // 背囊：釘喺 spine_03，貼住件衫後面（量呢個高度身體最後嘅頂點）
       const s3 = loc(B.spine_03), P = p.mesh.geometry.attributes.position; let zb = 0;
       for (let i = 0; i < P.count; i++) { const y = P.getY(i), x = P.getX(i); if (Math.abs(y - s3.y) < 0.12 && Math.abs(x) < 0.14) zb = Math.min(zb, P.getZ(i)); }
@@ -434,7 +447,25 @@ window.PedProps = (() => {
       h.o.position.set(_v.x + h.x, _v.y - 0.05, _v.z); h.o.rotation.set(h.sw, 0, 0);
     }
   }
-  return { kit, update };
+  function rain(p, K, on) {
+    if (!K || !K.rainPlan) return false;
+    if (on) {
+      if (K.rainApplied) return true;
+      K.rainStash = { ik: K.ik, obj: K.obj, T: K.T.clone(), pole: K.pole.clone(), off: K.off.clone() };
+      if (K.obj) K.obj.visible = false;
+      K.ik = K.rainPlan.ik; K.obj = K.rainPlan.obj; K.T.copy(K.rainPlan.T); K.pole.copy(K.rainPlan.pole); K.off.copy(K.rainPlan.off);
+      K.rainPlan.obj.visible = true; K.rainApplied = true;
+      return true;
+    }
+    if (!K.rainApplied) return true;
+    K.rainPlan.obj.visible = false;
+    const s = K.rainStash;
+    K.ik = s.ik; K.obj = s.obj; K.T.copy(s.T); K.pole.copy(s.pole); K.off.copy(s.off);
+    if (K.obj) K.obj.visible = true;
+    K.rainStash = null; K.rainApplied = false;
+    return true;
+  }
+  return { kit, update, rain };
 })();
 </script><script>window.BOOT && BOOT(0.924)</script>
 <script>// 自動產生（/home/claude/hk-city/lamp_pack.py）：路政署街燈位置 + 燈臂方向。
@@ -2298,6 +2329,120 @@ const PEOPLE = (() => {
     p.root.visible = false; p.root.scale.setScalar(1.7 / PP.height * (0.92 + 0.14 * rnd(k * 2.9))); scene.add(p.root);
     crowd.push({ p, kit, x: 0, z: 0, tx: 0, tz: 1, v: 1.2, idle: false, on: false, gait: 'walk' });
   }
+  const BUBBLE_LINES = {
+    TALK: ['今晚食咩好？', '你食咗飯未呀？', '聽日返唔返工呀？', '呢排忙到癲', '樓價又跌咗喎', '嗰間茶記執咗喇', '今日好熱呀', '收工飲返杯？', '你個仔考成點呀？', '又加價，頂唔順', '等陣去邊度食？', '搵日飲茶吖', '你睇咗尋晚套劇未？', '減肥？聽日先算啦', '我部手機又冇電'],
+    HIT: ['哎呀！', '救命呀！', '你識唔識揸車㗎！', '撞死人呀！', '痛死我喇！', '喂！睇路呀！', '報警呀！', '我條腰呀…', '打人呀！', '你做乜嘢呀！'],
+    SCARED: ['嘩！', '快啲走呀！', '癲㗎？', '有人撞車呀！', '走呀！', '唔好過嚟呀！'],
+    NEAR: ['望咩呀？', '有咩事？', '唔該借借', '你搵邊個呀？', '做咩企喺度呀？', '借歪啲吖'],
+    RAIN_NO: ['冇帶遮呀！', '又落雨…', '早知帶遮啦', '濕晒喇！', '落雨收衫呀！'],
+    RAIN_YES: ['好彩帶咗遮', '小心路滑呀', '雨好大呀']
+  };
+  const bubbleLast = Object.create(null), bubbleCooldown = new Map(), nearSince = new Map(), knockedSinceScare = new Set();
+  let bubbleTime = 0, lastAmbientBubble = -Infinity, lastKnockTime = -1, talkTimer = 4 + Math.random() * 4, rainTimer = 5 + Math.random() * 4, wasRaining = false, rainStartPending = false, bubbleSerial = 0;
+  const bubblePool = Array.from({ length: 3 }, () => {
+    const canvas = document.createElement('canvas'); canvas.width = 512; canvas.height = 160;
+    const ctx = canvas.getContext('2d'), texture = new THREE.CanvasTexture(canvas);
+    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: texture, depthTest: true, depthWrite: false, transparent: true, fog: false }));
+    sprite.renderOrder = 20; sprite.layers.set(0); sprite.visible = false; scene.add(sprite);
+    return { canvas, ctx, texture, sprite, person: null, age: 0, ambient: false, serial: 0 };
+  });
+  function bubblePath(ctx, x, w) {
+    const top = 8, bottom = 120, r = 16, tail = 14;
+    ctx.beginPath(); ctx.moveTo(x + r, top); ctx.lineTo(x + w - r, top); ctx.arcTo(x + w, top, x + w, top + r, r);
+    ctx.lineTo(x + w, bottom - r); ctx.arcTo(x + w, bottom, x + w - r, bottom, r); ctx.lineTo(256 + tail, bottom);
+    ctx.lineTo(256, 146); ctx.lineTo(256 - tail, bottom); ctx.lineTo(x + r, bottom); ctx.arcTo(x, bottom, x, bottom - r, r);
+    ctx.lineTo(x, top + r); ctx.arcTo(x, top, x + r, top, r); ctx.closePath();
+  }
+  function drawBubble(b, category) {
+    const { ctx } = b, text = BUBBLE_LINES[category], line = text[Math.floor(Math.random() * text.length)];
+    let chosen = line;
+    if (text.length > 1 && chosen === bubbleLast[category]) chosen = text[(text.indexOf(chosen) + 1 + Math.floor(Math.random() * (text.length - 1))) % text.length];
+    bubbleLast[category] = chosen;
+    ctx.clearRect(0, 0, 512, 160); ctx.font = 'bold 44px system-ui, "PingFang HK", "Microsoft JhengHei", sans-serif';
+    const measured = ctx.measureText(chosen).width, boxW = Math.min(496, Math.ceil(measured + 40)), left = (512 - boxW) / 2;
+    bubblePath(ctx, left, boxW); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 4; ctx.strokeStyle = '#222'; ctx.stroke();
+    ctx.fillStyle = '#111'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(chosen, 256, 64, boxW - 32);
+    b.texture.needsUpdate = true;
+    b.sprite.scale.set(Math.min(3.2, 0.55 * boxW / 160), 0.55, 1);
+  }
+  function bubbleFocus(cx, cz) {
+    if (window.OPEN && OPEN.active && OPEN.hero) return [OPEN.hero.x, OPEN.hero.z];
+    return [cx, cz];
+  }
+  function bubbleBlocked() {
+    return !!((window.IND && IND.inside) || camera.layers.mask === 2 || (window.STORM && STORM.active));
+  }
+  function bubbleEligible(c, fx, fz) {
+    return !!(c.on && c.p.root.visible && (c.x - fx) ** 2 + (c.z - fz) ** 2 <= 225);
+  }
+  function bubbleReady(c) {
+    const last = bubbleCooldown.get(c);
+    return last === undefined || bubbleTime - last >= 12;
+  }
+  function clearBubbles() {
+    for (const b of bubblePool) { b.sprite.visible = false; b.person = null; b.age = 0; b.ambient = false; }
+  }
+  function showBubble(c, category, priority = false) {
+    if (bubbleBlocked()) return false;
+    const [fx, fz] = bubbleFocus(camera.position.x, camera.position.z);
+    if (!bubbleEligible(c, fx, fz) || !bubbleReady(c) || (!priority && bubbleTime - lastAmbientBubble < 1.5)) return false;
+    let b = bubblePool.find((q) => !q.person);
+    if (!b && priority) for (const q of bubblePool) if (q.ambient && (!b || q.serial < b.serial)) b = q;
+    if (!b) return false;
+    drawBubble(b, category); b.person = c; b.age = 0; b.ambient = !priority; b.serial = ++bubbleSerial;
+    b.sprite.material.opacity = 1; b.sprite.position.set(c.p.root.position.x, c.p.root.position.y + 2.15, c.p.root.position.z); b.sprite.visible = true;
+    bubbleCooldown.set(c, bubbleTime);
+    if (!priority) lastAmbientBubble = bubbleTime;
+    return true;
+  }
+  function bubbleWalker(c, fx, fz) {
+    return bubbleEligible(c, fx, fz) && !c.idle && c.down <= 0 && c.flee <= 0 && c.st !== 'wait' && c.anim !== 'talk' && (c.anim === 'walk' || c.anim === 'formal' || c.anim === 'jog');
+  }
+  function bubbleStep(dt, cx, cz) {
+    bubbleTime += dt;
+    if (bubbleBlocked()) { clearBubbles(); return; }
+    for (const b of bubblePool) {
+      const c = b.person;
+      if (!c) continue;
+      b.age += dt;
+      if (b.age >= 3 || !c.on || !c.p.root.visible) { b.sprite.visible = false; b.person = null; b.ambient = false; continue; }
+      b.sprite.position.set(c.p.root.position.x, c.p.root.position.y + 2.15, c.p.root.position.z);
+      b.sprite.material.opacity = b.age > 2.6 ? Math.max(0, (3 - b.age) / 0.4) : 1;
+    }
+    const [fx, fz] = bubbleFocus(cx, cz), randomDelay = (a, z) => a + Math.random() * (z - a), ambientReady = () => bubbleTime - lastAmbientBubble >= 1.5;
+    const walkers = () => crowd.filter((c) => bubbleWalker(c, fx, fz) && bubbleReady(c));
+    const rainBubble = () => {
+      const list = walkers(); if (!list.length || !ambientReady()) return false;
+      const c = list[Math.floor(Math.random() * list.length)], open = !!(c.kit && c.kit.ik === 'umbrella' && c.kit.obj && c.kit.obj.visible);
+      return showBubble(c, open ? 'RAIN_YES' : 'RAIN_NO');
+    };
+    const raining = !!(window.WEATHER && WEATHER.k > 0.5);
+    if (raining && !wasRaining) { rainStartPending = true; rainTimer = randomDelay(5, 9); }
+    if (!raining) { wasRaining = false; rainStartPending = false; rainTimer = randomDelay(5, 9); }
+    else {
+      wasRaining = true;
+      if (rainStartPending) { if (rainBubble()) rainStartPending = false; }
+      else {
+        rainTimer -= dt;
+        if (rainTimer <= 0) {
+          if (!walkers().length) rainTimer = randomDelay(5, 9);
+          else if (rainBubble()) rainTimer = randomDelay(5, 9);
+        }
+      }
+    }
+    talkTimer -= dt;
+    if (!rainStartPending && talkTimer <= 0) {
+      const talkers = crowd.filter((c) => c.pair && c.anim === 'talk' && bubbleEligible(c, fx, fz) && bubbleReady(c));
+      if (!talkers.length) talkTimer = randomDelay(4, 8);
+      else if (ambientReady() && showBubble(talkers[Math.floor(Math.random() * talkers.length)], 'TALK')) talkTimer = randomDelay(4, 8);
+    }
+    for (const c of crowd) {
+      if (!bubbleEligible(c, fx, fz) || (c.x - fx) ** 2 + (c.z - fz) ** 2 > 2.56) { nearSince.delete(c); continue; }
+      const near = (nearSince.get(c) || 0) + dt; nearSince.set(c, near);
+      if (!rainStartPending && near >= 1.5 && ambientReady() && bubbleReady(c) && showBubble(c, 'NEAR')) nearSince.set(c, 0);
+    }
+  }
+  function hideBubbles() { clearBubbles(); }
   // BG 09-30「行人執靚」：只准行行人路 / 安全島（kerbs.js，路政署行人路多邊形），過馬路只可以喺過路線（運輸署），有行人燈就等綠公仔
   const FG = new Map(), fk = (x, z) => Math.floor(x / 20) * 100000 + Math.floor(z / 20);
   if (window.KERB) { const B16 = b64i16(KERB.pb); let o = 0;
@@ -2332,6 +2477,20 @@ const PEOPLE = (() => {
   // 動畫：walk / formal（上班族）/ jog（緩跑）/ run（驚到走）/ idle / talk（兩個人傾偈）— Quaternius UAL，0.3 秒淡入淡出
   const anim = (c, name) => { const A = c.p.actions, to = A[name] || A.walk, from = c.anim && A[c.anim]; if (c.anim === name) return; c.anim = name; to.reset().play(); to.time = Math.random() * to.getClip().duration; if (from) from.crossFadeTo(to, 0.3, false); };
   const reset = (c, name) => { for (const a in c.p.actions) c.p.actions[a].stop(); c.anim = null; c.pinit = 0; c.gyT = 0; c.gs = undefined; anim(c, name); };
+  function rainState(c, raining) {
+    if (c.rainApplied !== raining) {
+      if (window.PedProps) PedProps.rain(c.p, c.kit, raining);
+      c.rainApplied = raining;
+    }
+    const umbrellaOpen = !!(c.kit && c.kit.ik === 'umbrella' && c.kit.obj && c.kit.obj.visible);
+    const walking = c.on && !c.idle && c.down <= 0 && c.flee <= 0 && c.st !== 'wait' && c.anim !== 'talk' && (c.anim === 'walk' || c.anim === 'formal' || c.anim === 'jog');
+    if (raining && !umbrellaOpen && walking) {
+      if (!c.rainJog && c.gait !== 'jog') { c.rainGait = c.gait; c.rainJog = true; c.gait = 'jog'; anim(c, 'jog'); }
+    } else if (c.rainJog) {
+      c.gait = c.rainGait || 'walk'; c.rainGait = null; c.rainJog = false;
+      if (walking) anim(c, c.gait);
+    }
+  }
   const turn = (c, minA = 0) => {   // 行到行人路邊：試下轉細角 → 大角 → 掉頭，揀第一個仲喺行人路嘅方向
     const sg = Math.random() < 0.5 ? 1 : -1;
     for (const a of [0.35, -0.35, 0.8, -0.8, 1.3, -1.3, 1.9, -1.9, Math.PI]) { if (Math.abs(a) < minA) continue; const aa = a * sg, co = Math.cos(aa), si = Math.sin(aa), tx = c.tx * co - c.tz * si, tz = c.tx * si + c.tz * co;
@@ -2375,6 +2534,8 @@ const PEOPLE = (() => {
     c.on = false; c.p.root.visible = false; return false;
   }
   function step(dt, cx, cz, low, fa = 0) {
+    const raining = !!(window.WEATHER && WEATHER.k > 0.5);
+    for (const c of crowd) rainState(c, raining);
     for (const c of crowd) {
       if (!low) { if (c.on) { c.on = false; c.p.root.visible = false; } continue; }
       if (!c.on || (c.x - cx) ** 2 + (c.z - cz) ** 2 > 25600) { if (!spawn(c, cx, cz, fa)) continue; }
@@ -2470,18 +2631,25 @@ const PEOPLE = (() => {
       o.position.y = 0.5; o.scale.set(0.36 * sc, 0.96, 0.22 + Math.abs(Math.sin(w.ph)) * 0.18); o.updateMatrix(); m.setMatrixAt(i * 3 + 2, o.matrix);   // 腳（行路前後擺）
     }
     m.instanceMatrix.needsUpdate = true;
+    bubbleStep(dt, cx, cz);
   }
   function knock(c, dx, dz, speed, ko) {   // 俾車撞：(dx, dz) = 車行緊嘅方向；ko（v50，玩家快車撞）= 瞓低唔起身，之後喺第二度補返
     if (c.down > 0) return; const s = ko ? Math.min(12, 2 + speed * 0.6) : Math.min(9, 2 + speed * 0.45); c.ko = !!ko; c.vy = ko ? Math.min(7, 2.5 + speed * 0.3) : 2.2; c.ay = 0.01;   // v57：先飛起，跌落地先碌
     c.kx = dx * s; c.kz = dz * s; c.tx = -dx; c.tz = -dz; c.fx = dx; c.fz = dz;   // 面向架車、向後飛；起身之後向車行嘅方向走開
     c.downT = c.down = ko ? 4.5 : 2.6 + Math.random(); c.flee = 0;
+    if (lastKnockTime !== bubbleTime) { knockedSinceScare.clear(); lastKnockTime = bubbleTime; }
+    knockedSinceScare.add(c); showBubble(c, 'HIT', true);
   }
   function scare(x, z, r) {   // 附近嘅人散開：跑向遠離撞車點嘅方向
+    const excluded = lastKnockTime === bubbleTime ? new Set(knockedSinceScare) : new Set(), scared = [];
+    knockedSinceScare.clear(); lastKnockTime = -1;
     for (const c of crowd) { if (!c.on || c.down > 0) continue; const dx = c.x - x, dz = c.z - z, d = Math.hypot(dx, dz); if (d > r || d < 0.01) continue;
-      c.tx = dx / d; c.tz = dz / d; c.flee = 2.5 + Math.random() * 2; c.idle = false; c.st = 'walk'; c.lead = null; c.pair = null; anim(c, 'run'); }
+      c.tx = dx / d; c.tz = dz / d; c.flee = 2.5 + Math.random() * 2; c.idle = false; c.st = 'walk'; c.lead = null; c.pair = null; anim(c, 'run'); scared.push(c); }
+    const [fx, fz] = bubbleFocus(camera.position.x, camera.position.z), eligible = scared.filter((c) => !excluded.has(c) && bubbleEligible(c, fx, fz) && bubbleReady(c));
+    if (eligible.length) showBubble(eligible[Math.floor(Math.random() * eligible.length)], 'SCARED', true);
   }
   const _look = new THREE.Vector3();
-  const api = { step, N, crowd, knock, scare, hide: null, PP };
+  const api = { step, N, crowd, knock, scare, hide: null, hideBubbles, PP };
   return api;
 })();
 
@@ -2552,6 +2720,58 @@ const _cmpV = new THREE.Vector3(); let _cmpA = 1e9;
 $('tNight').onclick = () => { nightTarget = 1; }; $('tDay').onclick = () => { nightTarget = 0; };
 scene.fog = new THREE.Fog(0x0c1224, 300, 6500);
 
+window.WEATHER = (() => {
+  let manual = false, autoLeft = 0, autoCheckT = 600, k = 0;
+  const NR = TOUCH ? 700 : 1500, RB = 30, drops = new Float32Array(NR * 3), RP = new Float32Array(NR * 6);
+  for (let i = 0; i < NR; i++) { drops[i * 3] = (Math.random() * 2 - 1) * RB; drops[i * 3 + 1] = Math.random() * 40; drops[i * 3 + 2] = (Math.random() * 2 - 1) * RB; }
+  const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.BufferAttribute(RP, 3));
+  const rain = new THREE.LineSegments(rg, new THREE.LineBasicMaterial({ color: 0xa8bce0, transparent: true, opacity: 0, depthWrite: false }));
+  rain.frustumCulled = false; rain.visible = false; scene.add(rain);
+  const fogRain = new THREE.Color(0x5a6577);
+  function syncUI() {
+    const on = manual || autoLeft > 0, t = $('tRain'), o = $('orain');
+    if (t) { const label = on ? '☀️ 停雨' : '🌧 落雨'; if (t.textContent !== label) t.textContent = label; t.hidden = cam.mode !== 'fly' && cam.mode !== 'walk'; }
+    if (o) { const label = on ? '☀️' : '🌧'; if (o.textContent !== label) o.textContent = label; }
+  }
+  function set(on) {
+    if (on) { manual = true; autoLeft = 0; }
+    else { manual = false; autoLeft = 0; }
+    syncUI();
+  }
+  function toggle() { set(!(manual || autoLeft > 0)); }
+  function step(dt) {
+    autoCheckT -= dt;
+    while (autoCheckT <= 0) {
+      autoCheckT += 600;
+      if (!manual && autoLeft <= 0 && Math.random() < 0.2) autoLeft = 180 + Math.random() * 120;
+    }
+    if (autoLeft > 0) autoLeft = Math.max(0, autoLeft - dt);
+    const target = manual || autoLeft > 0 ? 1 : 0;
+    k += Math.sign(target - k) * Math.min(Math.abs(target - k), dt / 3);
+    const storm = !!(window.STORM && STORM.active), show = k > 0.01 && !storm;
+    rain.visible = show; rain.material.opacity = 0.35 * k;
+    const scale = 1 - 0.4 * k;
+    scene.fog.near *= scale; scene.fog.far *= scale;
+    U.fogNear.value = scene.fog.near; U.fogFar.value = scene.fog.far;
+    scene.fog.color.lerp(fogRain, 0.35 * k); U.fogCol.value.copy(scene.fog.color);
+    hemi.intensity *= 1 - 0.25 * k; sunL.intensity *= 1 - 0.25 * k;
+    if (show) {
+      const cx = camera.position.x, cy = camera.position.y, cz = camera.position.z, fall = 26 * dt, wx = 3 * dt;
+      for (let i = 0; i < NR; i++) {
+        let x = drops[i * 3] + wx, y = drops[i * 3 + 1] - fall, z = drops[i * 3 + 2];
+        if (y < -2) y += 42; if (x > RB) x -= 2 * RB;
+        drops[i * 3] = x; drops[i * 3 + 1] = y; drops[i * 3 + 2] = z;
+        const X = cx + x, Y = cy - 12 + y, Z = cz + z;
+        RP[i * 6] = X; RP[i * 6 + 1] = Y; RP[i * 6 + 2] = Z; RP[i * 6 + 3] = X - 0.12; RP[i * 6 + 4] = Y - 1.1; RP[i * 6 + 5] = Z;
+      }
+      rg.attributes.position.needsUpdate = true;
+    }
+    syncUI();
+  }
+  $('tRain').addEventListener('click', (e) => { e.stopPropagation(); toggle(); });
+  return { get on() { return manual || autoLeft > 0; }, get k() { return k; }, set, toggle, step };
+})();
+
 // ---------- 主循環 ----------
 const _v = new THREE.Vector3();
 let hudT = 0;
@@ -2567,6 +2787,7 @@ const GAME = {
     for (const m of LMK.mats) { m.color.setScalar(1 - 0.65 * night); m.emissiveIntensity = 0.6 * night; }   // 夜晚：射燈咁暖光
     if (TRAFFIC.carlib) for (const m of TRAFFIC.carlib.pbr()) m.envMapIntensity = 1 - 0.85 * night;   // 車漆反光嘅係日頭天空
     for (const m of TILES.mats()) { m.color.setScalar(1 - 0.65 * night); m.emissiveIntensity = 0.15 + 0.45 * night; m.emissive.setRGB(1, 1 - 0.14 * night, 1 - 0.33 * night); }   // 圖幅相片本身已經有光影：日頭都加少少自發光，唔會咁黑
+    WEATHER.step(dt);
     if (window.STORM) STORM.env(dt);   // Agent Storm 暴風環境：要喺上面晚黑 / 霧計完之後先蓋
     if (window.RIFT) RIFT.env(dt);   // v43 時空裂縫：裂縫點 + 紫色環境（timerift.js）
     const fwdK = (keys.w || keys.arrowup ? 1 : 0) - (keys.s || keys.arrowdown ? 1 : 0), sideK = (keys.d || keys.arrowright ? 1 : 0) - (keys.a || keys.arrowleft ? 1 : 0);
@@ -2607,7 +2828,7 @@ const GAME = {
     if (HYDL) HYDL.near(camera.position.x, camera.position.z, camera.position.y < 150); if (HYDP) HYDP.near(camera.position.x, camera.position.z, camera.position.y < 60);   // 路政署街燈 / 街名牌
     if (TREES.near) TREES.near(cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z, camera.position.y < 400);   // 近鏡真樹（航拍：鏡頭對住嗰點附近）
     camera.getWorldDirection(_v); PEOPLE.step(dt, camera.position.x, camera.position.z, camera.position.y < 150, Math.atan2(_v.z, _v.x)); if (BUSSTOP) BUSSTOP.step(dt, camera.position.x, camera.position.z);
-    }
+    } else PEOPLE.hideBubbles();
     hudT -= dt;
     if (hudT <= 0) { hudT = 0.4; const px = cam.mode === 'fly' ? cam.tx : cam.wx, pz = cam.mode === 'fly' ? cam.tz : cam.wz, r = nearestRoad(px, pz);
       let lm = null, ld = 1e9; const fx = -Math.sin(cam.wyaw), fz = -Math.cos(cam.wyaw);
@@ -3493,6 +3714,7 @@ window.OPEN = (() => {
 #omap{position:fixed;right:10px;top:10px;width:150px;height:150px;border-radius:50%;border:3px solid rgba(255,255,255,.55);background:#22242a;box-shadow:0 0 10px #000}
 #oq{position:fixed;right:168px;top:52px;width:34px;height:34px;border-radius:50%;background:rgba(14,18,48,.8);border:1px solid rgba(140,160,255,.5);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer}
 #omu{position:fixed;right:168px;top:94px;width:34px;height:34px;border-radius:50%;background:rgba(14,18,48,.8);border:1px solid rgba(140,160,255,.5);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer}
+#orain{position:fixed;right:210px;top:94px;width:34px;height:34px;border-radius:50%;background:rgba(14,18,48,.8);border:1px solid rgba(140,160,255,.5);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer}
 #ox{position:fixed;right:168px;top:10px;width:34px;height:34px;border-radius:50%;background:rgba(14,18,48,.8);border:1px solid rgba(140,160,255,.5);color:#fff;font-size:16px;display:flex;align-items:center;justify-content:center;pointer-events:auto;cursor:pointer}
 #obig{position:fixed;left:0;right:0;top:28%;text-align:center;font-size:clamp(30px,9vw,64px);font-weight:900;text-shadow:0 0 16px #000;opacity:0;pointer-events:none}
 #obig.show{animation:opop 1.6s ease-out}
@@ -3510,7 +3732,7 @@ body.open #hud{top:auto;bottom:10px;left:12px}
 body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);text-align:center}
 </style>`);
   document.body.insertAdjacentHTML('beforeend', `<div id="oui" hidden><div id="omoney"></div><div id="ospd" hidden><canvas id="ospdc" width="220" height="220"></canvas></div><div id="omis" hidden></div><div id="oprompt" hidden></div>
-<canvas id="omap" width="300" height="300"></canvas><div id="ox">✕</div><div id="oq">❓</div><div id="omu">🎵</div><div id="obig"></div>
+<canvas id="omap" width="300" height="300"></canvas><div id="ox">✕</div><div id="oq">❓</div><div id="omu">🎵</div><div id="orain">🌧</div><div id="obig"></div>
 <div id="ofade"></div><div id="omtr" hidden><div class="mh"><b>🚇 搭地鐵去邊度？揀出口</b><span id="omtrx">✕</span></div><div id="omtrl"></div></div>
 <div class="ob" id="obE">上車</div><div class="ob" id="obJ">跳</div><div class="ob" id="obR">衝</div></div>`);
   if (matchMedia('(pointer:coarse)').matches) document.body.classList.add('touch');
@@ -3521,6 +3743,8 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   }
   addEventListener('keydown', (e) => { if (!active) return; const k = e.key.toLowerCase(); if (k === 'e' && !e.repeat) act(); if (k === 'escape') metro ? closeMetro() : exit(); if (k === ' ') e.preventDefault(); });
   $('ox').onclick = () => exit(); $('omtrx').onclick = () => closeMetro(); $('omtr').addEventListener('pointerdown', (e) => e.stopPropagation());
+  $('orain').addEventListener('pointerdown', (e) => e.stopPropagation());
+  $('orain').onclick = (e) => { e.stopPropagation(); WEATHER.toggle(); };
   let misMin = false, misHtml = null; try { misMin = localStorage.getItem('hkopen-mismin') === '1'; } catch (e) {}   // BG：任務框擋住畫面 → ✕ 縮做一行，再撳打開
   $('omis').addEventListener('pointerdown', (e) => { e.stopPropagation(); misMin = !misMin; try { localStorage.setItem('hkopen-mismin', misMin ? '1' : '0'); } catch (e) {} }); $('oq').onclick = () => window.showHelp && showHelp('open');
 
