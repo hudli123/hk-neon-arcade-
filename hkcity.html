@@ -8194,6 +8194,9 @@ window.IND = (() => {
       beforeCabinets: stats.before * 3, afterCabinets: stats.gates.length * 3, indicators: indicatorCount };
   }
   function addMongKokCShowcase(root, r, g, unitPoints, grid, props, config, getBuilder, startPosition) {
+    const stageMs = {}, perf = { canBlockCalls: 0, reachBfsCalls: 0, reachBfsMs: 0, npcCellCalls: 0, npcCellsScanned: 0, unitDoorsCacheHits: 0 };
+    let stageStart = performance.now();
+    const markStage = (key) => { const now = performance.now(); stageMs[key] = Math.round((now - stageStart) * 10) / 10; stageStart = now; };
     const solid = getBuilder('mkShowcaseSolid'), glass = getBuilder('mkShowcaseGlass'), glow = getBuilder('mkShowcaseEmissive');
     const signBuilder = getBuilder('mkShowcaseSigns'), data = r.data;
     const stat = { kind: config.kind, textures: ensureShowcaseAssets().createdTextures, boxes: 0, triangles: 0, collisions: 0, visualOnlyFixtures: 0,
@@ -8201,6 +8204,7 @@ window.IND = (() => {
       serviceDiagnostics: [],
       shopFixtures: 0, gateIndicators: 0, lights: 0, npcPlan: [],
       machineWallCandidates: 0, wallSpawnCandidates: 0, serviceUnitsFound: 0, publicCellsBlocked: 0,
+      stageMs, perf,
       landmarks: { csc: [], machines: [], shops: [], walls: [], gates: [] } };
     const facilityUnits = unitPoints.filter((u) => ['elevator', 'stairs', 'escalator'].includes(u.cat));
     const doorSegments = g.doors.flatMap((d) => linesOf(d[2]));
@@ -8219,7 +8223,15 @@ window.IND = (() => {
     const hasFacilityClearance = (x, z, radius = 1.2) => facilityUnits.every((u) => shapeDistance(x, z, u.rings) >= radius);
     const hasGateClearance = (x, z, radius = 1.7) => gateInfo.gates.every((q) => Math.hypot(x - q.x, z - q.z) >= radius);
     const inBuilding = (x, z) => g.polys.some((rings) => insideShape(rings, x, z));
+    const getPublicReachCells = () => {
+      const started = performance.now();
+      perf.reachBfsCalls++;
+      const cells = publicReachCells(grid, publicMask, start);
+      perf.reachBfsMs += performance.now() - started;
+      return cells;
+    };
     const canBlock = (unit, x, z, sx, sz, axis, clearance = 0.25) => {
+      perf.canBlockCalls++;
       if (!grid) return false;
       const ix = grid.idxAt(x, z); if (ix < 0 || !grid.walkable[ix]) return false;
       const [ux, uz] = axis || [1, 0], nx = -uz, nz = ux, hx = sx * 0.5 + 0.12, hz = sz * 0.5 + 0.12;
@@ -8244,7 +8256,7 @@ window.IND = (() => {
       if (changed.some((k) => baselineReachable.has(k))) {
         let nextBlockedCount = blockedPublic.size;
         for (const k of changed) if (baselineReachable.has(k) && !blockedPublic.has(k)) nextBlockedCount++;
-        const reachable = publicReachCells(grid, publicMask, start);
+        const reachable = getPublicReachCells();
         const expectedReachable = baselineReachable.size - nextBlockedCount;
         if (!grid.walkable[start] || reachable.length !== expectedReachable) {
           for (const k of changed) grid.walkable[k] = 1;
@@ -8274,10 +8286,19 @@ window.IND = (() => {
       addTexturedPanel(signBuilder, center, normal, width, height, index);
       stat.boxes++; stat.triangles += 2;
     };
-    const unitDoors = (unit) => g.doors.filter((door) => linesOf(door[2]).some(([a, b]) => {
-      const x = (a[0] + b[0]) * 0.5, z = (a[1] + b[1]) * 0.5;
-      return shapeDistance(x, z, unit.rings) < 0.45;
-    }));
+    const unitDoorCache = new Map();
+    const unitDoors = (unit) => {
+      if (unitDoorCache.has(unit)) {
+        perf.unitDoorsCacheHits++;
+        return unitDoorCache.get(unit);
+      }
+      const doors = g.doors.filter((door) => linesOf(door[2]).some(([a, b]) => {
+        const x = (a[0] + b[0]) * 0.5, z = (a[1] + b[1]) * 0.5;
+        return shapeDistance(x, z, unit.rings) < 0.45;
+      }));
+      unitDoorCache.set(unit, doors);
+      return doors;
+    };
     const freeFrontage = (unit, frame) => {
       const ux = (frame.B[0] - frame.A[0]) / frame.length, uz = (frame.B[1] - frame.A[1]) / frame.length, blocked = [];
       for (const d of unitDoors(unit)) {
@@ -8359,7 +8380,7 @@ window.IND = (() => {
         addSign(center, [frame.nx, frame.nz], 1.2, 0.4, 0); stat.exitSigns++;
       }
     };
-    let publicPointCache = null;
+    let publicPointCache = null, publicRank = null;
     const publicPoints = () => {
       if (!publicPointCache) publicPointCache = props.publicCells.map((k) => ({ index: k, x: grid.x0 + ((k % grid.nx) + 0.5) * CS,
         z: grid.z0 + (Math.floor(k / grid.nx) + 0.5) * CS }));
@@ -8426,6 +8447,7 @@ window.IND = (() => {
       if (poi[1] === 'restaurant') return 'foodservice';
       return 'retail';
     };
+    markStage('setup');
     for (const poi of g.pois) {
       const type = classifyPoi(poi); if (!poiKinds[type] && poiKinds[type] !== 0) continue;
       poiKinds[type]++;
@@ -8482,6 +8504,7 @@ window.IND = (() => {
         }
       }
     }
+    markStage('pois');
     const serviceUnits = unitPoints.filter((u) => /customer service centre/i.test(`${u.name} ${u.originalName}`));
     stat.serviceUnitsFound = serviceUnits.length;
     const serviceSpots = [];
@@ -8516,6 +8539,7 @@ window.IND = (() => {
       stat.customerService++;
       diagnostic.reason = 'built'; stat.serviceDiagnostics.push(diagnostic);
     }
+    markStage('service');
     const gateApproach = (gate) => {
       const length = Math.hypot(gate.dx, gate.dz) || 1, x = gate.x + gate.dx / length * 4.0, z = gate.z + gate.dz / length * 4.0;
       return { x, z };
@@ -8541,10 +8565,10 @@ window.IND = (() => {
         if (!inBuilding(midX + nx * 0.12, midZ + nz * 0.12)) { nx = -nx; nz = -nz; }
         for (let along = 0.55; along <= length - 0.55; along += 0.7) {
           const x = a[0] + ux * along + nx * 0.52, z = a[1] + uz * along + nz * 0.52, index = grid.idxAt(x, z);
-          if (index < 0 || !grid.walkable[index] || !props.publicMask[index] || grid.paid[index] ||
-              facilityUnits.some((u) => shapeDistance(x, z, u.rings) < 2.6) ||
-              gateInfo.gates.some((q) => Math.hypot(x - q.x, z - q.z) < 2.7) ||
-              doorSegments.some(([p, q]) => distToSeg(x, z, p, q) < 1.45) || wallCandidateCells.has(index)) continue;
+          if (index < 0 || !grid.walkable[index] || !props.publicMask[index] || grid.paid[index] || wallCandidateCells.has(index)) continue;
+          if (gateInfo.gates.some((q) => Math.hypot(x - q.x, z - q.z) < 2.7)) continue;
+          if (doorSegments.some(([p, q]) => distToSeg(x, z, p, q) < 1.45)) continue;
+          if (facilityUnits.some((u) => shapeDistance(x, z, u.rings) < 2.6)) continue;
           wallCandidateCells.add(index);
           const candidate = { x, z, normal: [nx, nz], axis: [ux, uz], length, along };
           wallSpawnCandidates.push(candidate);
@@ -8552,6 +8576,7 @@ window.IND = (() => {
         }
       }
     }
+    markStage('wallCandidates');
     stat.machineWallCandidates = wallCandidates.length;
     stat.wallSpawnCandidates = wallSpawnCandidates.length;
     const placedMachines = [], machineTargets = [];
@@ -8588,8 +8613,10 @@ window.IND = (() => {
     placeMachineGroup('add-value', 2, 2, otherCscTarget);
       placeMachineGroup('vending', 1, null, cscTarget);
       placeMachineGroup('vending', 1, null, otherCscTarget);
+    markStage('machines');
     drawNameStrips();
     drawExitSigns();
+    markStage('signs');
     stat.shopTypes = poiKinds;
     stat.gateIndicators = gateInfo.gates.length * 3;
     stat.landmarks.gates = gateInfo.gates.map(({ x, z, dx, dz }) => ({ x, z, dx, dz }));
@@ -8597,9 +8624,40 @@ window.IND = (() => {
     const facilities = facilityUnits;
     const taken = [];
     const nearestNpcCell = (x, z, options = {}) => {
-      const candidates = options.publicOnly === false ? null : publicPoints();
+      perf.npcCellCalls++;
+      const publicOnly = options.publicOnly !== false;
       let best = null, distance = options.radius || 2;
-      const cells = candidates || (() => {
+      if (publicOnly) {
+        const candidates = publicPoints();
+        if (!publicRank) {
+          publicRank = new Int32Array(grid.nx * grid.nz);
+          publicRank.fill(-1);
+          candidates.forEach((p, rank) => { publicRank[p.index] = rank; });
+        }
+        const i0 = Math.max(0, Math.floor((x - distance - grid.x0) / CS) - 1);
+        const i1 = Math.min(grid.nx - 1, Math.ceil((x + distance - grid.x0) / CS) + 1);
+        const j0 = Math.max(0, Math.floor((z - distance - grid.z0) / CS) - 1);
+        const j1 = Math.min(grid.nz - 1, Math.ceil((z + distance - grid.z0) / CS) + 1);
+        let bestDistance = Infinity, bestRank = Infinity;
+        for (let j = j0; j <= j1; j++) for (let i = i0; i <= i1; i++) {
+          const index = j * grid.nx + i, rank = publicRank[index];
+          perf.npcCellsScanned++;
+          if (rank < 0 || !grid.walkable[index] || !publicMask[index]) continue;
+          const p = candidates[rank], d = Math.hypot(p.x - x, p.z - z);
+          if (d > distance) continue;
+          if (options.unpaid && grid.paid[p.index]) continue;
+          if (options.unit && !insideShape(options.unit.rings, p.x, p.z)) continue;
+          if (facilities.some((u) => insideShape(u.rings, p.x, p.z))) continue;
+          if (!hasGateClearance(p.x, p.z, 1.15)) continue;
+          if (taken.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 1.5)) continue;
+          if (Math.hypot(startPoint.x - p.x, startPoint.z - p.z) < 3) continue;
+          if (d < bestDistance || (d === bestDistance && rank < bestRank)) {
+            best = p; bestDistance = d; bestRank = rank;
+          }
+        }
+        return best;
+      }
+      const cells = (() => {
         const out = []; let i0 = 0, i1 = grid.nx - 1, j0 = 0, j1 = grid.nz - 1;
         if (options.unit) {
           const bounds = unitBounds(options.unit.rings);
@@ -8613,13 +8671,14 @@ window.IND = (() => {
         return out;
       })();
       for (const p of cells) {
-        if (!grid.walkable[p.index] || (options.publicOnly !== false && !publicMask[p.index])) continue;
+        perf.npcCellsScanned++;
+        if (!grid.walkable[p.index]) continue;
+        const d = Math.hypot(p.x - x, p.z - z);
+        if (d > distance) continue;
         if (options.unpaid && grid.paid[p.index]) continue;
         if (options.unit && !insideShape(options.unit.rings, p.x, p.z)) continue;
         if (facilities.some((u) => insideShape(u.rings, p.x, p.z))) continue;
-        if (options.publicOnly !== false && !hasGateClearance(p.x, p.z, 1.15)) continue;
-        const d = Math.hypot(p.x - x, p.z - z);
-        if (d > distance || taken.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 1.5)) continue;
+        if (taken.some((q) => Math.hypot(q.x - p.x, q.z - p.z) < 1.5)) continue;
         if (Math.hypot(startPoint.x - p.x, startPoint.z - p.z) < 3) continue;
         if (d < (best ? Math.hypot(best.x - x, best.z - z) : Infinity)) best = p;
       }
@@ -8648,7 +8707,8 @@ window.IND = (() => {
       addNpcRole('wall', p, { unpaid: true, radius: 0.5 });
     }
     stat.npcPlan = stat.npcPlan.slice(0, TOUCH ? 12 : 24);
-    props.publicCells = [...publicReachCells(grid, publicMask, start)];
+    markStage('npc');
+    props.publicCells = [...getPublicReachCells()];
     const edgeCount = addShowcaseWallEdges(getBuilder, g, g.H);
     stat.boxes += edgeCount; stat.triangles += edgeCount * 12;
     props.reachability.after = props.publicCells.length;
@@ -8661,6 +8721,8 @@ window.IND = (() => {
     props.propStats.triangles += stat.triangles;
     stat.reachability = { ...props.reachability };
     stat.publicCells = props.publicCells.length;
+    markStage('finalize');
+    perf.reachBfsMs = Math.round(perf.reachBfsMs * 10) / 10;
     return stat;
   }
   function addBeam(builder, A, B, width, height, tint) {
