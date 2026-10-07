@@ -7306,7 +7306,7 @@ window.LIB = (() => {
   goSt.textContent = '.ogo{display:inline-block;margin-left:4px;padding:1px 9px;border-radius:10px;background:#e8b44a;color:#241400;font-weight:900;cursor:pointer}';
   document.head.appendChild(goSt);
   document.addEventListener('pointerdown', (e) => {   // capture：唔好畀任務框當成「縮埋」
-    if (!e.target.closest || !e.target.closest('.ogo') || S.inside || OPEN.inCar) return;
+    if (!e.target.closest || !e.target.closest('.ogo') || e.target.closest('.ind-ogo') || S.inside || OPEN.inCar) return;
     e.stopPropagation(); e.preventDefault();
     hero.x = doorOut.x + DR.nx * 2; hero.z = doorOut.z + DR.nz * 2;   // 2 米：一去到就見到「入館」提示 hero.y = 0; hero.vy = 0;
     hero.h = Math.atan2(-DR.nx, -DR.nz); cam.wyaw = hero.h + Math.PI; cam.wx = hero.x; cam.wz = hero.z;   // 面向門口，鏡頭喺背後
