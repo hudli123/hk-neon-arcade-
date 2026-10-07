@@ -3972,13 +3972,13 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
       + MTR.st.map((s, k) => k).sort((a, b) => d(a) - d(b)).map((k) => { const s = MTR.st[k];
       return `<div class="ms"><b>${s[0]}</b><span class="en">${s[1]}</span>${s[4].map((i) => `<span class="ml" style="background:${MTR.lines[i][3]}">${MTR.lines[i][1]}</span>`).join('')}<br>`
         + EXS.map((o, j) => o.e[0] === k ? `<span class="me${o === from ? ' here' : ''}" data-j="${j}">${o.e[1]}</span>` : '').join('') + '</div>'; }).join('');
-    for (const b of $('omtrl').querySelectorAll('.me')) b.onclick = () => ride(EXS[+b.dataset.j]);
+    for (const b of $('omtrl').querySelectorAll('.me')) b.onclick = () => ride(EXS[+b.dataset.j], metroFreeRide, metroFromInside, metroFromInside);
     const wb = $('omtrWalk'); if (wb) wb.onclick = () => { if (window.FREEFIGHT && FREEFIGHT.stars) FREEFIGHT.noMetro(); else IND.enterStation(from); };
     const mh = $('omtr').querySelector('.mh b'); if (mh) mh.textContent = `🚇 車費 ${fromInside ? '$0・已入閘' : '$5'} · 搭地鐵去邊度？揀出口`;
     $('omtr').hidden = false; $('oprompt').hidden = true; beep(660, 0.1, 'sine', 0.06);
   }
   function closeMetro() { metro = null; metroFreeRide = false; metroFromInside = false; $('omtr').hidden = true; }
-  function ride(o, freeRide = metroFreeRide, fromInside = metroFromInside) {
+  function ride(o, freeRide = metroFreeRide, fromInside = metroFromInside, toPlatform = false) {   // toPlatform：淨係月台 menu 搭車先落目的地月台；出返街照舊出街
     if (!freeRide) {
       if (money < 5) { big('八達通唔夠錢（要 $5）', '#ff765e'); return false; }
       addMoney(-5, 'mtr'); big('搭地鐵 −$5', '#ffd23f'); beep(1050, 0.12, 'sine', 0.09);
@@ -3992,7 +3992,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     }
     setTimeout(async () => {
       try {
-        if (fromInside && window.IND && IND.arriveStation) {
+        if (toPlatform && window.IND && IND.arriveStation) {
           let ok = false;
           try { ok = await IND.arriveStation(o.e[0]); } catch (e) {}
           if (ok) {
