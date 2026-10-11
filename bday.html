@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>趙雲無雙・生日遊戲製作</title>
+<style>
+:root{color-scheme:dark;--bg:#180d08;--panel:#2a170d;--gold:#e0b050;--ink:#fff3dc;--muted:#d7bd91;--red:#ff9a8a}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#452711 0,#180d08 60%);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Noto Sans TC",sans-serif}
+main{width:min(720px,100%);margin:auto;padding:24px 16px 48px}h1{font-size:clamp(27px,7vw,38px);line-height:1.2;color:#ffe08a;margin:5px 0 8px}h2{font-size:21px;margin:0 0 13px;color:#ffe08a}.intro,.privacy{color:var(--muted)}.privacy{border-top:1px solid #614323;padding-top:12px;font-size:14px}
+section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-radius:15px;padding:17px;margin:16px 0;box-shadow:0 8px 24px #0004}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{margin:10px 0}.field label,.legend{display:block;font-weight:700;margin-bottom:5px}.hint{font-size:13px;color:#d4bd98;margin:4px 0 0}input[type=text],input[type=number],textarea{width:100%;border:1px solid #9b7138;border-radius:9px;background:#160d08;color:#fff3dc;font:inherit;padding:10px 11px;outline:none}input:focus,textarea:focus{border-color:#ffe08a;box-shadow:0 0 0 2px #e0b05055}textarea{resize:vertical;min-height:72px}button{font:inherit;font-weight:700;border:1px solid #e0b050;border-radius:9px;padding:9px 13px;background:#e0b050;color:#261303;cursor:pointer}button.secondary{background:#412714;color:#ffe3a8}button.remove{background:#321811;border-color:#a55d41;color:#ffd2bd}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}.presetbar{display:flex;gap:7px;overflow-x:auto;padding:3px 0 8px}.presetbar button{white-space:nowrap;font-size:13px;padding:7px 10px}.qhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.qhead h3{margin:0;color:#ffe08a;font-size:18px}.options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.opt{display:flex;align-items:center;gap:7px}.opt input[type=text]{min-width:0}.opt input[type=radio]{accent-color:#e0b050;width:20px;height:20px;flex:none}.error{color:var(--red);font-size:14px;margin:4px 0 0;min-height:20px}.errfield{border-color:#ff8b75!important}.linkbox{display:none}.linkbox.show{display:block}.linkout{min-height:100px;word-break:break-all}.visually-hidden{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+@media(max-width:520px){main{padding:19px 13px 36px}.grid{grid-template-columns:1fr}.options{grid-template-columns:1fr}.qcard{padding:13px}.actions button{flex:1}.link-actions button{flex:1 1 30%}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>趙雲無雙・生日遊戲</h1><p class="intro">整一條專屬生日遊戲 link，俾壽星打敗敵將、答中關於自己嘅問題！遊戲最好用電腦玩，或者將手機打橫玩。</p></header>
+<form id="form" novalidate>
+<section aria-labelledby="person-title"><h2 id="person-title">壽星資料</h2>
+<div class="grid">
+<div class="field"><label for="name">壽星名 <span aria-hidden="true">*</span></label><input id="name" name="name" type="text" maxlength="8" required autocomplete="off" placeholder="例如：小明"><p class="error" data-error="name"></p></div>
+<div class="field"><label for="age">歲數（可留空）</label><input id="age" name="age" type="number" min="1" max="120" step="1" inputmode="numeric" placeholder="例如：8"><p class="error" data-error="age"></p></div>
+<div class="field"><label for="from">由邊個送（可留空）</label><input id="from" name="from" type="text" maxlength="12" autocomplete="off" placeholder="例如：爸爸媽媽"></div>
+<div class="field"><label for="message">祝福語（可留空）</label><textarea id="message" name="message" maxlength="80" placeholder="寫低你想送俾壽星嘅說話"></textarea></div>
+</div><div class="actions"><button class="secondary" type="button" id="demo">睇示範（小明）</button></div>
+</section>
+<section aria-labelledby="questions-title"><h2 id="questions-title">壽星問答（3–6 題）</h2>
+<p class="hint">揀中正確答案旁邊個圓圈。以下範本可以再自行修改。</p>
+<div class="presetbar" aria-label="題目範本">
+<button type="button" data-preset="color">最鍾意嘅顏色</button><button type="button" data-preset="food">最鍾意食咩</button><button type="button" data-preset="cartoon">最鍾意嘅卡通人物</button><button type="button" data-preset="sport">最鍾意嘅運動</button><button type="button" data-preset="place">最想去邊度玩</button>
+</div>
+<div id="questions"></div>
+<div class="actions"><button type="button" class="secondary" id="add">＋ 加一題</button></div><p class="error" id="qerror" role="alert"></p>
+</section>
+<section><button type="submit" id="make">產生遊戲 link</button><p class="error" id="formerror" role="alert"></p>
+<div class="linkbox" id="linkbox"><label for="gameLink" class="legend">你嘅生日遊戲 link</label><textarea id="gameLink" class="linkout" readonly aria-label="生日遊戲 link"></textarea><div class="actions link-actions"><button type="button" id="copy">複製</button><button type="button" class="secondary" id="open">開嚟試玩</button><button type="button" class="secondary" id="share">WhatsApp 分享</button></div><p id="copyState" class="hint" aria-live="polite"></p></div>
+</section>
+</form>
+<p class="privacy">資料只會寫喺條 link 入面，我哋唔會儲存任何資料。遊戲最好用電腦玩，或者將手機打橫玩。</p>
+</main>
+<script>
+(() => {
+  'use strict';
+  const presets = {
+    color: ['最鍾意嘅顏色？', ['紅色', '藍色', '綠色', '黃色'], 1],
+    food: ['最鍾意食咩？', ['壽司', '薄餅', '漢堡包', '蛋糕'], 0],
+    cartoon: ['最鍾意嘅卡通人物？', ['米奇', '多啦A夢', '比卡超', 'Elsa'], 1],
+    sport: ['最鍾意嘅運動？', ['足球', '游水', '籃球', '踩單車'], 0],
+    place: ['最想去邊度玩？', ['日本', '海洋公園', '迪士尼', '沙灘'], 2],
+  };
+  const sample = [
+    ['最鍾意嘅顏色？', ['紅色', '藍色', '綠色', '黃色'], 1],
+    ['最鍾意食咩？', ['壽司', '薄餅', '漢堡包', '蛋糕'], 0],
+    ['最鍾意嘅卡通人物？', ['米奇', '多啦A夢', '比卡超', 'Elsa'], 1],
+    ['最想去邊度玩？', ['日本', '海洋公園', '迪士尼', '沙灘'], 2],
+  ];
+  const qroot = document.getElementById('questions');
+  let activeCard = null;
+  const clampText = (s, n) => [...String(s).trim()].slice(0, n).join('');
+
+  function addCard(data = ['', ['', '', '', ''], 0]) {
+    const index = qroot.children.length;
+    const card = document.createElement('article'); card.className = 'qcard'; card.dataset.index = index;
+    const head = document.createElement('div'); head.className = 'qhead';
+    const title = document.createElement('h3'); title.textContent = `第 ${index + 1} 題`;
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove'; remove.textContent = '移除'; remove.setAttribute('aria-label', `移除第 ${index + 1} 題`);
+    remove.onclick = () => { if (qroot.children.length <= 3) return; card.remove(); refreshCards(); };
+    head.append(title, remove);
+    const label = document.createElement('label'); label.className = 'legend'; label.textContent = '問題';
+    const question = document.createElement('input'); question.type = 'text'; question.maxLength = 50; question.className = 'question'; question.placeholder = '例如：小明最鍾意嘅顏色係？'; question.value = data[0] || ''; question.setAttribute('aria-label', `第 ${index + 1} 題問題`);
+    const legend = document.createElement('p'); legend.className = 'legend'; legend.textContent = '四個選項（撳圓圈選正確答案）';
+    const options = document.createElement('div'); options.className = 'options';
+    for (let i = 0; i < 4; i++) {
+      const row = document.createElement('label'); row.className = 'opt';
+      const radio = document.createElement('input'); radio.type = 'radio'; radio.name = `answer-${index}`; radio.value = i; radio.checked = i === (data[2] ?? 0); radio.setAttribute('aria-label', `第 ${index + 1} 題正確答案：選項 ${i + 1}`);
+      const input = document.createElement('input'); input.type = 'text'; input.maxLength = 12; input.className = 'option'; input.placeholder = `選項 ${i + 1}`; input.value = data[1]?.[i] || ''; input.setAttribute('aria-label', `第 ${index + 1} 題選項 ${i + 1}`);
+      row.append(radio, input); options.appendChild(row);
+    }
+    const error = document.createElement('p'); error.className = 'error qcard-error'; error.setAttribute('role', 'alert');
+    card.append(head, label, question, legend, options, error);
+    card.addEventListener('focusin', () => { activeCard = card; });
+    qroot.appendChild(card); activeCard = card;
+    refreshCards();
+    return card;
+  }
+  function refreshCards() {
+    [...qroot.children].forEach((card, i) => {
+      card.dataset.index = i;
+      card.querySelector('h3').textContent = `第 ${i + 1} 題`;
+      card.querySelector('.remove').disabled = qroot.children.length <= 3;
+      card.querySelector('.remove').setAttribute('aria-label', `移除第 ${i + 1} 題`);
+      card.querySelector('.question').setAttribute('aria-label', `第 ${i + 1} 題問題`);
+      [...card.querySelectorAll('.opt')].forEach((row, j) => {
+        row.querySelector('input[type=radio]').name = `answer-${i}`;
+        row.querySelector('input[type=radio]').setAttribute('aria-label', `第 ${i + 1} 題正確答案：選項 ${j + 1}`);
+        row.querySelector('input[type=text]').setAttribute('aria-label', `第 ${i + 1} 題選項 ${j + 1}`);
+      });
+    });
+    document.getElementById('add').disabled = qroot.children.length >= 6;
+  }
+  for (let i = 0; i < 3; i++) addCard();
+  document.getElementById('add').onclick = () => { if (qroot.children.length < 6) addCard(); };
+  document.querySelectorAll('[data-preset]').forEach(btn => btn.onclick = () => {
+    const card = activeCard?.isConnected ? activeCard : qroot.firstElementChild;
+    const p = presets[btn.dataset.preset]; card.querySelector('.question').value = p[0];
+    card.querySelectorAll('.option').forEach((input, i) => input.value = p[1][i]);
+    card.querySelectorAll('input[type=radio]')[p[2]].checked = true;
+    card.querySelector('.qcard-error').textContent = '';
+  });
+  document.getElementById('demo').onclick = () => {
+    document.getElementById('name').value = '小明'; document.getElementById('age').value = '8';
+    document.getElementById('from').value = '爸爸媽媽'; document.getElementById('message').value = '祝你生日快樂，每日開開心心！';
+    while (qroot.children.length < sample.length) addCard();
+    while (qroot.children.length > sample.length) qroot.lastElementChild.remove();
+    [...qroot.children].forEach((card, i) => {
+      card.querySelector('.question').value = sample[i][0];
+      card.querySelectorAll('.option').forEach((input, j) => input.value = sample[i][1][j]);
+      card.querySelectorAll('input[type=radio]')[sample[i][2]].checked = true;
+      card.querySelector('.qcard-error').textContent = '';
+    });
+    refreshCards(); document.getElementById('formerror').textContent = ''; document.getElementById('qerror').textContent = '';
+  };
+
+  function encodePayload(d) {
+    const bytes = new TextEncoder().encode(JSON.stringify(d));
+    let bin = ''; for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+  window.encodeBirthdayPayload = encodePayload;
+  document.getElementById('form').addEventListener('submit', e => {
+    e.preventDefault();
+    const formErr = document.getElementById('formerror'), qErr = document.getElementById('qerror');
+    formErr.textContent = ''; qErr.textContent = '';
+    document.querySelectorAll('[data-error]').forEach(x => x.textContent = '');
+    const nameEl = document.getElementById('name'), name = clampText(nameEl.value, 8);
+    const ageRaw = document.getElementById('age').value.trim();
+    let valid = true;
+    if (!name) { document.querySelector('[data-error="name"]').textContent = '請填寫壽星名。'; nameEl.classList.add('errfield'); valid = false; }
+    else nameEl.classList.remove('errfield');
+    let age = null;
+    if (ageRaw) {
+      age = Number(ageRaw);
+      if (!Number.isInteger(age) || age < 1 || age > 120) { document.querySelector('[data-error="age"]').textContent = '歲數請填 1 至 120 嘅整數，或者留空。'; valid = false; }
+    }
+    if (qroot.children.length < 3 || qroot.children.length > 6) { qErr.textContent = '請準備 3 至 6 題。'; valid = false; }
+    const questions = [...qroot.children].map((card, i) => {
+      const q = clampText(card.querySelector('.question').value, 50);
+      const opts = [...card.querySelectorAll('.option')].map(x => clampText(x.value, 12));
+      const ans = [...card.querySelectorAll('input[type=radio]')].findIndex(x => x.checked);
+      const errors = [];
+      if (!q) errors.push('請填寫問題');
+      if (opts.some(x => !x)) errors.push('四個選項都要填寫');
+      if (ans < 0) errors.push('請選擇正確答案');
+      card.querySelector('.qcard-error').textContent = errors.length ? `第 ${i + 1} 題：${errors.join('；')}。` : '';
+      if (errors.length) valid = false;
+      return [q, opts, ans];
+    });
+    if (!valid) { formErr.textContent = '請修正以上資料，再產生遊戲 link。'; document.querySelector('.errfield')?.focus(); return; }
+    const payload = { v: 1, n: name, a: age, f: clampText(document.getElementById('from').value, 12), m: clampText(document.getElementById('message').value, 80), q: questions };
+    const url = new URL('zhaoyun.html', location.href); url.hash = `bday=${encodePayload(payload)}&lang=zh`;
+    const out = document.getElementById('gameLink'); out.value = url.href;
+    document.getElementById('linkbox').classList.add('show'); document.getElementById('copyState').textContent = '';
+    document.getElementById('linkbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  document.getElementById('copy').onclick = async () => {
+    const out = document.getElementById('gameLink'), state = document.getElementById('copyState');
+    try { await navigator.clipboard.writeText(out.value); state.textContent = '已複製，可以分享俾壽星！'; }
+    catch (_) { out.focus(); out.select(); try { document.execCommand('copy'); state.textContent = '已選取 link，請複製分享。'; } catch (_) { state.textContent = '已選取 link，請手動複製分享。'; } }
+  };
+  document.getElementById('open').onclick = () => window.open(document.getElementById('gameLink').value, '_blank', 'noopener');
+  document.getElementById('share').onclick = () => {
+    const link = document.getElementById('gameLink').value;
+    const text = `整咗個生日遊戲俾你，快啲嚟玩：${link}`;
+    window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+  };
+})();
+</script>
+</body>
+</html>

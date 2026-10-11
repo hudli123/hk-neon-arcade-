@@ -2305,11 +2305,14 @@ window.BGM_DATA = {"ninjas": "SUQzBAAAAAAAYVRCUE0AAAAFAAADMTM2AFRFTkMAAAAWAAADTE
   const t = document.getElementById('title'); if (t) t.insertAdjacentHTML('beforeend', '<div class="bgm-credit">' + CREDIT + '</div>');
 })();
 </script>
-<script>// 問答模式：zhaoyun.html?quiz=<題庫名> → 載入 quiz_<題庫名>.js + zhaoyun_quiz.js；冇 ?quiz 就同原本一樣
+<script>// 問答/生日模式：zhaoyun.html?quiz=<題庫名> → 載入 quiz_<題庫名>.js + zhaoyun_quiz.js；
+// #bday=<payload> → zhaoyun_bday.js（解碼出題庫）+ zhaoyun_quiz.js；兩個參數都冇就同原本一樣
 (() => {
-  const q = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1)).get('quiz');
-  if (!q || !/^[a-z0-9_-]+$/.test(q)) return;
+  const P = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));
   const add = (src, then) => { const s = document.createElement('script'); s.src = src; s.onload = then; document.body.appendChild(s); };
+  if (P.has('bday')) { add('zhaoyun_bday.js', () => add('zhaoyun_quiz.js')); return; }
+  const q = P.get('quiz');
+  if (!q || !/^[a-z0-9_-]+$/.test(q)) return;
   add('quiz_' + q + '.js', () => add('zhaoyun_quiz.js'));
 })();
 </script>

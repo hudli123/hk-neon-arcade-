@@ -11,6 +11,8 @@
   const Q = { on: false, idx: 0, tries: 0, ids: [], nextT: 0, firstTry: 0, missed: [], done: false, card: null, cardT: 0 };
   window.QZ = Q;
   S.ans = new Int8Array(NMAX).fill(-1);
+  const BDAY = D.bday || null;
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
   // ---------- UI ----------
   const css = document.createElement('style');
@@ -33,6 +35,15 @@
 #qcard button{font-size:20px;padding:8px 26px;border-radius:10px;border:0;background:#e0b050;color:#2a1000;font-weight:700;cursor:pointer}
 #qreview{max-height:38vh;overflow:auto;text-align:left;max-width:min(620px,92vw);margin:6px auto 12px;font-size:15px;line-height:1.5;background:rgba(0,0,0,.35);border-radius:10px;padding:8px 12px}
 #qreview p{margin:4px 0 8px}
+#bdayover{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,4,0,.82);z-index:80;overflow:hidden}
+#bdayover>div{position:relative;max-width:min(560px,92vw);background:linear-gradient(#3a1a06,#1d0c02);border:3px solid #e0b050;border-radius:18px;padding:26px 30px;color:#fff3dc;text-align:center;box-shadow:0 10px 50px #000;z-index:2}
+#bdayover h1{margin:0 0 10px;font-size:34px;color:#ffe08a}
+#bdayover .msg{font-size:19px;line-height:1.6;margin:8px 0}
+#bdayover .from{font-size:16px;color:#ffd27a;margin-top:10px}
+#bdayover button{font-size:20px;padding:9px 28px;border-radius:10px;border:0;background:#e0b050;color:#2a1000;font-weight:700;cursor:pointer;margin-top:14px}
+.bconf{position:absolute;top:-8%;font-size:22px;animation:bdfall linear infinite;pointer-events:none;z-index:1}
+@keyframes bdfall{to{transform:translateY(115vh) rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.bconf{display:none}}
 @media (max-height:500px){#qp{font-size:12px;line-height:1.35;padding:4px 9px;left:51%;width:38vw}#qp .op{margin-top:3px}#qp .hd{font-size:11px}.qlab{font-size:14px}#qcard>div{font-size:15px;padding:10px 16px}#qcard h2{font-size:22px}#qcard .ans{font-size:19px}}
 `;
   document.head.appendChild(css);
@@ -40,8 +51,15 @@
   const labs = [0, 1, 2, 3].map(() => { const e = document.createElement('div'); e.className = 'qlab'; e.hidden = true; document.body.appendChild(e); return e; });
 
   const t = $('title');
-  t.querySelector('p').textContent = `${D.title}・${D.topic || ''}`;
-  t.querySelector('p').insertAdjacentHTML('afterend', `<p style="max-width:560px;font-size:15px;opacity:.9">每題有 4 個敵將，各自揹住答案 A–D。打倒<b>正確答案</b>嗰個！打錯會扣血。答晒 ${QN} 題，敵將張郃就會出現。</p>`);
+  if (BDAY) {
+    const h1 = t.querySelector('h1'); if (h1) h1.textContent = `${BDAY.name}無雙`;
+    t.querySelector('p').textContent = `${BDAY.name}${BDAY.age ? BDAY.age + '歲' : ''}生日快樂！`;
+    document.title = `${BDAY.name}無雙・生日快樂！`;
+    t.querySelector('p').insertAdjacentHTML('afterend', `<p style="max-width:560px;font-size:15px;opacity:.9">每題有 4 個敵將揹住答案，打倒正確嗰個！答晒 ${QN} 題，張郃就會出現。</p>`);
+  } else {
+    t.querySelector('p').textContent = `${D.title}・${D.topic || ''}`;
+    t.querySelector('p').insertAdjacentHTML('afterend', `<p style="max-width:560px;font-size:15px;opacity:.9">每題有 4 個敵將，各自揹住答案 A–D。打倒<b>正確答案</b>嗰個！打錯會扣血。答晒 ${QN} 題，敵將張郃就會出現。</p>`);
+  }
   TX.goal = `目標：打倒寫住正確答案嘅敵將（A–D）。答晒 ${QN} 題 → 張郃登場！`;
 
   // 光柱：遠處都見到邊個係答案將
@@ -53,8 +71,8 @@
 
   function drawPanel() {
     const q = QS[Q.idx]; if (!q) { qp.hidden = true; return; }
-    qp.innerHTML = `<div class="hd">第 ${Q.idx + 1} / ${QN} 題・${q.cat || ''}</div><div class="qt">${q.q}</div>` +
-      `<div class="op">${q.opts.map((o, k) => `<span class="${Q.crossed && Q.crossed[k] ? 'x' : ''}"><b style="background:${COL[k]}">${LET[k]}</b>${o}</span>`).join('')}</div>`;
+    qp.innerHTML = `<div class="hd">第 ${Q.idx + 1} / ${QN} 題・${esc(q.cat || '')}</div><div class="qt">${esc(q.q)}</div>` +
+      `<div class="op">${q.opts.map((o, k) => `<span class="${Q.crossed && Q.crossed[k] ? 'x' : ''}"><b style="background:${COL[k]}">${LET[k]}</b>${esc(o)}</span>`).join('')}</div>`;
     qp.hidden = false;
   }
 
@@ -99,7 +117,7 @@
       Q.tries++; if (Q.tries === 1) Q.missed.push(Q.idx);
       Q.crossed[a] = 1; drawPanel();
       player.hp = Math.max(1, player.hp - WRONG_DMG); hurtFlash = 1; camShake = Math.max(camShake, 0.5); SND.hurt();
-      banner(`✗ ${LET[a]}．${q.opts[a]} 唔係答案！`, '#ff6a6a', true);
+      banner(`✗ ${LET[a]}．${esc(q.opts[a])} 唔係答案！`, '#ff6a6a', true);
     }
   }
 
@@ -107,8 +125,9 @@
     const last = Q.idx + 1 >= QN;
     const el = document.createElement('div'); el.id = 'qcard';
     el.innerHTML = `<div><h2>${Q.tries === 0 ? '✓ 答對！' : `✓ 答對！（錯咗 ${Q.tries} 次）`}</h2>` +
-      `<div style="font-size:15px;opacity:.85">${q.q}</div>` +
-      `<div class="ans">${LET[q.ans]}．${q.opts[q.ans]}</div><div class="why">${q.why}</div>` +
+      `<div style="font-size:15px;opacity:.85">${esc(q.q)}</div>` +
+      `<div class="ans">${LET[q.ans]}．${esc(q.opts[q.ans])}</div>` +
+      (q.why ? `<div class="why">${esc(q.why)}</div>` : '') +
       `<button>${last ? '最後一關：張郃 ▶' : '下一題 ▶'}</button></div>`;
     document.body.appendChild(el);
     Q.card = el; Q.cardT = performance.now();
@@ -181,6 +200,30 @@
     return r;
   };
 
+  function bdayOverlay() {
+    const el = document.createElement('div'); el.id = 'bdayover';
+    const bits = ['🎉', '🎊', '🎈', '⭐', '🧧', '🎂'];
+    for (let i = 0; i < 36; i++) {
+      const s = document.createElement('span'); s.className = 'bconf';
+      s.textContent = bits[i % bits.length];
+      s.style.left = (Math.random() * 100) + 'vw';
+      s.style.animationDuration = (2.5 + Math.random() * 3.5) + 's';
+      s.style.animationDelay = (-Math.random() * 4) + 's';
+      s.style.fontSize = (14 + Math.random() * 18) + 'px';
+      el.appendChild(s);
+    }
+    const box = document.createElement('div');
+    const h1 = document.createElement('h1'); h1.textContent = `🎂 生日快樂，${BDAY.name}！`;
+    box.appendChild(h1);
+    if (BDAY.msg) { const m = document.createElement('p'); m.className = 'msg'; m.textContent = BDAY.msg; box.appendChild(m); }
+    if (BDAY.from) { const f = document.createElement('p'); f.className = 'from'; f.textContent = `— ${BDAY.from}`; box.appendChild(f); }
+    const btn = document.createElement('button'); btn.textContent = '再睇成績';
+    btn.onclick = () => el.remove();
+    box.appendChild(btn);
+    el.appendChild(box);
+    document.body.appendChild(el);
+  }
+
   const over0 = GAME.over;
   GAME.over = function (win) {
     if (this.state !== 'play') return;
@@ -189,9 +232,10 @@
     const answered = Math.min(Q.idx, QN);
     let h = `<p style="font-size:20px"><b>一次答啱：${Q.firstTry} / ${QN}</b>${answered < QN ? `（完成 ${answered} 題）` : ''}</p>`;
     if (Q.missed.length) {
-      h += `<div id="qreview"><b>要再溫習：</b>` + Q.missed.map(n => { const q = QS[n]; return `<p>${n + 1}. ${q.q}<br>✓ <b>${LET[q.ans]}．${q.opts[q.ans]}</b> — ${q.why}</p>`; }).join('') + `</div>`;
+      h += `<div id="qreview"><b>要再溫習：</b>` + Q.missed.map(n => { const q = QS[n]; return `<p>${n + 1}. ${esc(q.q)}<br>✓ <b>${LET[q.ans]}．${esc(q.opts[q.ans])}</b>${q.why ? ` — ${esc(q.why)}` : ''}</p>`; }).join('') + `</div>`;
     } else if (answered >= QN) h += `<p>全部一次答啱，好犀利！</p>`;
     $('ostats').insertAdjacentHTML('beforeend', h);
+    if (win && BDAY) bdayOverlay();
   };
 
   const step0 = GAME.step;
@@ -215,7 +259,7 @@
       if (cx !== x || cy !== y) edge = true;
       lab.style.left = cx + 'px'; lab.style.top = cy + 'px'; lab.style.borderColor = COL[a];
       lab.className = 'qlab' + (edge ? ' edge' : '');
-      lab.innerHTML = `<span style="color:${COL[a]}">${LET[a]}</span> ${QS[Q.idx].opts[a]}`;
+      lab.innerHTML = `<span style="color:${COL[a]}">${LET[a]}</span> ${esc(QS[Q.idx].opts[a])}`;
       lab.hidden = false;
     }
     for (; n < 4; n++) { labs[n].hidden = true; beams[n].visible = false; }
