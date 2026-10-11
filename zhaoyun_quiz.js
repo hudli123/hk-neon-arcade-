@@ -117,7 +117,7 @@
       Q.tries++; if (Q.tries === 1) Q.missed.push(Q.idx);
       Q.crossed[a] = 1; drawPanel();
       player.hp = Math.max(1, player.hp - WRONG_DMG); hurtFlash = 1; camShake = Math.max(camShake, 0.5); SND.hurt();
-      banner(`✗ ${LET[a]}．${esc(q.opts[a])} 唔係答案！`, '#ff6a6a', true);
+      banner(`✗ ${LET[a]}．${q.opts[a]} 唔係答案！`, '#ff6a6a', true);
     }
   }
 
