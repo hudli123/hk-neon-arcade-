@@ -202,7 +202,8 @@ window.MRIG = window.MRIG || {}; window.MRIG["weicaptain_lo"] = {"Q":18203.89057
 'use strict';
 const $ = (id) => document.getElementById(id);
 // ---------- 語言：中文 / English（CrazyGames 要英文；?lang=zh|en 或跟瀏覽器）----------
-const LANG = ((new URLSearchParams(location.search).get('lang') || navigator.language || 'en').toLowerCase().startsWith('zh')) ? 'zh' : 'en';
+const ZY_URLQ = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));   // ?lang= 或 #lang=（# 唔改快取 key，同正常版共用已下載嘅檔）
+const LANG = ((ZY_URLQ.get('lang') || navigator.language || 'en').toLowerCase().startsWith('zh')) ? 'zh' : 'en';
 const CG = !!window.CG_EDITION;   // CrazyGames 版：原創名稱（唔用「無雙」），只用 CC0 音效
 const TX = {
   zh: { title: CG ? '趙雲・龍槍' : '趙雲無雙', sub: '單騎破陣：擊破魏軍，引出敵將張郃', start: '出陣', again: '再戰', rotate: '請將手機打橫玩 ↻', face: '趙雲',
@@ -2306,7 +2307,7 @@ window.BGM_DATA = {"ninjas": "SUQzBAAAAAAAYVRCUE0AAAAFAAADMTM2AFRFTkMAAAAWAAADTE
 </script>
 <script>// 問答模式：zhaoyun.html?quiz=<題庫名> → 載入 quiz_<題庫名>.js + zhaoyun_quiz.js；冇 ?quiz 就同原本一樣
 (() => {
-  const q = new URLSearchParams(location.search).get('quiz');
+  const q = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1)).get('quiz');
   if (!q || !/^[a-z0-9_-]+$/.test(q)) return;
   const add = (src, then) => { const s = document.createElement('script'); s.src = src; s.onload = then; document.body.appendChild(s); };
   add('quiz_' + q + '.js', () => add('zhaoyun_quiz.js'));
