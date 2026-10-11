@@ -2463,6 +2463,10 @@ const PEOPLE = (() => {
     return false; };
   // v41：鋪頭相同外牆之間嘅窄位（v39-bld 移出咗嘅鋪頭相後面）唔准行，否則途人會畫咗喺鋪頭相後面（v40 量度 5.7–8.9 %）
   const walkOk = (x, z) => onFoot(x, z) && !SHOPF.zone(x, z, 0.1);
+  const PED_R = 0.25, pedClear = (x, z) => {
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (blocked(x + Math.cos(a) * PED_R, z + Math.sin(a) * PED_R)) return false; }
+    return true;
+  };
   const XG = new Map(), XL = []; let nX = 0;   // 過路線：運輸署每條過路線係一劃劃（斑馬線 3.5 米長嘅白條 / 燈位過路處嘅點）→ 相鄰（2 米內）嘅劃併成一條過路處，
   // 劃嘅中心排成一行 = 過馬路方向（PCA），兩頭再踏出 1.2–3.5 米要喺行人路先算（09-30：之前當每劃係一條過路處，全城得 14 條）
   if (CITY.tad && CITY.tad.ch) { const B16 = b64i16(CITY.tad.cb), C = []; let o = 0;
@@ -2502,10 +2506,10 @@ const PEOPLE = (() => {
   const turn = (c, minA = 0) => {   // 行到行人路邊：試下轉細角 → 大角 → 掉頭，揀第一個仲喺行人路嘅方向
     const sg = Math.random() < 0.5 ? 1 : -1;
     for (const a of [0.35, -0.35, 0.8, -0.8, 1.3, -1.3, 1.9, -1.9, Math.PI]) { if (Math.abs(a) < minA) continue; const aa = a * sg, co = Math.cos(aa), si = Math.sin(aa), tx = c.tx * co - c.tz * si, tz = c.tx * si + c.tz * co;
-      if (walkOk(c.x + tx * 1.4, c.z + tz * 1.4) && !RAILS.cross(c.x, c.z, c.x + tx * 1.4, c.z + tz * 1.4)) { c.tx = tx; c.tz = tz; return true; } }
+      if (walkOk(c.x + tx * 1.4, c.z + tz * 1.4) && pedClear(c.x + tx * 1.4, c.z + tz * 1.4) && !RAILS.cross(c.x, c.z, c.x + tx * 1.4, c.z + tz * 1.4)) { c.tx = tx; c.tz = tz; return true; } }
     c.tx = -c.tx; c.tz = -c.tz; return false; };
   const seekFoot = (c) => { for (const r of [0.8, 1.6, 3, 5, 8]) { let best = null, bd = -2;   // 由近到遠，揀最似而家方向嘅行人路
-    for (let a = 0; a < 12; a++) { const ux = Math.cos(a * 0.5236), uz = Math.sin(a * 0.5236); if (!walkOk(c.x + ux * r, c.z + uz * r)) continue; const dp = ux * c.tx + uz * c.tz; if (dp > bd) { bd = dp; best = [ux, uz]; } }
+    for (let a = 0; a < 12; a++) { const ux = Math.cos(a * 0.5236), uz = Math.sin(a * 0.5236); if (!walkOk(c.x + ux * r, c.z + uz * r) || !pedClear(c.x + ux * r, c.z + uz * r)) continue; const dp = ux * c.tx + uz * c.tz; if (dp > bd) { bd = dp; best = [ux, uz]; } }
     if (best) return best; } return null; };
   window.__peds = { onFoot, crossings: () => nX, xlist: XL };   // xlist：v41 欄杆開口 / 測試用
   function spawn(c, cx, cz, fa) {   // fa：鏡頭望緊嘅方向（七成生喺前面 ±60°，近啲多啲）
@@ -2514,7 +2518,7 @@ const PEOPLE = (() => {
       if (!list) continue;
       const sp = list[Math.floor(Math.random() * list.length)], side = Math.random() < 0.5 ? 1 : -1, nx = -sp.tz * side, nz = sp.tx * side;
       const [wd] = rayWall(sp.x, sp.z, nx, nz, 28); if (wd >= 28 || wd < 4) continue;
-      const off = wd - 1.3 - Math.random() * 2.4, x = sp.x + nx * off, z = sp.z + nz * off; if (blocked(x, z) || !walkOk(x, z)) continue;
+      const off = wd - 1.3 - Math.random() * 2.4, x = sp.x + nx * off, z = sp.z + nz * off; if (blocked(x, z) || !walkOk(x, z) || !pedClear(x, z)) continue;
       if (Math.random() > 0.3 + SHOPF.density(x, z) / 14) continue;   // 鋪頭多嘅地方人多（旺角），冇鋪嘅街少人
       if (crowd.some((o) => o !== c && o.on && (o.x - x) ** 2 + (o.z - z) ** 2 < 2.6)) continue;   // 唔好生喺其他人身上（1.6 米內）
       const dir = Math.random() < 0.5 ? 1 : -1;
@@ -2525,7 +2529,7 @@ const PEOPLE = (() => {
       reset(c, c.idle ? 'idle' : c.gait);
       c.p.root.visible = true;
       if (c.idle && Math.random() < 0.55) {   // 兩個人企喺度傾偈：同伴企喺沿街 0.95 米，面對面
-        for (const f of crowd) { if (f.on || f === c) continue; const fx = x + sp.tx * 0.95, fz = z + sp.tz * 0.95; if (!walkOk(fx, fz)) break;
+        for (const f of crowd) { if (f.on || f === c) continue; const fx = x + sp.tx * 0.95, fz = z + sp.tz * 0.95; if (!walkOk(fx, fz) || !pedClear(fx, fz)) break;
           c.tx = sp.tx; c.tz = sp.tz; c.yaw = Math.atan2(c.tx, c.tz);
           Object.assign(f, { x: fx, z: fz, tx: -sp.tx, tz: -sp.tz, v: 1.1, idle: true, on: true, down: 0, flee: 0, tilt: 0, hop: 0, st: 'walk', lead: null, pair: c, gait: f.kit && f.kit.formal ? 'formal' : 'walk', anim: null, yaw: Math.atan2(-sp.tx, -sp.tz) });
           c.pair = f; reset(c, 'talk'); reset(f, 'talk'); f.p.root.visible = true; break; }
@@ -2559,7 +2563,7 @@ const PEOPLE = (() => {
       }
       if (c.flee > 0) {   // 驚：跑開（Sprint 動畫）
         c.flee -= dt; const sp = 4.2, nx = c.x + c.tx * sp * dt, nz = c.z + c.tz * sp * dt;
-        if (blocked(nx, nz) || SHOPF.zone(nx, nz, 0) || RAILS.cross(c.x, c.z, nx, nz)) { c.tx = -c.tx; c.tz = -c.tz; } else { c.x = nx; c.z = nz; }
+        if (blocked(nx, nz) || SHOPF.zone(nx, nz, 0) || RAILS.cross(c.x, c.z, nx, nz) || !(walkOk(nx, nz) || !walkOk(c.x, c.z)) || !(pedClear(nx, nz) || !pedClear(c.x, c.z))) turn(c); else { c.x = nx; c.z = nz; }
         if (c.flee <= 0) anim(c, c.gait);
         continue;
       }
@@ -2570,7 +2574,7 @@ const PEOPLE = (() => {
         if (d > 5) { c.lead = null; continue; }
         if (L.st === 'wait') { anim(c, 'idle'); c.tx = L.tx; c.tz = L.tz; continue; }
         anim(c, c.gait); const sp = Math.min(L.v * 1.35, d / Math.max(dt, 1e-3));
-        if (d > 0.05) { const nx = c.x + dx / d * sp * dt, nz = c.z + dz / d * sp * dt; if (!blocked(nx, nz) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } }
+        if (d > 0.05) { const nx = c.x + dx / d * sp * dt, nz = c.z + dz / d * sp * dt; if ((walkOk(nx, nz) || !walkOk(c.x, c.z)) && (pedClear(nx, nz) || !pedClear(c.x, c.z)) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } }
         c.tx = L.tx; c.tz = L.tz; continue;
       }
       if (c.st === 'wait') {   // 喺路邊等：有行人燈要綠公仔；斑馬線等一陣就過
@@ -2585,10 +2589,10 @@ const PEOPLE = (() => {
       }
       c.cool = Math.max(0, (c.cool || 0) - dt);
       const nx = c.x + c.tx * c.v * dt, nz = c.z + c.tz * c.v * dt;
-      if (walkOk(nx, nz) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; continue; }   // v41：唔穿欄杆
+      if (walkOk(nx, nz) && (pedClear(nx, nz) || !pedClear(c.x, c.z)) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; continue; }   // v41：唔穿欄杆
       if (!walkOk(c.x, c.z)) {   // 俾車嚇走 / 俾人擠咗出馬路：每 0.5 秒搵最近嘅行人路方向行返上去，上咗先再守規矩
         if ((c.seek = (c.seek || 0) - dt) <= 0) { c.seek = 0.5; const h = seekFoot(c); if (h) { c.tx = h[0]; c.tz = h[1]; } }
-        if (!blocked(nx, nz) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } else turn(c); continue; }
+        if (!blocked(nx, nz) && (pedClear(nx, nz) || !pedClear(c.x, c.z)) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } else turn(c); continue; }
       const X = c.cool > 0 ? null : nearX(c.x, c.z);
       if (X && Math.random() < 0.65) {   // 行到過路線：停低等燈（面向對面）
         c.st = 'wait'; c.X = X[0]; c.G = X[1]; const dx = c.G[0] - c.x, dz = c.G[1] - c.z, d = Math.hypot(dx, dz) || 1; c.tx = dx / d; c.tz = dz / d; c.wt = 0.5 + Math.random() * 2; anim(c, 'idle');
@@ -2597,7 +2601,7 @@ const PEOPLE = (() => {
       if (X) c.cool = 3;
       turn(c);
     }
-    const okP = (o, x, z) => !blocked(x, z) && (walkOk(x, z) || !walkOk(o.x, o.z)) && !RAILS.cross(o.x, o.z, x, z);   // 唔好俾人擠出行人路 / 擠入鋪頭相後面 / 擠過欄杆
+    const okP = (o, x, z) => !blocked(x, z) && (walkOk(x, z) || !walkOk(o.x, o.z)) && (pedClear(x, z) || !pedClear(o.x, o.z)) && !RAILS.cross(o.x, o.z, x, z);   // 唔好俾人擠出行人路 / 擠入鋪頭相後面 / 擠過欄杆
     for (let i = 0; i < crowd.length; i++) {   // 行人互相避開：0.9 米內就兩個人各自向外移開（撞牆 / 出行人路就唔移）
       const a = crowd[i]; if (!a.on || a.down > 0) continue;
       for (let j = i + 1; j < crowd.length; j++) {
@@ -3978,6 +3982,25 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     $('omtr').hidden = false; $('oprompt').hidden = true; beep(660, 0.1, 'sine', 0.06);
   }
   function closeMetro() { metro = null; metroFreeRide = false; metroFromInside = false; $('omtr').hidden = true; }
+  function bldClear(x, z, r) {
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (blocked(x + Math.cos(a) * r, z + Math.sin(a) * r)) return false; }
+    return true;
+  }
+  function exitSpot(o) {
+    const clear = (x, z) => !solid(x, z) && !onRoad(x, z) && bldClear(x, z, 1.0);
+    if (clear(o.ax, o.az)) return { x: o.ax, z: o.az };
+    if (clear(o.fx, o.fz)) return { x: o.fx, z: o.fz };
+    for (let r = 1; r <= 30; r++) for (let a = 0; a < 16; a++) {
+      const x = o.fx + Math.cos(a * 0.3927) * r, z = o.fz + Math.sin(a * 0.3927) * r;
+      if (clear(x, z)) return { x, z };
+    }
+    let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }
+    for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) {
+      const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r;
+      if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; }
+    }
+    return { x, z };
+  }
   function ride(o, freeRide = metroFreeRide, fromInside = metroFromInside, toPlatform = false) {   // toPlatform：淨係月台 menu 搭車先落目的地月台；出返街照舊出街
     if (!freeRide) {
       if (money < 5) { big('八達通唔夠錢（要 $5）', '#ff765e'); return false; }
@@ -4002,8 +4025,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
           }
         }
         if (fromInside && window.IND) IND.leave(true);
-        let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
-        for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
+        const { x, z } = exitSpot(o);
         hero.x = x; hero.z = z; hero.y = 0; hero.vy = 0; hero.h = o.yaw; cam.wyaw = o.yaw + Math.PI; cam.wx = x; cam.wz = z;
         spawnGivers(); big(`${MTR.st[o.e[0]][0]} ${o.e[1]} 出口`, stCol(o.e[0]));
         if (fromInside) { beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200); }
@@ -4197,7 +4219,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   };
 
   // ---------- 每格 ----------
-  const _v = new THREE.Vector3();
+  const _v = new THREE.Vector3(), HERO_R = 0.3;
   function step(dt) {
     drvTick();
     const L = window.LIB, I = window.IND; if (L) L.step(dt); if (I) I.step(dt);
@@ -4213,8 +4235,17 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
         const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = -fz, rz = fx, dx = fx * my + rx * mx, dz = fz * my + rz * mx, l = Math.hypot(dx, dz) || 1;
         hero.h += wrapA(Math.atan2(dx / l, dz / l) - hero.h) * Math.min(1, 12 * dt);
         const nx = hero.x + Math.sin(hero.h) * sp * dt, nz = hero.z + Math.cos(hero.h) * sp * dt;
-        const blk = iin ? I.walk : lin ? L.walk : (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');
-        const moveBlk = iin ? I.canMove : blk;
+        const base = (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');
+        const blk = iin ? I.walk : lin ? L.walk : base;
+        let moveBlk = iin ? I.canMove : blk;
+        if (!iin && !lin) {
+          const wide = (x, z) => {
+            if (base(x, z)) return true;
+            for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (base(x + Math.cos(a) * HERO_R, z + Math.sin(a) * HERO_R)) return true; }
+            return false;
+          };
+          moveBlk = wide(hero.x, hero.z) ? base : wide;
+        }
         if (!moveBlk(nx, hero.z)) hero.x = nx; if (!moveBlk(hero.x, nz)) hero.z = nz;
       }
       if (!int) { const q = SHOPF.pushOut(hero.x, hero.z); if (q && !solid(q[0], q[1])) { hero.x = q[0]; hero.z = q[1]; } }
@@ -4398,7 +4429,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   function side(dt) { drvTick(); if (!(window.LIB && LIB.inside) || (window.IND && IND.inside)) stepMission(dt); hud(); }
   addEventListener('pointerdown', () => { if (active) lastDrag = performance.now(); });
   addEventListener('pointermove', (e) => { if (active && e.buttons) lastDrag = performance.now(); });
-  return { enter, exit, step, hero, car, onRoad: (x, z) => onRoad(x, z), drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, beep, big, mission, startMission, solid, inWater, exits: EXS, stations: MTR.st, openMetro, closeMetro, ride, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
+  return { enter, exit, step, hero, car, onRoad: (x, z) => onRoad(x, z), drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, beep, big, mission, startMission, solid, inWater, exits: EXS, stations: MTR.st, openMetro, closeMetro, ride, exitSpot, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
    
     carNear: () => !(!mission.type && nearExit(3.5)) && !!(nearestParked(4.5) || nearestTraffic(5)) };   // v41：打緊交（freefight.js）手機顯示「上車」掣用；同 act() 次序一樣（地鐵口優先）
 })();
