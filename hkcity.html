@@ -487,10 +487,20 @@ $('credit').textContent += (window.LAMPS ? '；' + LAMPS.credit : '') + (window.
 $('credbtn').onclick = () => $('credit').classList.toggle('on'); $('credit').onclick = () => $('credit').classList.remove('on');
 // v46 手機輕量：手機 Chrome 載完會「糟糕！」（記憶體爆）。three.js 會自動縮細超過 MAX_TEXTURE_SIZE 嘅貼圖 → 手機報 1024，2048 / 4096 嘅內嵌貼圖自動縮到 1024（圖幅貼圖走 TEXQ，唔受影響）
 if (TOUCH) for (const C of [window.WebGLRenderingContext, window.WebGL2RenderingContext]) if (C) { const gp = C.prototype.getParameter; C.prototype.getParameter = function (k) { const v = gp.call(this, k); return k === 0x0D33 ? Math.min(v, 1024) : v; }; }
-const renderer = new THREE.WebGLRenderer({ antialias: !TOUCH, powerPreference: 'high-performance' });
-const PR_MAX = Math.min(devicePixelRatio, 1.5); let prNow = PR_MAX;   // v45：桌面都封頂 1.5（之前 2 = 4 倍像素）；frame() 會按 FPS 自動降 / 升
+const GPU_RESET = new URLSearchParams(location.search).get('gpureset') === '1';
+const renderer = new THREE.WebGLRenderer({ antialias: !TOUCH && !GPU_RESET, powerPreference: 'high-performance' });
+const PR_MAX = Math.min(devicePixelRatio, GPU_RESET ? 0.5 : 1.5); let prNow = PR_MAX;   // v45：桌面都封頂 1.5（之前 2 = 4 倍像素）；frame() 會按 FPS 自動降 / 升
 renderer.setPixelRatio(prNow);
 document.body.prepend(renderer.domElement);
+let renderFrame = 0, renderStopped = false;
+renderer.domElement.addEventListener('webglcontextlost', (e) => {
+  e.preventDefault(); renderStopped = true; if (renderFrame) cancelAnimationFrame(renderFrame);
+  const ov = document.createElement('div'); ov.id = 'ctxlost'; Object.assign(ov.style, { position: 'fixed', inset: '0', zIndex: '99999', background: '#10151d', color: '#fff', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', font: 'bold 26px system-ui, sans-serif', textAlign: 'center' });
+  ov.textContent = '部機頂唔順，用低啲畫質重新開過…';
+  if (GPU_RESET) { const b = document.createElement('button'); b.textContent = '再試'; Object.assign(b.style, { marginTop: '22px', padding: '10px 28px', font: 'bold 20px system-ui, sans-serif' }); b.onclick = () => location.reload(); ov.appendChild(b); }
+  document.body.appendChild(ov);
+  if (!GPU_RESET) setTimeout(() => { const u = new URL(location.href); u.searchParams.set('gpureset', '1'); location.replace(u.href); }, 700);
+});
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(60, 1, 0.5, 12000);
 function layout() { camera.aspect = innerWidth / innerHeight; camera.fov = innerWidth < innerHeight ? 75 : 60; camera.updateProjectionMatrix(); renderer.setSize(innerWidth, innerHeight); }
@@ -2322,12 +2332,13 @@ const PEOPLE = (() => {
   // 方塊行人只留喺遠處同航拍高空
   const PP = window.HK_PEOPLE ? buildPeople(HK_PEOPLE) : null, K = PP ? (TOUCH ? 40 : 72) : 0, crowd = [];
   const SG = new Map(), sgk = (x, z) => Math.floor(x / 50) * 100000 + Math.floor(z / 50);   // 生成點：每條路每 8 米一個，50 米一格
-  for (const r of ROADS) {
+  for (let ri = 0; ri < ROADS.length; ri++) {
+    const r = ROADS[ri];
     if (r.t === 3) continue;
     for (let k = 0; k + 1 < r.pts.length; k++) {
       const [ax, az] = r.pts[k], [bx, bz] = r.pts[k + 1], len = Math.hypot(bx - ax, bz - az); if (len < 4) continue;
       for (let d = 2; d < len; d += r.t === 0 ? 4 : 8) {   // 主路密一倍
-        const sp = { x: ax + (bx - ax) * d / len, z: az + (bz - az) * d / len, tx: (bx - ax) / len, tz: (bz - az) / len }, key = sgk(sp.x, sp.z);
+        const sp = { x: ax + (bx - ax) * d / len, z: az + (bz - az) * d / len, tx: (bx - ax) / len, tz: (bz - az) / len, ri, k, s: d }, key = sgk(sp.x, sp.z);
         (SG.get(key) || SG.set(key, []).get(key)).push(sp);
       }
     }
@@ -2463,6 +2474,41 @@ const PEOPLE = (() => {
     return false; };
   // v41：鋪頭相同外牆之間嘅窄位（v39-bld 移出咗嘅鋪頭相後面）唔准行，否則途人會畫咗喺鋪頭相後面（v40 量度 5.7–8.9 %）
   const walkOk = (x, z) => onFoot(x, z) && !SHOPF.zone(x, z, 0.1);
+  const PED_R = 0.25, pedClear = (x, z) => {
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (blocked(x + Math.cos(a) * PED_R, z + Math.sin(a) * PED_R)) return false; }
+    return true;
+  };
+  const laneOk = (x, z) => walkOk(x, z) && pedClear(x, z);
+  const lanePt = (ln, s = ln.s) => {
+    const r = ROADS[ln.ri], [ax, az] = r.pts[ln.k], [bx, bz] = r.pts[ln.k + 1], len = Math.hypot(bx - ax, bz - az) || 1;
+    const tx = (bx - ax) / len, tz = (bz - az) / len, nx = -tz * ln.sg, nz = tx * ln.sg;
+    return { x: ax + tx * s + nx * ln.o, z: az + tz * s + nz * ln.o, tx: tx * ln.d, tz: tz * ln.d };
+  };
+  const bandAt = (x, z, nx, nz) => {
+    let a = null, b = null;
+    for (let o = 0.5; o <= 30.0001; o += 0.25) {
+      if (laneOk(x + nx * o, z + nz * o)) { if (a === null) a = o; b = o; }
+      else if (a !== null) break;
+    }
+    return a === null ? null : [a, b];
+  };
+  function acquire(c, excludeRi = -1) {
+    let best = null, score = -2;
+    const gx = Math.floor(c.x / 50), gz = Math.floor(c.z / 50);
+    for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const sp of SG.get((gx + dx) * 100000 + gz + dz) || []) {
+      if (sp.ri === excludeRi) continue;
+      const r = ROADS[sp.ri], [ax, az] = r.pts[sp.k], [bx, bz] = r.pts[sp.k + 1], len = Math.hypot(bx - ax, bz - az) || 1;
+      const tx = (bx - ax) / len, tz = (bz - az) / len, s = Math.max(0, Math.min(len, (c.x - ax) * tx + (c.z - az) * tz)), qx = ax + tx * s, qz = az + tz * s;
+      const rx = c.x - qx, rz = c.z - qz, cross = tx * rz - tz * rx, o = Math.hypot(rx, rz);
+      if (!cross || o < 0.5 || o > 30) continue;
+      const sg = Math.sign(cross), nx = -tz * sg, nz = tx * sg, px = qx + nx * o, pz = qz + nz * o;
+      if (Math.hypot(px - c.x, pz - c.z) > 1.5 || !laneOk(px, pz)) continue;
+      const d0 = tx * c.tx + tz * c.tz, d = d0 >= 0 ? 1 : -1, fit = Math.abs(d0);
+      if (fit > score) { score = fit; best = { ri: sp.ri, k: sp.k, s, sg, o, oT: o, d }; }
+    }
+    if (!best) return false;
+    c.ln = best; c.lnDodge = 0; c.lnThreat = false; return true;
+  }
   const XG = new Map(), XL = []; let nX = 0;   // 過路線：運輸署每條過路線係一劃劃（斑馬線 3.5 米長嘅白條 / 燈位過路處嘅點）→ 相鄰（2 米內）嘅劃併成一條過路處，
   // 劃嘅中心排成一行 = 過馬路方向（PCA），兩頭再踏出 1.2–3.5 米要喺行人路先算（09-30：之前當每劃係一條過路處，全城得 14 條）
   if (CITY.tad && CITY.tad.ch) { const B16 = b64i16(CITY.tad.cb), C = []; let o = 0;
@@ -2502,11 +2548,55 @@ const PEOPLE = (() => {
   const turn = (c, minA = 0) => {   // 行到行人路邊：試下轉細角 → 大角 → 掉頭，揀第一個仲喺行人路嘅方向
     const sg = Math.random() < 0.5 ? 1 : -1;
     for (const a of [0.35, -0.35, 0.8, -0.8, 1.3, -1.3, 1.9, -1.9, Math.PI]) { if (Math.abs(a) < minA) continue; const aa = a * sg, co = Math.cos(aa), si = Math.sin(aa), tx = c.tx * co - c.tz * si, tz = c.tx * si + c.tz * co;
-      if (walkOk(c.x + tx * 1.4, c.z + tz * 1.4) && !RAILS.cross(c.x, c.z, c.x + tx * 1.4, c.z + tz * 1.4)) { c.tx = tx; c.tz = tz; return true; } }
+      if (walkOk(c.x + tx * 1.4, c.z + tz * 1.4) && pedClear(c.x + tx * 1.4, c.z + tz * 1.4) && !RAILS.cross(c.x, c.z, c.x + tx * 1.4, c.z + tz * 1.4)) { c.tx = tx; c.tz = tz; return true; } }
     c.tx = -c.tx; c.tz = -c.tz; return false; };
   const seekFoot = (c) => { for (const r of [0.8, 1.6, 3, 5, 8]) { let best = null, bd = -2;   // 由近到遠，揀最似而家方向嘅行人路
-    for (let a = 0; a < 12; a++) { const ux = Math.cos(a * 0.5236), uz = Math.sin(a * 0.5236); if (!walkOk(c.x + ux * r, c.z + uz * r)) continue; const dp = ux * c.tx + uz * c.tz; if (dp > bd) { bd = dp; best = [ux, uz]; } }
+    for (let a = 0; a < 12; a++) { const ux = Math.cos(a * 0.5236), uz = Math.sin(a * 0.5236); if (!walkOk(c.x + ux * r, c.z + uz * r) || !pedClear(c.x + ux * r, c.z + uz * r)) continue; const dp = ux * c.tx + uz * c.tz; if (dp > bd) { bd = dp; best = [ux, uz]; } }
     if (best) return best; } return null; };
+  let movers = [];
+  function updateMovers(cx, cz) {
+    movers = [];
+    for (const q of (TRAFFIC.cars || [])) {
+      if (q.x === undefined || q.z === undefined || q.parked || q.taken || q.hidden || (TRAFFIC.hide && TRAFFIC.hide(q.x, q.z))) continue;
+      if ((q.x - cx) ** 2 + (q.z - cz) ** 2 > 3600) continue;
+      const sp = Math.max(0, q.cur || 0), fx = Math.sin(q.yaw || 0), fz = Math.cos(q.yaw || 0);
+      movers.push({ x: q.x, z: q.z, vx: fx * sp, vz: fz * sp, speed: sp, w: q.kind === 2 || q.big ? 1.15 : 0.95 });
+    }
+    const p = api.playerCar && api.playerCar();
+    if (p && p.x !== undefined && p.z !== undefined) movers.push({ x: p.x, z: p.z, vx: p.vx, vz: p.vz, speed: Math.hypot(p.vx, p.vz), w: p.w || 0.95 });
+  }
+  function threatFrom(c) {
+    let best = null;
+    for (const m of movers) {
+      if (m.speed <= 1.5) continue;
+      const rx = c.x - m.x, rz = c.z - m.z, vv = m.vx * m.vx + m.vz * m.vz, t = (rx * m.vx + rz * m.vz) / vv;
+      if (t < 0 || t > 2.2) continue;
+      const px = rx - m.vx * t, pz = rz - m.vz * t, miss = Math.hypot(px, pz);
+      if (Math.hypot(rx, rz) > 25 || miss >= m.w + 1.6 || (best && best.t <= t)) continue;
+      best = { t, side: Math.sign(m.vx * rz - m.vz * rx) || 1, mover: m };
+    }
+    return best;
+  }
+  const crossingSafe = (X) => {
+    for (const m of movers) {
+      if (m.speed <= 1) continue;
+      const rx = X.cx - m.x, rz = X.cz - m.z, vv = m.vx * m.vx + m.vz * m.vz, t = (rx * m.vx + rz * m.vz) / vv;
+      if (t >= 0 && t < 3.5 && Math.hypot(rx - m.vx * t, rz - m.vz * t) < 3) return false;
+    }
+    return true;
+  };
+  const laneDodge = (c, th) => {
+    const ln = c.ln, r = ROADS[ln.ri], [ax, az] = r.pts[ln.k], [bx, bz] = r.pts[ln.k + 1], len = Math.hypot(bx - ax, bz - az) || 1, tx = (bx - ax) / len, tz = (bz - az) / len, nx = -tz * ln.sg, nz = tx * ln.sg, m = th.mover, along = (m.x - c.x) * tx + (m.z - c.z) * tz;
+    const band = bandAt(ax + tx * ln.s, az + tz * ln.s, nx, nz);
+    if (!band) return ln.o;
+    const away = Math.min(band[1], Math.max(ln.o, ln.o + Math.max(0, m.w + 1.9 - Math.abs(along))));
+    let best = Math.max(band[0], Math.min(band[1], away)), bd = 1e9;
+    for (let o = band[0]; o <= band[1] + 1e-5; o += 0.25) {
+      const qx = ax + tx * ln.s + nx * o, qz = az + tz * ln.s + nz * o, dd = Math.abs(o - away);
+      if (laneOk(qx, qz) && dd < bd) { best = o; bd = dd; }
+    }
+    return best;
+  };
   window.__peds = { onFoot, crossings: () => nX, xlist: XL };   // xlist：v41 欄杆開口 / 測試用
   function spawn(c, cx, cz, fa) {   // fa：鏡頭望緊嘅方向（七成生喺前面 ±60°，近啲多啲）
     for (let t = 0; t < 12; t++) {
@@ -2514,27 +2604,36 @@ const PEOPLE = (() => {
       if (!list) continue;
       const sp = list[Math.floor(Math.random() * list.length)], side = Math.random() < 0.5 ? 1 : -1, nx = -sp.tz * side, nz = sp.tx * side;
       const [wd] = rayWall(sp.x, sp.z, nx, nz, 28); if (wd >= 28 || wd < 4) continue;
-      const off = wd - 1.3 - Math.random() * 2.4, x = sp.x + nx * off, z = sp.z + nz * off; if (blocked(x, z) || !walkOk(x, z)) continue;
+      const dir = Math.random() < 0.5 ? 1 : -1;
+      const K = c.kit || {}, jog = K.jog && Math.random() < 0.5, idle = !jog && Math.random() < 0.14;   // 行路款式：上班族 formal；後生仔有時緩跑；老人家行慢啲
+      let x = sp.x + nx * (wd - 1.3 - Math.random() * 2.4), z = sp.z + nz * (wd - 1.3 - Math.random() * 2.4), ln = null;
+      if (!idle) {
+        const band = bandAt(sp.x, sp.z, nx, nz);
+        if (band) {
+          const o = (band[0] + band[1]) / 2 + (Math.random() * 2 - 1) * Math.min(0.6, (band[1] - band[0]) / 4);
+          ln = { ri: sp.ri, k: sp.k, s: sp.s, sg: side, o, oT: o, d: dir };
+          const q = lanePt(ln); x = q.x; z = q.z;
+        }
+      }
+      if (blocked(x, z) || !walkOk(x, z) || !pedClear(x, z)) continue;
       if (Math.random() > 0.3 + SHOPF.density(x, z) / 14) continue;   // 鋪頭多嘅地方人多（旺角），冇鋪嘅街少人
       if (crowd.some((o) => o !== c && o.on && (o.x - x) ** 2 + (o.z - z) ** 2 < 2.6)) continue;   // 唔好生喺其他人身上（1.6 米內）
-      const dir = Math.random() < 0.5 ? 1 : -1;
-      const K = c.kit || {}, jog = K.jog && Math.random() < 0.5;   // 行路款式：上班族 formal；後生仔有時緩跑；老人家行慢啲
-      Object.assign(c, { x, z, tx: sp.tx * dir, tz: sp.tz * dir, v: jog ? 2.5 + Math.random() * 0.5 : (0.95 + Math.random() * 0.65) * (K.slow || 1), idle: !jog && Math.random() < 0.14, on: true, down: 0, flee: 0, tilt: 0, hop: 0, rainJog: false, rainGait: null, rainV: null, st: 'walk', lead: null, pair: null,
+      Object.assign(c, { x, z, ln, tx: sp.tx * dir, tz: sp.tz * dir, v: jog ? 2.5 + Math.random() * 0.5 : (0.95 + Math.random() * 0.65) * (K.slow || 1), idle, on: true, down: 0, flee: 0, tilt: 0, hop: 0, rainJog: false, rainGait: null, rainV: null, lnDodge: 0, lnThreat: false, lnBlockAt: -Infinity, lnBlocks: 0, st: 'walk', lead: null, pair: null,
         gait: jog ? 'jog' : K.formal ? 'formal' : 'walk', anim: null, yaw: Math.atan2(sp.tx * dir, sp.tz * dir) });
       if (c.idle) { c.tx = -nx; c.tz = -nz; c.yaw = Math.atan2(c.tx, c.tz); }   // 企定嘅人面向馬路
       reset(c, c.idle ? 'idle' : c.gait);
       c.p.root.visible = true;
       if (c.idle && Math.random() < 0.55) {   // 兩個人企喺度傾偈：同伴企喺沿街 0.95 米，面對面
-        for (const f of crowd) { if (f.on || f === c) continue; const fx = x + sp.tx * 0.95, fz = z + sp.tz * 0.95; if (!walkOk(fx, fz)) break;
+        for (const f of crowd) { if (f.on || f === c) continue; const fx = x + sp.tx * 0.95, fz = z + sp.tz * 0.95; if (!walkOk(fx, fz) || !pedClear(fx, fz)) break;
           c.tx = sp.tx; c.tz = sp.tz; c.yaw = Math.atan2(c.tx, c.tz);
-          Object.assign(f, { x: fx, z: fz, tx: -sp.tx, tz: -sp.tz, v: 1.1, idle: true, on: true, down: 0, flee: 0, tilt: 0, hop: 0, st: 'walk', lead: null, pair: c, gait: f.kit && f.kit.formal ? 'formal' : 'walk', anim: null, yaw: Math.atan2(-sp.tx, -sp.tz) });
+          Object.assign(f, { x: fx, z: fz, tx: -sp.tx, tz: -sp.tz, v: 1.1, idle: true, on: true, down: 0, flee: 0, tilt: 0, hop: 0, ln: null, lnDodge: 0, st: 'walk', lead: null, pair: c, gait: f.kit && f.kit.formal ? 'formal' : 'walk', anim: null, yaw: Math.atan2(-sp.tx, -sp.tz) });
           c.pair = f; reset(c, 'talk'); reset(f, 'talk'); f.p.root.visible = true; break; }
       }
       if (!c.idle && c.gait !== 'jog' && Math.random() < 0.3) {   // 兩三個人一齊行：搵一個閒置嘅人做同伴，企喺旁邊 0.75 米
         for (const f of crowd) { if (f.on || f === c) continue; const s0 = Math.random() < 0.5 ? 1 : -1;
           let side = 0, back = 0.9; for (const sd of [s0, -s0]) if (walkOk(x - c.tz * 0.75 * sd, z + c.tx * 0.75 * sd)) { side = sd; back = 0; break; }   // 旁邊冇位就跟喺後面
           const fx = x - c.tz * 0.75 * side - c.tx * back, fz = z + c.tx * 0.75 * side - c.tz * back; if (!walkOk(fx, fz)) break;
-          Object.assign(f, { x: fx, z: fz, tx: c.tx, tz: c.tz, v: c.v, idle: false, on: true, down: 0, flee: 0, tilt: 0, hop: 0, st: 'walk', lead: c, pair: null, side, back, gait: f.kit && f.kit.formal ? 'formal' : 'walk', anim: null, yaw: c.yaw });
+          Object.assign(f, { x: fx, z: fz, tx: c.tx, tz: c.tz, v: c.v, idle: false, on: true, down: 0, flee: 0, tilt: 0, hop: 0, ln: null, lnDodge: 0, st: 'walk', lead: c, pair: null, side, back, gait: f.kit && f.kit.formal ? 'formal' : 'walk', anim: null, yaw: c.yaw });
           reset(f, f.gait); f.p.root.visible = true; break; }
       }
       return true;
@@ -2542,6 +2641,7 @@ const PEOPLE = (() => {
     c.on = false; c.p.root.visible = false; return false;
   }
   function step(dt, cx, cz, low, fa = 0) {
+    updateMovers(cx, cz);
     const raining = !!(window.WEATHER && WEATHER.k > 0.5);
     for (const c of crowd) rainState(c, raining);
     for (const c of crowd) {
@@ -2554,13 +2654,13 @@ const PEOPLE = (() => {
         c.tilt = air ? -Math.min(Math.PI / 2, t * 3.5) : t < 0.35 ? -Math.PI / 2 * (t / 0.35) : c.down < 0.6 ? -Math.PI / 2 * (c.down / 0.6) : -Math.PI / 2;   // 跌低 → 躺 → 起身
         c.hop = c.ay || 0;
         if (c.ko && c.down < 0.6) { if (window.BRK && BRK.puff) BRK.puff(c.x, c.gs || 0, c.z); c.ko = false; c.ay = 0; c.down = 0; c.tilt = 0; c.on = false; c.p.root.visible = false; continue; }   // v50 KO：唔起身，收埋（下格喺第二度生返）
-        if (c.down <= 0) { c.down = 0; c.tilt = 0; c.ay = 0; c.flee = 3; c.idle = false; c.tx = c.fx; c.tz = c.fz; anim(c, 'run'); }
+        if (c.down <= 0) { c.down = 0; c.tilt = 0; c.ay = 0; c.flee = 3; c.idle = false; c.ln = null; c.tx = c.fx; c.tz = c.fz; anim(c, 'run'); }
         continue;
       }
       if (c.flee > 0) {   // 驚：跑開（Sprint 動畫）
         c.flee -= dt; const sp = 4.2, nx = c.x + c.tx * sp * dt, nz = c.z + c.tz * sp * dt;
-        if (blocked(nx, nz) || SHOPF.zone(nx, nz, 0) || RAILS.cross(c.x, c.z, nx, nz)) { c.tx = -c.tx; c.tz = -c.tz; } else { c.x = nx; c.z = nz; }
-        if (c.flee <= 0) anim(c, c.gait);
+        if (blocked(nx, nz) || SHOPF.zone(nx, nz, 0) || RAILS.cross(c.x, c.z, nx, nz) || !(walkOk(nx, nz) || !walkOk(c.x, c.z)) || !(pedClear(nx, nz) || !pedClear(c.x, c.z))) turn(c); else { c.x = nx; c.z = nz; }
+        if (c.flee <= 0) { c.ln = null; anim(c, c.gait); }
         continue;
       }
       if (c.idle) continue;
@@ -2570,25 +2670,73 @@ const PEOPLE = (() => {
         if (d > 5) { c.lead = null; continue; }
         if (L.st === 'wait') { anim(c, 'idle'); c.tx = L.tx; c.tz = L.tz; continue; }
         anim(c, c.gait); const sp = Math.min(L.v * 1.35, d / Math.max(dt, 1e-3));
-        if (d > 0.05) { const nx = c.x + dx / d * sp * dt, nz = c.z + dz / d * sp * dt; if (!blocked(nx, nz) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } }
+        if (d > 0.05) { const nx = c.x + dx / d * sp * dt, nz = c.z + dz / d * sp * dt; if ((walkOk(nx, nz) || !walkOk(c.x, c.z)) && (pedClear(nx, nz) || !pedClear(c.x, c.z)) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } }
         c.tx = L.tx; c.tz = L.tz; continue;
       }
       if (c.st === 'wait') {   // 喺路邊等：有行人燈要綠公仔；斑馬線等一陣就過
         const ps = TRAFFIC.pedState(c.X.cx, c.X.cz); c.wt -= dt;
-        if (ps === 2 || (ps < 0 && c.wt <= 0)) { c.st = 'cross'; anim(c, c.gait); }
+        if ((ps === 2 || (ps < 0 && c.wt <= 0)) && crossingSafe(c.X)) { c.st = 'cross'; c.crossHold = 0; anim(c, c.gait); }
         continue;
       }
       if (c.st === 'cross') {   // 過馬路：行去對面；燈轉紅就行快啲
         const dx = c.G[0] - c.x, dz = c.G[1] - c.z, d = Math.hypot(dx, dz);
-        if (d < 0.5) { c.st = 'walk'; const ux = dx / (d || 1), uz = dz / (d || 1), sg = Math.random() < 0.5 ? 1 : -1; c.tx = -uz * sg; c.tz = ux * sg; if (!onFoot(c.x + c.tx * 1.4, c.z + c.tz * 1.4)) { c.tx = -c.tx; c.tz = -c.tz; } c.cool = 4; continue; }
+        const th = threatFrom(c);
+        if (th && th.t < 1.2 && c.crossHold < 2) { c.crossHold = Math.min(2, (c.crossHold || 0) + dt); continue; }
+        if (d < 0.5) { c.st = 'walk'; c.ln = null; c.lnDodge = 0; acquire(c); const ux = dx / (d || 1), uz = dz / (d || 1), sg = Math.random() < 0.5 ? 1 : -1; c.tx = -uz * sg; c.tz = ux * sg; if (!onFoot(c.x + c.tx * 1.4, c.z + c.tz * 1.4)) { c.tx = -c.tx; c.tz = -c.tz; } c.cool = 4; continue; }
         const ps = TRAFFIC.pedState(c.X.cx, c.X.cz), sp = c.v * (ps === 0 ? 1.5 : 1.05); c.tx = dx / d; c.tz = dz / d; c.x += c.tx * sp * dt; c.z += c.tz * sp * dt; continue;
       }
       c.cool = Math.max(0, (c.cool || 0) - dt);
+      if (c.ln) {
+        const ln = c.ln, ox = c.x, oz = c.z, th = threatFrom(c);
+        if (th) { ln.oT = laneDodge(c, th); c.lnDodge = 1.1; c.lnThreat = true; }
+        else if (c.lnDodge > 0) c.lnDodge -= dt;
+        if (c.lnDodge <= 0 && c.lnThreat) { c.lnThreat = false; ln.oT = ln.o; }
+        const look = lanePt({ ...ln, o: ln.o }, ln.s + ln.d * 1.2);
+        if (!laneOk(look.x, look.z)) for (const oo of [0.25, -0.25, 0.5, -0.5, 0.75, -0.75, 1, -1]) {
+          const o = ln.o + oo, q = lanePt({ ...ln, o }, ln.s + ln.d * 1.2);
+          if (laneOk(q.x, q.z)) { ln.oT = o; break; }
+        }
+        ln.o += Math.max(-0.8 * dt, Math.min(0.8 * dt, ln.oT - ln.o));
+        let rem = c.v * (c.lnDodge > 0 ? 0.25 : 1) * dt;
+        while (rem > 1e-6 && c.ln === ln) {
+          const r = ROADS[ln.ri], len = Math.hypot(r.pts[ln.k + 1][0] - r.pts[ln.k][0], r.pts[ln.k + 1][1] - r.pts[ln.k][1]) || 1, avail = ln.d > 0 ? len - ln.s : ln.s;
+          if (rem <= avail) { ln.s += ln.d * rem; rem = 0; }
+          else {
+            ln.s += ln.d * avail; rem -= avail;
+            const nk = ln.k + ln.d;
+            if (nk >= 0 && nk < r.pts.length - 1) { ln.k = nk; ln.s = ln.d > 0 ? 0 : Math.hypot(r.pts[nk + 1][0] - r.pts[nk][0], r.pts[nk + 1][1] - r.pts[nk][1]); }
+            else { const edge = lanePt(ln); c.x = edge.x; c.z = edge.z; if (acquire(c, ln.ri)) break; }
+            if (c.ln === ln) { ln.d = -ln.d; rem = 0; }
+          }
+        }
+        if (c.ln !== ln) continue;
+        const q = lanePt(ln);
+        if ((laneOk(q.x, q.z) || !laneOk(ox, oz)) && !RAILS.cross(ox, oz, q.x, q.z)) {
+          const md = Math.hypot(q.x - ox, q.z - oz); c.x = q.x; c.z = q.z; if (md > 1e-5) { c.tx = (q.x - ox) / md; c.tz = (q.z - oz) / md; }
+          c.lnBlocks = 0;
+        } else {
+          if (performance.now() - c.lnBlockAt > 2000) c.lnBlocks = 0;
+          c.lnBlockAt = performance.now(); c.lnBlocks++; ln.d = -ln.d;
+          if (c.lnBlocks >= 2) c.ln = null;
+        }
+        if (c.ln) {
+          const X = c.cool > 0 ? null : nearX(c.x, c.z);
+          if (X && Math.random() < 0.65) { c.st = 'wait'; c.X = X[0]; c.G = X[1]; const dx = c.G[0] - c.x, dz = c.G[1] - c.z, d = Math.hypot(dx, dz) || 1; c.tx = dx / d; c.tz = dz / d; c.wt = 0.5 + Math.random() * 2; anim(c, 'idle'); continue; }
+          if (X) c.cool = 3;
+          continue;
+        }
+      }
+      const th = threatFrom(c);
+      if (th) {
+        const sp = th.mover.speed || 1, px = -th.mover.vz / sp, pz = th.mover.vx / sp, rx = c.x - th.mover.x, rz = c.z - th.mover.z, s0 = px * rx + pz * rz, dirs = s0 >= 0 ? [[px, pz], [-px, -pz]] : [[-px, -pz], [px, pz]], pick = dirs.find((q) => walkOk(c.x + q[0] * 1.2, c.z + q[1] * 1.2)) || dirs[0];
+        c.tx = pick[0]; c.tz = pick[1]; c.flee = 1; anim(c, 'run'); continue;
+      }
+      if (walkOk(c.x, c.z) && (c.lnTry = (c.lnTry || 0) - dt) <= 0) { c.lnTry = 1; if (acquire(c)) continue; }
       const nx = c.x + c.tx * c.v * dt, nz = c.z + c.tz * c.v * dt;
-      if (walkOk(nx, nz) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; continue; }   // v41：唔穿欄杆
+      if ((laneOk(nx, nz) || !laneOk(c.x, c.z)) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; continue; }   // v41：唔穿欄杆
       if (!walkOk(c.x, c.z)) {   // 俾車嚇走 / 俾人擠咗出馬路：每 0.5 秒搵最近嘅行人路方向行返上去，上咗先再守規矩
         if ((c.seek = (c.seek || 0) - dt) <= 0) { c.seek = 0.5; const h = seekFoot(c); if (h) { c.tx = h[0]; c.tz = h[1]; } }
-        if (!blocked(nx, nz) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } else turn(c); continue; }
+        if (!blocked(nx, nz) && (pedClear(nx, nz) || !pedClear(c.x, c.z)) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } else turn(c); continue; }
       const X = c.cool > 0 ? null : nearX(c.x, c.z);
       if (X && Math.random() < 0.65) {   // 行到過路線：停低等燈（面向對面）
         c.st = 'wait'; c.X = X[0]; c.G = X[1]; const dx = c.G[0] - c.x, dz = c.G[1] - c.z, d = Math.hypot(dx, dz) || 1; c.tx = dx / d; c.tz = dz / d; c.wt = 0.5 + Math.random() * 2; anim(c, 'idle');
@@ -2597,7 +2745,7 @@ const PEOPLE = (() => {
       if (X) c.cool = 3;
       turn(c);
     }
-    const okP = (o, x, z) => !blocked(x, z) && (walkOk(x, z) || !walkOk(o.x, o.z)) && !RAILS.cross(o.x, o.z, x, z);   // 唔好俾人擠出行人路 / 擠入鋪頭相後面 / 擠過欄杆
+    const okP = (o, x, z) => !blocked(x, z) && (walkOk(x, z) || !walkOk(o.x, o.z)) && (pedClear(x, z) || !pedClear(o.x, o.z)) && !RAILS.cross(o.x, o.z, x, z);   // 唔好俾人擠出行人路 / 擠入鋪頭相後面 / 擠過欄杆
     for (let i = 0; i < crowd.length; i++) {   // 行人互相避開：0.9 米內就兩個人各自向外移開（撞牆 / 出行人路就唔移）
       const a = crowd[i]; if (!a.on || a.down > 0) continue;
       for (let j = i + 1; j < crowd.length; j++) {
@@ -2657,7 +2805,7 @@ const PEOPLE = (() => {
     if (eligible.length) showBubble(eligible[Math.floor(Math.random() * eligible.length)], 'SCARED', true);
   }
   const _look = new THREE.Vector3();
-  const api = { step, N, crowd, knock, scare, hide: null, hideBubbles, PP };
+  const api = { step, N, crowd, knock, scare, hide: null, hideBubbles, PP, playerCar: null };
   return api;
 })();
 
@@ -2863,7 +3011,7 @@ let last = performance.now();
 let prT = 0, prN = 0;
 function autoRes(ms) {   // v45：連續 2 秒慢過 ~26 FPS 就降解像度，夠快再升返
   if (ms > 250) return; prT += ms; prN++; if (prT < 2000) return;
-  const avg = prT / prN; prT = prN = 0; const lo = TOUCH ? 0.75 : 1, nx = avg > 38 ? Math.max(lo, prNow - 0.25) : avg < 20 ? Math.min(PR_MAX, prNow + 0.25) : prNow;
+  const avg = prT / prN; prT = prN = 0; const lo = GPU_RESET ? 0.5 : TOUCH ? 0.75 : 1, nx = avg > 38 ? Math.max(lo, prNow - 0.25) : avg < 20 ? Math.min(PR_MAX, prNow + 0.25) : prNow;
   if (nx !== prNow) { prNow = nx; renderer.setPixelRatio(prNow); layout(); dispatchEvent(new Event('resize')); }
 }
 // v47 手機：大型靜態幾何（≥ 5 萬頂點）上載咗 GPU 之後放走 JS 嗰份（three.js 預設 CPU / GPU 兩邊都留，≈ 110 MB）。只放走已上載 + 開機 20 秒內冇改過（version 0）嘅 attribute
@@ -2875,8 +3023,8 @@ const GEOFREE = (() => {   // v50：欄杆嘅 position 要留（撞爛 / 現返�
   return { list: L, step() { if (done || performance.now() - t0 < 20000) return; done = true; let b = 0; for (const at of L) if (at.__up && at.version === 0) { b += at.array.byteLength; at.array = new at.array.constructor(0); } window.GEOFREE_MB = +(b / 1e6).toFixed(1);
     setTimeout(() => { const s = document.createElement('script'); s.src = 'hkcity_cars_m.js'; s.onload = () => { TRAFFIC.load3d(); setTimeout(() => window.DS_LOAD && DS_LOAD(), 15000); }; document.head.appendChild(s); }, 5000); } };   // v54：手機 3D 車載完 15 秒後先載方向路牌   // v49：手機開機高峰過咗先喺背景載 3D 車
 })();
-function frame(now) { requestAnimationFrame(frame); const ms = now - last, dt = Math.min(0.1, ms / 1000); last = now; autoRes(ms); GAME.step(dt); CULL.update(); renderer.render(scene, camera); GEOFREE.step(); }   // v45：dt 上限 0.05 → 0.1（低 FPS 唔再慢鏡）
-requestAnimationFrame(frame);
+function frame(now) { if (renderStopped) return; renderFrame = requestAnimationFrame(frame); const ms = now - last, dt = Math.min(0.1, ms / 1000); last = now; autoRes(ms); GAME.step(dt); CULL.update(); renderer.render(scene, camera); GEOFREE.step(); }   // v45：dt 上限 0.05 → 0.1（低 FPS 唔再慢鏡）
+renderFrame = requestAnimationFrame(frame);
 </script><script>window.BOOT && BOOT(0.933)</script>
 <script>window.RACE_ROUTE = {"n": 1633, "len": 3266, "p": "IwTUByME3AckBOQHJATsByUE9AclBPwHJgQECCYEDAgnBBQIJwQcCCgEJAgoBCwIKQQ0CCkEPAgqBEQIKgRMCCsEVAgrBFwILARkCCwEbAgtBHQILQR8CC4EhAguBIwILwSUCC8EnAgwBKQIMASsCDEEtAgxBLwIMgTECDIEzAgzBNQIMwTcCDQE5Ag0BOsINQTzCDUE+wg2BAMJNwQLCTcEEwk4BBsJOAQjCTkEKwk5BDMJOgQ7CToEQwk7BEsJOwRTCTwEWwk8BGMJPQRrCT0Ecwk+BHsJPgSDCT8Eiwk/BJMJQASbCUAEowlBBKsJQQSzCUIEuwlCBMMJQwTLCUME0wlEBNsJRATjCUUE6wlFBPMJRgT7CUYEAwpHBAsKRwQTCkgEGwpIBCMKSQQrCkkEMwpJBDsKSgRDCkoESwpLBFMKSwRbCkwEYwpMBGsKTQRzCk0EewpOBIMKTgSLCk8EkwpPBJsKUASjClAEqwpRBLMKUQS7ClEEwwpSBMsKUgTTClME2wpTBOMKVATrClQE8wpVBPoKVQQCC1YECgtWBBILVwQaC1cEIgtYBCoLWAQyC1kEOgtZBEILWgRKC1oEUgtbBFoLWwRiC1wEagtcBHILXQR6C14EggteBIoLXwSSC18EmgtgBKILYASqC2EEsgthBLoLYgTCC2IEygtjBNILYwTaC2QE4gtkBOoLZQTyC2UE+gtmBAIMZgQKDGcEEgxnBBoMaAQiDGgEKgxpBDIMaQQ6DGoEQgxqBEoMawRSDGsEWgxsBGIMbARqDG0EcgxtBHoMbgSCDG4EigxvBJIMbwSaDHAEogxwBKoMcQSyDHEEugxyBMIMcgTKDHME0gxzBNoMdATiDHQE6gx1BPEMdQT5DHYEAQ12BAkNdwQRDXcEGQ14BCENeAQpDXkEMQ15BDkNegRBDXoESQ17BFENewRZDXwEYQ18BGkNfQRxDX0EeQ1+BIENfwSJDX8EkQ2ABJkNgAShDYEEqQ2BBLENggS5DYIEwQ2DBMkNgwTRDYQE2Q2EBOENhQTpDYUE8Q2GBPkNhwQBDocECQ6IBBEOiAQZDokEIQ6JBCkOigQxDooEOQ6LBEEOiwRJDowEUQ6MBFkOjQRhDo0EaQ6OBHEOjwR5Do8EgQ6QBIkOkASRDpEEmQ6RBKEOkgSpDpIEsA6TBLgOkwTADpQEyA6VBNAO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BP00BQz9NQUU/TcFG/05BSP9OgUr/TwFM/09BTv9PwVD/UAFSv1CBVL9QwVa/UUFYv1HBWr9SAVy/UoFev1LBYH9TQWJ/U4Fkf1QBZn9UQWh/VMFqf1VBbD9VgW4/VgFwP1ZBcj9WwXQ/V0F2P1eBd/9YAXn/WIF7/1jBff9ZQX//WYFB/5oBQ7+agUW/msFHv5tBSb+bgUu/nAFNv5yBT7+cwVF/nUFTf52BVX+eAVd/noFZf57BW3+fQV0/n4FfP6ABYT+ggWM/oMFlP6FBZz+hgWj/ogFq/6KBbP+iwW7/o0Fw/6OBcv+kAXS/pEF2v6TBeL+lQXq/pYF8v6YBfr+mQUB/5sFCf+dBRH/nwUZ/6AFIf+iBSn/pAUw/6UFOP+nBUD/qQVI/6sFUP+sBVf/rgVf/7AFZ/+yBW//swV3/7UFfv+3BYb/uAWO/7oFlv+8BZ7/vgWm/78Frf/BBbX/wwW9/8QFxf/GBc3/yAXU/8oF3P/LBeT/zQXs/88F9P/RBfv/0gUDANQFCwDWBRMA1wUbANkFIwDbBSoA3QUyAN4FOgDgBUIA4gVKAOQFUQDmBVkA6AVhAOkFaQDrBXAA7QV4AO8FgADxBYgA8wWQAPUFlwD3BZ8A+AWnAPoFrwD8BbYA/gW+AAAGxgACBs4ABAbVAAYG3QAIBuUACQbtAAsG9QANBvwADwYEAREGDAETBhQBFQYbARcGIwEZBisBGwYzAR0GOgEeBkIBIAZKASIGUgEkBloBJgZhASgGaQEqBnEBLAZ5AS4GgAEwBogBMgaQATQGmAE2Bp8BOAanATkGrwE7BrcBPAa/AT0GxwE+Bs8BPwbXAUAG3wFBBucBQgbuAUMG9gFEBv4BRQYGAkYGDgJHBhYCSAYeAkgGJgJJBi4CSQY2AkoGPgJKBkYCSwZOAksGVgJLBl4CTAZmAkwGbgJMBnYCTQZ+Ak0GhgJNBo4CTQaWAk4GngJNBqYCTQauAk0GtgJNBr4CTAbGAkwGzgJMBtYCSwbeAksG5gJLBu4CSgb2AkoG/gJJBgYDSQYOA0gGFgNIBh4DRwYmA0YGLgNFBjYDRAY+A0MGRgNCBk0DQQZVAz8GXQM+BmUDPQZtAzwGdQM6Bn0DOQaFAzcGjQM2BpQDNAacAzIGpAMxBqwDLwa0Ay0GuwMrBsMDKQbLAycG0wMlBtoDIwbiAyEG6gMfBvIDHQb5AxwGAQQfBgUEJQYHBC0GCAQ1BggEPQYJBEUGCQRNBgoEVQYKBF0GCwRlBgsEbQYMBHUGDAR9Bg0EhQYNBI0GDgSVBg8EnQYPBKUGEAStBhAEtQYRBL0GEQTFBhIEzQYSBNUGEwTdBhME5QYUBO0GFAT1BhUE/QYVBAUHFgQMBxYEFAcXBBwHFwQkBxgELAcYBDQHGQQ8BxkERAcaBEwHGgRUBxsEXAccBGQHHARsBx0EdAcdBHwHHgSEBx4EjAcfBJQHHwScByAEpAcgBKwHIQS0ByEEvAciBMQHIgTMBw==", "wl": "b29vb29vb29vb3BwcHBwcHBwcHBwcFZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVlZWVmlVVVVVVFRUVFRUVFRUU1NTU1NTU1NTU1NTUlJSUlJSUlJXcGtmYVtWVFRUVFRUVFRUVFRUVFRTU1NTU1NTU1NTU1NTU1NSUlJSUlJSUlJSbHJycnJycl1TU1NTU1NTU1NTU1NUVFRUVFRUVFVbYGZscXFxcXFxcXFwbU1NTExMTExMTExMS0tLS0tLS0tLSkpKSkpKSkpKSkpKSkpSalZPT05OTk5NTU1NTUxMTExLS0tKSkpKSUlJSUlJSUlJSUlJSEhIR0dHRkZGRkZGRkZfX19fX19fX2FkZmhqamppaWloaGhoZ2dnZ2ZmZmVlZWVkZGRjY2NjY2NjY2Nja2tra2tra2xsbG1tbW5ubm9vb3BwcHFxcXJycnNzc3R1dXV1dXV1dXR0dHR0dHR0c3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3Nzc3NzcnJycnJycnJycnJycnFxcXFxcXFxcXFhWVlZWVlZWVlZWVlZWFhYWFhXV1dXVlZVVVVVVVVVVVVVVVVUVFRUVFRUVlpeYmZqbm5ubm5ubm5ubm5ubm5ubm1tbGtra2tra2tveHBtbW1tbW1tbW5ubm9vb29vcHJyc3R0dXZ2d3h4eHh4eHh4eHh4eHh4eHh4eHh4eHh4MjIyMjIyMjIyMjIyMjIyeHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHd0cnFvbWxqaWdmZmVlZGRjY2JiYWFhYWFhYWFhYWJiYmNjZGRkZWZnaGlqa21wdHh4eHgyMjIyMjIyMjIyMjIyMjIyMjIyMjM0NTU2Nzg5OTk5Ojo6Ojs7Ozs8PDw8PD09PT07MzIyMjIyMjIyMjJANzIyMjIyMjIyMjIzMzQ0NTU2Njc3Nzg4OTk6Ojo7Ozw8PT0+Pz9AQEFBQUFBQUFBQUBAQEA/Pz8/Pz8/Pz8/Pj4+Pj4+Pj4+Pj4+Pj4+Pj09PT09PT09PT09PT09PT09PT09PTw8PDw8PDw8PDw8PDw8Ozs7Ozs7Ozs7Ozs6Ojo6Ojo6Ojo6Ojo6Ojo6OTk5OTk5OTk5OTk5ODg4ODg4ODg4ODg4ODc3Nzc3Nzc3Nzc3Nzc2NjY2NjY2NjY2NjY2NjY2NjY2NjY2Njc3Nzc4ODg5OTk6Ojo6Ojs7Ozs7Ozw8PDw8PT0+P0BBQ0JAQEBAQEBAQEN4eDIyMjIyMjJYUUlCPDYyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyeHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4b25sbGtra2tra2tra2tsbHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh3WEpCQEBAQEBAQEFERkhKTE5PUVNVVlhaW11fbGhoaGhoaGhoaGhoaWlpampqamptdHh4eHh4eHh3d3Z1dXRzc3Nzc3Nzc3Z3bm5tbWxsa2tqamppaWhoZ2dmZmVlZGRjY2JiYWFhYGBfX15eXV1dXV1dXV1dbFxcXFxcXFtbW1tbW1tbW1tbW1tbW1tbW1tbW1tbW1tcXFxcXV1dXl5eX19gYGFiYmFgYF9fX19fXl5eXl5eXl5eXl5eXmBfX19fX19eXl1dXV1dXV1dXV1dXl5fX19gYGBgYGBgYGBhYWFhYWJiYmJiYmNjY2NjY2R0eHhyb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vb29vbw==", "wr": "ZmZmZmZmZWVlZWVlZWRkZGRkZGRkY2NjY2NjY2NjY2NiYmJiYmJiYmJgXFlVUU1KR0dGRkZFRUVFRUVFR3h4S0tLS0pKSklJSUlISEhHR0dHRkZGRkVFRURERERDQ0NDQkJCQkJBQUFBQUFBQUFBQUVZW0JCQkJCQkJCQkFBQUFBQUFBQUFBQUFBQUFNXl5eXl5ZQUFBQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQFc/PDw8PDw8PDw8PDw8PD09PU1fYGBfVEg+Pj4+Pj4+Pj4+Pj8/Pz8/Pz8/Pz9AQEBAQUFBQUFBQkJCQkJCQkNbZWVmZmZmZmdnZkQ+Pj4+Pj4+Pj09PT09PT09PT09PT09PT4+Pj4+Pj4+Pj4+Pj4+Pj4+Pj4+QkdNUlhdZWZmZmZmZmZmZmZlZWVlZGRkZGNjY2NiYmJhYWFgYGBgYGBgYGBgXl5eXl5eXl5eXl5eXl5eXl5eX19fX19fX19fX19fX19fX19fX19fW1ZRTUlEQD8/Pz8/Pz8/P0BAQEBAQEBAQEBAQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFCQkJCQkNQVFFPT09PT09PT09PT09PT09PUFFTWF1iZ2twcHBwb29vb29ubm5ubm5ubm5ubm91amZmZmZmZWVkZGNjYmJeW1hUUU5KSklISEdGRUVEQ0NDQ0NDQ0NERklQXnd4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4d3Z2dXV0dHNzcnJxcXFwcG9vbm1tbW1tbW1tbW5gRjk0MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjc/RklLTE1OT1BRUlJRUVBQT09OTk1NTEY9NDIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyNTU1NTU1NTU1NTU1NTU1MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjQ6Pz8/QEBAQEBAQDs2MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIzOD1CSEhJSUlJSkpKSkpKS0tLS0tLS0tLS0tLTExMTExMTExMTEAyMjIyMjIyMkBMTEtLS0pKSkpJSUlJSUhISEhISEdHR0ZGRURDQ0NDQ0NDQ0ZMVTIyMjIyMjIyMmtra3h4eHgyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIyMjJPeHh4eHh4eHh4eHh4eHh4eHh3d3d3d3Z2dXV1dXV1dXVzcW9tbGtra2tra2tra2tra2tsa2tra2tra2tra2tra2tra2tra2tramppaWlpaWhnZ2dnZ2dnanF4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4dmdYSToyMjIyMjIyMjIyMjIyMjIyMjJ4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4dnRycW9ubW1sa2tra2tra2tra2tra2xsbGxsbGxtbW1tbW1tbGxsbGxsbGxsbGxsa2trampqamlpaGhoaGhoaGlpampqamtra2xsbG1tbW5ubm5vb29vb3BwcHBwcXFxcXFxcXJydXR0dHNzc3Nzc3Nzc3NycnJycnJycnJycnJzcnJycXFwcHBvb25ubW1sa2tra2tra2tubm5ubm5vb29wcHBwcHBwcHBwcHJ4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHVzc3Nzc3Nzc3NzdHR0dXV1dnZ3d3h4eHh4eHh4eHh4eHhFRUVFRUVFRERERERERERERERERERERERLUVdeZGRkZGRkZGRkZGRkZGRkZGRkZGRmZg==", "streets": ["NATHAN ROAD", "SALISBURY ROAD", "CANTON ROAD", "JORDAN ROAD"]};
 </script><script>window.BOOT && BOOT(0.933)</script>
@@ -3832,6 +3980,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   }
   const car = { mesh: null, kind: 0, x: 0, z: 0, y: 0, pitch: 0, h: 0, v: 0, steer: 0, slip: 0, parked: [] };
   let inCar = false;
+  PEOPLE.playerCar = () => inCar ? { x: car.x, z: car.z, vx: Math.sin(car.h) * car.v, vz: Math.cos(car.h) * car.v, w: car.kind === 2 || car.big ? 1.15 : 0.95 } : null;
 
   // ---------- 地圖工具 ----------
   const segs = [];   // 所有路段（小地圖 + 追車 AI）
@@ -3978,6 +4127,25 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     $('omtr').hidden = false; $('oprompt').hidden = true; beep(660, 0.1, 'sine', 0.06);
   }
   function closeMetro() { metro = null; metroFreeRide = false; metroFromInside = false; $('omtr').hidden = true; }
+  function bldClear(x, z, r) {
+    for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (blocked(x + Math.cos(a) * r, z + Math.sin(a) * r)) return false; }
+    return true;
+  }
+  function exitSpot(o) {
+    const clear = (x, z) => !solid(x, z) && !onRoad(x, z) && bldClear(x, z, 1.0);
+    if (clear(o.ax, o.az)) return { x: o.ax, z: o.az };
+    if (clear(o.fx, o.fz)) return { x: o.fx, z: o.fz };
+    for (let r = 1; r <= 30; r++) for (let a = 0; a < 16; a++) {
+      const x = o.fx + Math.cos(a * 0.3927) * r, z = o.fz + Math.sin(a * 0.3927) * r;
+      if (clear(x, z)) return { x, z };
+    }
+    let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }
+    for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) {
+      const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r;
+      if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; }
+    }
+    return { x, z };
+  }
   function ride(o, freeRide = metroFreeRide, fromInside = metroFromInside, toPlatform = false) {   // toPlatform：淨係月台 menu 搭車先落目的地月台；出返街照舊出街
     if (!freeRide) {
       if (money < 5) { big('八達通唔夠錢（要 $5）', '#ff765e'); return false; }
@@ -4002,8 +4170,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
           }
         }
         if (fromInside && window.IND) IND.leave(true);
-        let x = o.ax, z = o.az; if (solid(x, z) || onRoad(x, z)) { x = o.fx; z = o.fz; }   // 喺樓梯口前面出返嚟，面向街
-        for (let r = 1; r <= 30 && (solid(x, z) || onRoad(x, z)); r++) for (let a = 0; a < 16; a++) { const qx = o.fx + Math.cos(a * 0.3927) * r, qz = o.fz + Math.sin(a * 0.3927) * r; if (!solid(qx, qz) && !onRoad(qx, qz)) { x = qx; z = qz; break; } }   // v53：前面都係樓就揀最近嘅空位，唔好出咗站即刻卡喺樓入面
+        const { x, z } = exitSpot(o);
         hero.x = x; hero.z = z; hero.y = 0; hero.vy = 0; hero.h = o.yaw; cam.wyaw = o.yaw + Math.PI; cam.wx = x; cam.wz = z;
         spawnGivers(); big(`${MTR.st[o.e[0]][0]} ${o.e[1]} 出口`, stCol(o.e[0]));
         if (fromInside) { beep(784, 0.18, 'sine', 0.07); setTimeout(() => beep(622, 0.3, 'sine', 0.07), 200); }
@@ -4197,7 +4364,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   };
 
   // ---------- 每格 ----------
-  const _v = new THREE.Vector3();
+  const _v = new THREE.Vector3(), HERO_R = 0.3;
   function step(dt) {
     drvTick();
     const L = window.LIB, I = window.IND; if (L) L.step(dt); if (I) I.step(dt);
@@ -4213,8 +4380,17 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
         const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = -fz, rz = fx, dx = fx * my + rx * mx, dz = fz * my + rz * mx, l = Math.hypot(dx, dz) || 1;
         hero.h += wrapA(Math.atan2(dx / l, dz / l) - hero.h) * Math.min(1, 12 * dt);
         const nx = hero.x + Math.sin(hero.h) * sp * dt, nz = hero.z + Math.cos(hero.h) * sp * dt;
-        const blk = iin ? I.walk : lin ? L.walk : (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');
-        const moveBlk = iin ? I.canMove : blk;
+        const base = (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');
+        const blk = iin ? I.walk : lin ? L.walk : base;
+        let moveBlk = iin ? I.canMove : blk;
+        if (!iin && !lin) {
+          const wide = (x, z) => {
+            if (base(x, z)) return true;
+            for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (base(x + Math.cos(a) * HERO_R, z + Math.sin(a) * HERO_R)) return true; }
+            return false;
+          };
+          moveBlk = wide(hero.x, hero.z) ? base : wide;
+        }
         if (!moveBlk(nx, hero.z)) hero.x = nx; if (!moveBlk(hero.x, nz)) hero.z = nz;
       }
       if (!int) { const q = SHOPF.pushOut(hero.x, hero.z); if (q && !solid(q[0], q[1])) { hero.x = q[0]; hero.z = q[1]; } }
@@ -4398,7 +4574,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   function side(dt) { drvTick(); if (!(window.LIB && LIB.inside) || (window.IND && IND.inside)) stepMission(dt); hud(); }
   addEventListener('pointerdown', () => { if (active) lastDrag = performance.now(); });
   addEventListener('pointermove', (e) => { if (active && e.buttons) lastDrag = performance.now(); });
-  return { enter, exit, step, hero, car, onRoad: (x, z) => onRoad(x, z), drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, beep, big, mission, startMission, solid, inWater, exits: EXS, stations: MTR.st, openMetro, closeMetro, ride, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
+  return { enter, exit, step, hero, car, onRoad: (x, z) => onRoad(x, z), drv: DRV, get active() { return active; }, get money() { return money; }, get inCar() { return inCar; }, addMoney, beep, big, mission, startMission, solid, inWater, exits: EXS, stations: MTR.st, openMetro, closeMetro, ride, exitSpot, side, leaveCar,   // leaveCar：v44 copcar.js（差佬拉你落車）
    
     carNear: () => !(!mission.type && nearExit(3.5)) && !!(nearestParked(4.5) || nearestTraffic(5)) };   // v41：打緊交（freefight.js）手機顯示「上車」掣用；同 act() 次序一樣（地鐵口優先）
 })();
