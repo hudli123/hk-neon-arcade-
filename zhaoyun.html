@@ -1,5 +1,5 @@
 <meta charset="utf-8">
-<title>趙雲無雙</title>
+<title>單騎破陣</title>
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#000;touch-action:none;user-select:none;-webkit-user-select:none}
@@ -77,20 +77,20 @@ kbd{display:inline-block;min-width:20px;padding:2px 7px;border-radius:6px;backgr
 </style>
 <body>
 <div id="hud" hidden>
-  <div id="me"><div id="face">趙雲</div><div class="bars"><div class="lbl">體力</div><div class="bar" id="hpb"><i></i></div><div class="lbl">無雙</div><div class="bar" id="msb"><i></i></div></div></div>
+  <div id="me"><div id="face">趙雲</div><div class="bars"><div class="lbl">體力</div><div class="bar" id="hpb"><i></i></div><div class="lbl">龍氣</div><div class="bar" id="msb"><i></i></div></div></div>
   <div id="chain"><b>0</b><span>連擊 CHAIN</span></div>
   <canvas id="mini" width="220" height="220"></canvas>
   <div id="ko">擊破 <b>0</b></div>
   <div id="boss" hidden><span id="bossname">魏將 張郃</span><div class="bar"><i></i></div></div>
-  <div id="help">WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I 無雙・Q/E 轉視角・M 音樂</div>
+  <div id="help">WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I 龍怒・Q/E 轉視角・M 音樂</div>
 </div>
 <div id="ctl"><div id="stick"><i></i></div>
   <div class="b" id="bA" data-k="atk">攻</div><div class="b" id="bC" data-k="chg">蓄</div>
-  <div class="b" id="bJ" data-k="jump">跳</div><div class="b" id="bD" data-k="dodge">閃</div><div class="b" id="bM" data-k="musou">無雙</div>
+  <div class="b" id="bJ" data-k="jump">跳</div><div class="b" id="bD" data-k="dodge">閃</div><div class="b" id="bM" data-k="musou">龍怒</div>
 </div>
 <div id="banner"></div>
 <div id="flash"></div>
-<div class="screen" id="title"><h1>趙雲無雙</h1><p>單騎破陣：擊破魏軍，引出敵將張郃</p><p id="loading">Loading…</p><div id="pick" hidden><button id="start">出陣</button><button id="startGY">關羽</button></div></div>
+<div class="screen" id="title"><h1>單騎破陣</h1><p>常山趙子龍：擊破魏軍，引出敵將張郃</p><p id="loading">Loading…</p><div id="pick" hidden><button id="start">出陣</button><button id="startGY">關羽</button></div></div>
 <div id="tb"><button id="bPause" title="Pause (P)">⏸</button><button id="bMute" title="Sound (M)">🔊</button></div>
 <div id="keys" class="gone"></div>
 <div class="screen" id="pause" hidden><h1 id="ptitle">PAUSED</h1><div id="pkeys"></div><button id="resume">RESUME</button></div>
@@ -206,16 +206,16 @@ const ZY_URLQ = new URLSearchParams(location.search.slice(1) + '&' + location.ha
 const LANG = ((ZY_URLQ.get('lang') || navigator.language || 'en').toLowerCase().startsWith('zh')) ? 'zh' : 'en';
 const CG = !!window.CG_EDITION;   // CrazyGames 版：原創名稱（唔用「無雙」），只用 CC0 音效
 const TX = {
-  zh: { title: CG ? '趙雲・龍槍' : '趙雲無雙', sub: '單騎破陣：擊破魏軍，引出敵將張郃', start: '出陣', again: '再戰', rotate: '請將手機打橫玩 ↻', face: '趙雲',
-    hp: '體力', mus: CG ? '龍氣' : '無雙', chain: '連擊 CHAIN', ko: '擊破', boss: '魏將 張郃', btn: ['攻', '蓄', '跳', '閃', CG ? '龍怒' : '無雙'],
-    help: `WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I ${CG ? '龍怒' : '無雙'}・Q/E 轉視角・P 暫停・M 聲音`,
-    kos: (n) => `${n} 人擊破！`, bossDown: '敵將 張郃 擊破！', musou: CG ? '龍怒・天翔' : '龍膽・無雙', bun: '肉包：體力回復', wine: CG ? '戰鼓：龍氣回復' : '戰鼓：無雙回復',
+  zh: { title: CG ? '趙雲・龍槍' : '單騎破陣', sub: CG ? '單騎破陣：擊破魏軍，引出敵將張郃' : '常山趙子龍：擊破魏軍，引出敵將張郃', start: '出陣', again: '再戰', rotate: '請將手機打橫玩 ↻', face: '趙雲',
+    hp: '體力', mus: '龍氣', chain: '連擊 CHAIN', ko: '擊破', boss: '魏將 張郃', btn: ['攻', '蓄', '跳', '閃', '龍怒'],
+    help: `WASD 移動・J 攻擊・K 蓄力・Space 跳・L 閃避・I 龍怒・Q/E 轉視角・P 暫停・M 聲音`,
+    kos: (n) => `${n} 人擊破！`, bossDown: '敵將 張郃 擊破！', musou: '龍怒・天翔', bun: '肉包：體力回復', wine: '戰鼓：龍氣回復',
     bossIn: '敵將 張郃 出現！', go: '出陣！', win: '勝利', lose: '敗走',
-    pickZ: ['趙雲', '長槍・迅捷連刺'], pickG: ['關羽', '關刀・剛猛橫掃'], faceG: '關羽', musouG: CG ? '青龍・天斬' : '武聖・青龍無雙',
+    pickZ: ['趙雲', '長槍・迅捷連刺'], pickG: ['關羽', '關刀・剛猛橫掃'], faceG: '關羽', musouG: '青龍・天斬',
     stats: (k, c, t, b) => `擊破數 <b>${k}</b>・最大連擊 <b>${c}</b><br>時間 ${t}・最佳擊破 ${b}`,
     paused: '暫停', resume: '繼續', goal: '目標：擊破 500 人 → 敵將張郃出現，打低佢就勝利',
-    keys: [['W / A / S / D', '移動'], ['J', '攻擊（連撳出連招）'], ['K', '蓄力攻擊'], ['Space', '跳'], ['L', '閃避'], ['I', `${CG ? '龍怒' : '無雙'}（條氣滿先用得）`], ['Q / E', '轉視角'], ['P', '暫停'], ['M', '開／關聲音']],
-    keysTouch: [['左邊拖', '移動'], ['攻 / 蓄', '攻擊／蓄力'], ['跳 / 閃', '跳／閃避'], [CG ? '龍怒' : '無雙', '條氣滿先用得'], ['右邊拖', '轉視角']] },
+    keys: [['W / A / S / D', '移動'], ['J', '攻擊（連撳出連招）'], ['K', '蓄力攻擊'], ['Space', '跳'], ['L', '閃避'], ['I', '龍怒（條氣滿先用得）'], ['Q / E', '轉視角'], ['P', '暫停'], ['M', '開／關聲音']],
+    keysTouch: [['左邊拖', '移動'], ['攻 / 蓄', '攻擊／蓄力'], ['跳 / 閃', '跳／閃避'], ['龍怒', '條氣滿先用得'], ['右邊拖', '轉視角']] },
   en: { title: 'DRAGON SPEAR', sub: 'One rider against an army. Break the Wei lines and draw out General Zhang He.', start: 'FIGHT', again: 'FIGHT AGAIN',
     rotate: 'Rotate your phone ↻', face: 'ZHAO', hp: 'HEALTH', mus: 'DRAGON RAGE', chain: 'HIT CHAIN', ko: 'KO', boss: 'Wei General ZHANG HE',
     btn: ['ATK', 'CHG', 'JUMP', 'DODGE', 'RAGE'], help: 'WASD move · J attack · K charge · Space jump · L dodge · I dragon rage · Q/E camera · P pause · M sound',
@@ -2305,11 +2305,14 @@ window.BGM_DATA = {"ninjas": "SUQzBAAAAAAAYVRCUE0AAAAFAAADMTM2AFRFTkMAAAAWAAADTE
   const t = document.getElementById('title'); if (t) t.insertAdjacentHTML('beforeend', '<div class="bgm-credit">' + CREDIT + '</div>');
 })();
 </script>
-<script>// 問答模式：zhaoyun.html?quiz=<題庫名> → 載入 quiz_<題庫名>.js + zhaoyun_quiz.js；冇 ?quiz 就同原本一樣
+<script>// 問答/生日模式：zhaoyun.html?quiz=<題庫名> → 載入 quiz_<題庫名>.js + zhaoyun_quiz.js；
+// #bday=<payload> → zhaoyun_bday.js（解碼出題庫）+ zhaoyun_quiz.js；兩個參數都冇就同原本一樣
 (() => {
-  const q = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1)).get('quiz');
-  if (!q || !/^[a-z0-9_-]+$/.test(q)) return;
+  const P = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));
   const add = (src, then) => { const s = document.createElement('script'); s.src = src; s.onload = then; document.body.appendChild(s); };
+  if (P.has('bday')) { add('zhaoyun_bday.js', () => add('zhaoyun_quiz.js')); return; }
+  const q = P.get('quiz');
+  if (!q || !/^[a-z0-9_-]+$/.test(q)) return;
   add('quiz_' + q + '.js', () => add('zhaoyun_quiz.js'));
 })();
 </script>
