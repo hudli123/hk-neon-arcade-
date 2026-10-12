@@ -20,21 +20,21 @@
 #ko{display:none!important}
 #qp{position:fixed;left:50%;top:10px;transform:translateX(-50%);width:min(620px,52vw);background:rgba(20,8,0,.78);border:2px solid #c9953b;border-radius:12px;padding:8px 14px 10px;color:#fff3dc;z-index:20;pointer-events:none;font-size:16px;line-height:1.45;box-shadow:0 4px 20px rgba(0,0,0,.5)}
 #qp .hd{font-size:13px;color:#ffd27a;letter-spacing:1px;margin-bottom:2px}
-#qp .qt{font-weight:700}
+#qp .qt{font-weight:700;overflow-wrap:anywhere}
 #qp .op{display:grid;grid-template-columns:1fr 1fr;gap:3px 12px;margin-top:6px}
-#qp .op span{white-space:nowrap}
+#qp .op span{overflow-wrap:anywhere}
 #qp .op b{display:inline-block;width:1.5em;height:1.5em;line-height:1.5em;text-align:center;border-radius:50%;color:#111;margin-right:6px;font-size:13px}
 #qp .op .x{opacity:.35;text-decoration:line-through}
 .qlab{position:fixed;left:0;top:0;transform:translate(-50%,-100%);padding:3px 10px;border-radius:999px;background:rgba(0,0,0,.72);border:2px solid;color:#fff;font-weight:700;font-size:17px;white-space:nowrap;pointer-events:none;z-index:19;text-shadow:0 1px 2px #000}
 .qlab.edge{opacity:.85;font-size:14px}
 #qcard{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,.55);z-index:50}
-#qcard>div{max-width:min(560px,90vw);background:linear-gradient(#3a1a06,#1d0c02);border:3px solid #e0b050;border-radius:16px;padding:18px 22px;color:#fff3dc;text-align:center;font-size:18px;line-height:1.6;box-shadow:0 8px 40px #000}
+#qcard>div{max-width:min(560px,90vw);background:linear-gradient(#3a1a06,#1d0c02);border:3px solid #e0b050;border-radius:16px;padding:18px 22px;color:#fff3dc;text-align:center;font-size:18px;line-height:1.6;box-shadow:0 8px 40px #000;overflow-wrap:anywhere}
 #qcard h2{margin:0 0 6px;font-size:30px}
 #qcard .ans{font-size:24px;font-weight:700;color:#ffe08a;margin:6px 0}
 #qcard .why{background:rgba(255,255,255,.08);border-radius:10px;padding:8px 12px;margin:8px 0 12px}
 #qcard button{font-size:20px;padding:8px 26px;border-radius:10px;border:0;background:#e0b050;color:#2a1000;font-weight:700;cursor:pointer}
 #qreview{max-height:38vh;overflow:auto;text-align:left;max-width:min(620px,92vw);margin:6px auto 12px;font-size:15px;line-height:1.5;background:rgba(0,0,0,.35);border-radius:10px;padding:8px 12px}
-#qreview p{margin:4px 0 8px}
+#qreview p{margin:4px 0 8px;overflow-wrap:anywhere}
 #bdayover{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;background:rgba(10,4,0,.82);z-index:80;overflow:hidden}
 #bdayover>div{position:relative;max-width:min(560px,92vw);background:linear-gradient(#3a1a06,#1d0c02);border:3px solid #e0b050;border-radius:18px;padding:26px 30px;color:#fff3dc;text-align:center;box-shadow:0 10px 50px #000;z-index:2}
 #bdayover h1{margin:0 0 10px;font-size:34px;color:#ffe08a}
