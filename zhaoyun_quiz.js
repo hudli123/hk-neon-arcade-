@@ -57,7 +57,8 @@
     document.title = `${BDAY.name}破陣・生日快樂！`;
     t.querySelector('p').insertAdjacentHTML('afterend', `<p style="max-width:560px;font-size:15px;opacity:.9">每題有 4 個敵將揹住答案，打倒正確嗰個！答晒 ${QN} 題，張郃就會出現。</p>`);
   } else {
-    t.querySelector('p').textContent = `${D.title}・${D.topic || ''}`;
+    t.querySelector('p').textContent = [D.title, D.topic].filter(Boolean).join('・');
+    document.title = '單騎破陣・' + D.title;
     t.querySelector('p').insertAdjacentHTML('afterend', `<p style="max-width:560px;font-size:15px;opacity:.9">每題有 4 個敵將，各自揹住答案 A–D。打倒<b>正確答案</b>嗰個！打錯會扣血。答晒 ${QN} 題，敵將張郃就會出現。</p>`);
   }
   TX.goal = `目標：打倒寫住正確答案嘅敵將（A–D）。答晒 ${QN} 題 → 張郃登場！`;
