@@ -6,7 +6,7 @@
   if (!D || !D.questions || !D.questions.length) return;
   const QS = D.questions, QN = QS.length, LET = 'ABCD';
   const COL = ['#ff5a5a', '#3fa9ff', '#3dff7a', '#ffd24a'];
-  const ANS_HP = 60, ANS_R = 9, MAX_CROWD = 150, WRONG_DMG = 40;
+  const ANS_HP = 60, ANS_R = 9, MAX_CROWD = 150, WRONG_DMG_PCT = 0.2;
 
   const Q = { on: false, idx: 0, tries: 0, ids: [], nextT: 0, firstTry: 0, missed: [], done: false, card: null, cardT: 0 };
   window.QZ = Q;
@@ -116,7 +116,7 @@
     } else {
       Q.tries++; if (Q.tries === 1) Q.missed.push(Q.idx);
       Q.crossed[a] = 1; drawPanel();
-      player.hp = Math.max(1, player.hp - WRONG_DMG); hurtFlash = 1; camShake = Math.max(camShake, 0.5); SND.hurt();
+      player.hp = Math.max(1, player.hp - player.max * WRONG_DMG_PCT); hurtFlash = 1; camShake = Math.max(camShake, 0.5); SND.hurt();
       banner(`✗ ${LET[a]}．${q.opts[a]} 唔係答案！`, '#ff6a6a', true);
     }
   }
