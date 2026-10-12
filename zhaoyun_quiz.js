@@ -52,9 +52,9 @@
 
   const t = $('title');
   if (BDAY) {
-    const h1 = t.querySelector('h1'); if (h1) h1.textContent = `${BDAY.name}無雙`;
+    const h1 = t.querySelector('h1'); if (h1) h1.textContent = `${BDAY.name}破陣`;
     t.querySelector('p').textContent = `${BDAY.name}${BDAY.age ? BDAY.age + '歲' : ''}生日快樂！`;
-    document.title = `${BDAY.name}無雙・生日快樂！`;
+    document.title = `${BDAY.name}破陣・生日快樂！`;
     t.querySelector('p').insertAdjacentHTML('afterend', `<p style="max-width:560px;font-size:15px;opacity:.9">每題有 4 個敵將揹住答案，打倒正確嗰個！答晒 ${QN} 題，張郃就會出現。</p>`);
   } else {
     t.querySelector('p').textContent = `${D.title}・${D.topic || ''}`;

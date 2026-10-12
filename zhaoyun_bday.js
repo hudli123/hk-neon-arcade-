@@ -49,7 +49,7 @@
     });
 
     window.QUIZ_DATA = {
-      title: name + '無雙',
+      title: name + '破陣',
       topic: '生日快樂',
       bday: { name, age, from, msg },
       questions,
