@@ -1796,9 +1796,11 @@ function hud(rdt) {
 }
 
 // ============ GAME ============
+let MODE = 'normal';   // 問答類別，俾 track() 分開計：pack / bday / quiz / normal
 function track(event, seconds) {
   const bucket = seconds == null ? '' : '/' + (seconds < 15 ? '0-15s' : seconds < 30 ? '15-30s' : seconds < 60 ? '30-60s' : seconds < 120 ? '1-2m' : seconds < 300 ? '2-5m' : '5m+');
-  const path = `game/zhaoyun/${event}${bucket}`;
+  const path = `game/zhaoyun/${MODE === 'normal' ? '' : MODE + '/'}${event}${bucket}`;
+  try { if (window.count) { window.count(path); if (event === 'win' || event === 'over') window.count(path + '-time'); } } catch (e) {}
   try { const log = JSON.parse(localStorage.getItem('playlog') || '[]'); log.push([Date.now(), path]); localStorage.setItem('playlog', JSON.stringify(log.slice(-500))); } catch (e) {}
   try { if (parent !== window) parent.postMessage({ type: 'play', path, seconds }, '*'); } catch (e) {}
 }
@@ -2305,16 +2307,18 @@ window.BGM_DATA = {"ninjas": "SUQzBAAAAAAAYVRCUE0AAAAFAAADMTM2AFRFTkMAAAAWAAADTE
   const t = document.getElementById('title'); if (t) t.insertAdjacentHTML('beforeend', '<div class="bgm-credit">' + CREDIT + '</div>');
 })();
 </script>
+<script src="count.js"></script>
 <script>// 問答/生日模式：zhaoyun.html?quiz=<題庫名> → 載入 quiz_<題庫名>.js + zhaoyun_quiz.js；
 // #pack=<payload> → zhaoyun_pack.js（出版社題庫）
 // #bday=<payload> → zhaoyun_bday.js（解碼出題庫）+ zhaoyun_quiz.js；冇就同原本一樣
 (() => {
   const P = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));
   const add = (src, then) => { const s = document.createElement('script'); s.src = src; s.onload = then; document.body.appendChild(s); };
-  if (P.has('pack')) { add('zhaoyun_pack.js', () => add('zhaoyun_quiz.js')); return; }
-  if (P.has('bday')) { add('zhaoyun_bday.js', () => add('zhaoyun_quiz.js')); return; }
+  if (P.has('pack')) { MODE = 'pack'; add('zhaoyun_pack.js', () => add('zhaoyun_quiz.js')); return; }
+  if (P.has('bday')) { MODE = 'bday'; add('zhaoyun_bday.js', () => add('zhaoyun_quiz.js')); return; }
   const q = P.get('quiz');
   if (!q || !/^[a-z0-9_-]+$/.test(q)) return;
+  MODE = 'quiz';
   add('quiz_' + q + '.js', () => add('zhaoyun_quiz.js'));
 })();
 </script>
