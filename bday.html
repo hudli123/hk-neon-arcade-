@@ -36,8 +36,9 @@ section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-rad
 <div class="linkbox" id="linkbox"><label for="gameLink" class="legend">你嘅生日遊戲 link</label><textarea id="gameLink" class="linkout" readonly aria-label="生日遊戲 link"></textarea><div class="actions link-actions"><button type="button" id="copy">複製</button><button type="button" class="secondary" id="open">開嚟試玩</button><button type="button" class="secondary" id="share">WhatsApp 分享</button></div><p id="copyState" class="hint" aria-live="polite"></p></div>
 </section>
 </form>
-<p class="privacy">資料只會寫喺條 link 入面，我哋唔會儲存任何資料。遊戲最好用電腦玩，或者將手機打橫玩。</p>
+<p class="privacy">資料只會寫喺條 link 入面，我哋唔會儲存任何資料。本站會匿名計下「幾多人開個頁」。遊戲最好用電腦玩，或者將手機打橫玩。</p>
 </main>
+<script src="count.js"></script>
 <script>
 (() => {
   'use strict';
@@ -159,6 +160,7 @@ section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-rad
     const payload = { v: 1, n: name, a: age, f: clampText(document.getElementById('from').value, 12), m: clampText(document.getElementById('message').value, 80), q: questions };
     const url = new URL('zhaoyun.html', location.href); url.hash = `bday=${encodePayload(payload)}&lang=zh`;
     const out = document.getElementById('gameLink'); out.value = url.href;
+    if (window.count) window.count('game/zhaoyun/bday-made');
     document.getElementById('linkbox').classList.add('show'); document.getElementById('copyState').textContent = '';
     document.getElementById('linkbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });

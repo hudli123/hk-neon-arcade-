@@ -21,8 +21,9 @@ section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-rad
 <section aria-labelledby="questions-heading"><h2 id="questions-heading">題目卡（3–20 題）</h2><p class="hint">選項填好後，撳正確答案旁邊嘅圓圈。</p><div id="questions"></div><div class="actions"><button type="button" class="secondary" id="add">＋ 加一題</button></div><p class="error" id="questionsError" role="alert"></p></section>
 <section><button type="submit" id="make">產生遊戲 link</button><p class="error" id="formError" role="alert"></p><div class="linkbox" id="linkbox"><label for="gameLink" class="legend">你嘅遊戲 link</label><textarea id="gameLink" class="linkout" readonly aria-label="遊戲 link"></textarea><div class="actions link-actions"><button type="button" id="copy">複製</button><button type="button" class="secondary" id="open">開嚟試玩</button><button type="button" class="secondary" id="share">WhatsApp 分享</button></div><p id="linkState" class="hint" aria-live="polite"></p></div></section>
 </form>
-<p class="privacy">題目只會寫入條 link，我哋唔會儲存任何資料。</p>
+<p class="privacy">題目只會寫入條 link，我哋唔會儲存任何資料。本站會匿名計下「幾多人開個頁」，唔會儲名同答案。</p>
 </main>
+<script src="count.js"></script>
 <script src="quiz_respect.js"></script>
 <script>
 (() => {
@@ -187,6 +188,7 @@ section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-rad
     const payload = { v: 1, t: title, s: topic, q: questions };
     const url = new URL('zhaoyun.html', location.href); url.hash = `pack=${encodePayload(payload)}&lang=zh`;
     document.getElementById('gameLink').value = url.href;
+    if (window.count) window.count('game/zhaoyun/pack-made');
     document.getElementById('linkbox').classList.add('show'); document.getElementById('linkState').textContent = '';
     document.getElementById('linkbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
   });
