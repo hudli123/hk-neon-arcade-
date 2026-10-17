@@ -51,7 +51,7 @@
 .bconf{position:absolute;top:-8%;font-size:22px;animation:bdfall linear infinite;pointer-events:none;z-index:1}
 @keyframes bdfall{to{transform:translateY(115vh) rotate(360deg)}}
 @media (prefers-reduced-motion:reduce){.bconf{display:none}}
-@media (max-height:500px){#qp{font-size:12px;line-height:1.35;padding:4px 9px;left:51%;width:38vw}#qcoach{left:51%;width:38vw;font-size:11px;padding:4px 9px}#qp .op{margin-top:3px}#qp .hd{font-size:11px}.qlab{font-size:14px}#qcard>div{font-size:15px;padding:10px 16px}#qcard h2{font-size:22px}#qcard .ans{font-size:19px}}
+@media (max-height:500px){#qp{font-size:12px;line-height:1.35;padding:4px 9px;left:51%;width:38vw}#qcoach{left:51%;width:38vw;font-size:11px;padding:4px 9px}#qp .op{margin-top:3px}#qp .hd{font-size:11px}.qlab{font-size:14px}#qcard>div{font-size:15px;padding:10px 16px}#qcard h2{font-size:22px}#qcard .ans{font-size:19px}#over{overflow-y:auto;justify-content:flex-start;padding-top:10px}#over h1{font-size:30px;letter-spacing:3px}#over .stats{font-size:12px;line-height:1.5}#over .stats p{margin:3px 0}#qreport{padding:8px 10px;margin:6px auto}#qreporttext{font-size:11px;line-height:1.4;margin-bottom:5px}#qreport button,#qreport a{font-size:13px;padding:5px 12px;margin:2px 4px}#qreport .note{font-size:10px;margin-top:4px}#qreview{max-height:24vh;font-size:11px;line-height:1.4;padding:5px 9px;margin:4px auto 8px}#qreview p{margin:2px 0 4px}#again{margin-top:8px;padding:8px 28px;font-size:16px}}
 `;
   document.head.appendChild(css);
   const qp = document.createElement('div'); qp.id = 'qp'; qp.hidden = true; document.body.appendChild(qp);
@@ -80,6 +80,14 @@
   nameIn.addEventListener('keyup', e => e.stopPropagation());
   const pickEl = t.querySelector('#pick');
   if (pickEl) t.insertBefore(nameIn, pickEl);
+
+  // 完場畫面：細mon可能唔夠位 —— body touch-action:none / window wheel 擋咗原生捲動，呢度自己補返
+  const overEl = $('over');
+  let dragY = null;
+  overEl.addEventListener('touchstart', e => { dragY = e.touches[0].clientY; }, { passive: true });
+  overEl.addEventListener('touchmove', e => { const y = e.touches[0].clientY; if (dragY != null) overEl.scrollTop += dragY - y; dragY = y; }, { passive: true });
+  overEl.addEventListener('touchend', () => { dragY = null; });
+  overEl.addEventListener('wheel', e => e.stopPropagation(), { passive: true });
 
   // 光柱：遠處都見到邊個係答案將
   const beams = COL.map(c => {
@@ -124,6 +132,7 @@
       ring(x, z, 3, COL[order[k]], 0.8);
     }
     drawPanel(); SND.gong();
+    if (Q.prac) $('keys').classList.add('gone');   // 練習提示已經有教練行，收埋開局操作表
     banner(Q.prac ? '練習題！' : `第 ${Q.idx + 1} 題！`, '#ffe3a8', true);
   }
 
