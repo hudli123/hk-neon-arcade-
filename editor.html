@@ -1,0 +1,206 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>單騎破陣・題目編輯器</title>
+<style>
+:root{color-scheme:dark;--bg:#180d08;--panel:#2a170d;--gold:#e0b050;--ink:#fff3dc;--muted:#d7bd91;--red:#ff9a8a}
+*{box-sizing:border-box}body{margin:0;background:radial-gradient(ellipse at top,#452711 0,#180d08 60%);color:var(--ink);font:16px/1.55 system-ui,-apple-system,"Noto Sans TC",sans-serif}
+main{width:min(720px,100%);margin:auto;padding:24px 16px 48px}h1{font-size:clamp(27px,7vw,38px);line-height:1.2;color:#ffe08a;margin:5px 0 8px}h2{font-size:21px;margin:0 0 13px;color:#ffe08a}.intro,.privacy{color:var(--muted)}.privacy{border-top:1px solid #614323;padding-top:12px;font-size:14px}
+section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-radius:15px;padding:17px;margin:16px 0;box-shadow:0 8px 24px #0004}.grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}.field{margin:10px 0}.field label,.legend{display:block;font-weight:700;margin-bottom:5px}.hint{font-size:13px;color:#d4bd98;margin:4px 0 0}input[type=text],textarea{width:100%;border:1px solid #9b7138;border-radius:9px;background:#160d08;color:#fff3dc;font:inherit;padding:10px 11px;outline:none}input:focus,textarea:focus{border-color:#ffe08a;box-shadow:0 0 0 2px #e0b05055}textarea{resize:vertical;min-height:72px}button{font:inherit;font-weight:700;border:1px solid #e0b050;border-radius:9px;padding:9px 13px;background:#e0b050;color:#261303;cursor:pointer}button.secondary{background:#412714;color:#ffe3a8}button.remove{background:#321811;border-color:#a55d41;color:#ffd2bd}button:disabled{opacity:.45;cursor:not-allowed}.actions{display:flex;gap:9px;flex-wrap:wrap;margin-top:12px}.qhead{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:7px}.qhead h3{margin:0;color:#ffe08a;font-size:18px}.options{display:grid;grid-template-columns:1fr 1fr;gap:8px}.opt{display:flex;align-items:center;gap:7px}.opt input[type=text]{min-width:0}.opt input[type=radio]{accent-color:#e0b050;width:20px;height:20px;flex:none}.error{color:var(--red);font-size:14px;margin:4px 0;min-height:20px;white-space:pre-line}.errfield{border-color:#ff8b75!important}.linkbox{display:none}.linkbox.show{display:block}.linkout{min-height:100px;word-break:break-all}
+@media(max-width:520px){main{padding:19px 13px 36px}.grid{grid-template-columns:1fr}.options{grid-template-columns:1fr}.qcard{padding:13px}.actions button{flex:1}.link-actions button{flex:1 1 30%}}
+</style>
+</head>
+<body>
+<main>
+<header><h1>單騎破陣・題目編輯器</h1><p class="intro">出版社 / 老師用：填你自己嘅題目，產生一條遊戲 link 畀學生玩。學生打倒寫住正確答案嘅敵將；打錯會扣血。最好用電腦玩，或者將手機打橫。</p></header>
+<form id="editor" novalidate>
+<section aria-labelledby="game-title-heading"><h2 id="game-title-heading">遊戲資料</h2><div class="grid"><div class="field"><label for="gameTitle">遊戲標題 <span aria-hidden="true">*</span></label><input id="gameTitle" type="text" maxlength="16" required placeholder="成語修辭大作戰"><p class="error" id="titleError" role="alert"></p></div><div class="field"><label for="topic">主題</label><input id="topic" type="text" maxlength="20" placeholder="主題：尊重別人"><p class="error"></p></div></div><div class="actions"><button type="button" class="secondary" id="demo">載入示範（成語修辭 12 題）</button></div></section>
+<section aria-labelledby="paste-heading"><h2 id="paste-heading">由 Excel / Google Sheets 貼上</h2><p class="hint">每行一題，欄次序：類別、題目、A、B、C、D、答案、解釋。答案填 A–D 或 1–4。</p><div class="field"><label for="paste">貼上表格</label><textarea id="paste" rows="6" placeholder="類別　題目　選項 A　選項 B　選項 C　選項 D　答案　解釋"></textarea><p class="hint">喺 Excel 填好，揀晒啲格（唔使標題行都得）複製，貼落上面個格。</p></div><div class="actions"><button type="button" id="loadPaste">載入貼上嘅題目</button><button type="button" class="secondary" id="downloadCsv">下載 Excel 範本（CSV）</button><button type="button" class="secondary" id="copyTsv">複製全部題目（表格格式）</button></div><p class="hint">題目唔會儲存喺網站，記得自己保留一份備份。</p><p class="error" id="pasteError" role="alert"></p><p class="hint" id="copyState" aria-live="polite"></p></section>
+<section aria-labelledby="questions-heading"><h2 id="questions-heading">題目卡（3–20 題）</h2><p class="hint">選項填好後，撳正確答案旁邊嘅圓圈。</p><div id="questions"></div><div class="actions"><button type="button" class="secondary" id="add">＋ 加一題</button></div><p class="error" id="questionsError" role="alert"></p></section>
+<section><button type="submit" id="make">產生遊戲 link</button><p class="error" id="formError" role="alert"></p><div class="linkbox" id="linkbox"><label for="gameLink" class="legend">你嘅遊戲 link</label><textarea id="gameLink" class="linkout" readonly aria-label="遊戲 link"></textarea><div class="actions link-actions"><button type="button" id="copy">複製</button><button type="button" class="secondary" id="open">開嚟試玩</button><button type="button" class="secondary" id="share">WhatsApp 分享</button></div><p id="linkState" class="hint" aria-live="polite"></p></div></section>
+</form>
+<p class="privacy">題目只會寫入條 link，我哋唔會儲存任何資料。</p>
+</main>
+<script src="quiz_respect.js"></script>
+<script>
+(() => {
+  'use strict';
+  const qroot = document.getElementById('questions');
+  const LETTERS = 'ABCD';
+  let activeCard = null;
+  const cut = (s, n) => [...String(s).trim()].slice(0, n).join('');
+  const sampleRows = window.QUIZ_DATA.questions.slice(0, 2).map(q => [q.cat, q.q, ...q.opts, LETTERS[q.ans], q.why]);
+
+  function addCard(data = {}) {
+    const i = qroot.children.length;
+    const card = document.createElement('article'); card.className = 'qcard';
+    const head = document.createElement('div'); head.className = 'qhead';
+    const title = document.createElement('h3'); title.textContent = `第 ${i + 1} 題`;
+    const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'remove'; remove.textContent = '移除'; remove.setAttribute('aria-label', `移除第 ${i + 1} 題`);
+    remove.onclick = () => { if (qroot.children.length <= 3) return; card.remove(); refreshCards(); };
+    head.append(title, remove);
+    const catLabel = document.createElement('label'); catLabel.className = 'legend'; catLabel.textContent = '類別（可留空）';
+    const cat = document.createElement('input'); cat.type = 'text'; cat.maxLength = 6; cat.className = 'cat'; cat.value = data.cat || ''; cat.setAttribute('aria-label', `第 ${i + 1} 題類別`);
+    const qLabel = document.createElement('label'); qLabel.className = 'legend'; qLabel.textContent = '問題';
+    const question = document.createElement('textarea'); question.rows = 3; question.maxLength = 80; question.className = 'question'; question.placeholder = '輸入題目'; question.value = data.q || ''; question.setAttribute('aria-label', `第 ${i + 1} 題問題`);
+    const optsLabel = document.createElement('p'); optsLabel.className = 'legend'; optsLabel.textContent = '四個選項（撳圓圈選正確答案）';
+    const options = document.createElement('div'); options.className = 'options';
+    for (let j = 0; j < 4; j++) {
+      const row = document.createElement('label'); row.className = 'opt';
+      const radio = document.createElement('input'); radio.type = 'radio'; radio.name = `answer-${i}`; radio.value = j; radio.checked = data.ans === j; radio.setAttribute('aria-label', `第 ${i + 1} 題正確答案 ${LETTERS[j]}`);
+      const input = document.createElement('input'); input.type = 'text'; input.maxLength = 12; input.className = 'option'; input.placeholder = `選項 ${LETTERS[j]}`; input.value = data.opts?.[j] || ''; input.setAttribute('aria-label', `第 ${i + 1} 題選項 ${LETTERS[j]}`);
+      row.append(radio, input); options.appendChild(row);
+    }
+    const whyLabel = document.createElement('label'); whyLabel.className = 'legend'; whyLabel.textContent = '解釋（可留空）';
+    const why = document.createElement('textarea'); why.rows = 2; why.maxLength = 60; why.className = 'why'; why.value = data.why || ''; why.setAttribute('aria-label', `第 ${i + 1} 題解釋`);
+    const error = document.createElement('p'); error.className = 'error qcard-error'; error.setAttribute('role', 'alert');
+    card.append(head, catLabel, cat, qLabel, question, optsLabel, options, whyLabel, why, error);
+    card.addEventListener('focusin', () => { activeCard = card; });
+    qroot.appendChild(card); activeCard = card; refreshCards(); return card;
+  }
+  function refreshCards() {
+    [...qroot.children].forEach((card, i) => {
+      card.querySelector('h3').textContent = `第 ${i + 1} 題`;
+      card.querySelector('.remove').disabled = qroot.children.length <= 3;
+      card.querySelector('.remove').setAttribute('aria-label', `移除第 ${i + 1} 題`);
+      card.querySelector('.cat').setAttribute('aria-label', `第 ${i + 1} 題類別`);
+      card.querySelector('.question').setAttribute('aria-label', `第 ${i + 1} 題問題`);
+      card.querySelector('.why').setAttribute('aria-label', `第 ${i + 1} 題解釋`);
+      [...card.querySelectorAll('.opt')].forEach((row, j) => {
+        row.querySelector('input[type=radio]').name = `answer-${i}`;
+        row.querySelector('input[type=radio]').setAttribute('aria-label', `第 ${i + 1} 題正確答案 ${LETTERS[j]}`);
+        row.querySelector('input[type=text]').setAttribute('aria-label', `第 ${i + 1} 題選項 ${LETTERS[j]}`);
+      });
+    });
+    document.getElementById('add').disabled = qroot.children.length >= 20;
+  }
+  function replaceCards(rows) {
+    qroot.replaceChildren();
+    rows.forEach(row => addCard({ cat: row[0], q: row[1], opts: row[2], ans: row[3], why: row[4] }));
+    refreshCards();
+  }
+  for (let i = 0; i < 3; i++) addCard();
+  document.getElementById('add').onclick = () => { if (qroot.children.length < 20) addCard(); };
+
+  document.getElementById('demo').onclick = () => {
+    document.getElementById('gameTitle').value = window.QUIZ_DATA.title;
+    document.getElementById('topic').value = window.QUIZ_DATA.topic;
+    replaceCards(window.QUIZ_DATA.questions.map(q => [q.cat, q.q, q.opts, q.ans, q.why]));
+    clearErrors();
+  };
+  function clearErrors() {
+    document.getElementById('titleError').textContent = '';
+    document.getElementById('pasteError').textContent = '';
+    document.getElementById('questionsError').textContent = '';
+    document.getElementById('formError').textContent = '';
+    qroot.querySelectorAll('.qcard-error').forEach(x => x.textContent = '');
+    document.getElementById('gameTitle').classList.remove('errfield');
+  }
+
+  document.getElementById('loadPaste').onclick = () => {
+    document.getElementById('pasteError').textContent = '';
+    const source = document.getElementById('paste').value.split(/\r?\n/);
+    const rows = [];
+    const errors = [];
+    for (let idx = 0; idx < source.length; idx++) {
+      const line = source[idx];
+      if (!line.trim()) continue;
+      const cells = line.split('\t');
+      const answerText = (cells[6] || '').trim().toUpperCase();
+      const answerValid = /^[A-D]$/.test(answerText) || /^[1-4]$/.test(answerText);
+      if (!rows.length && !errors.length && !answerValid && line.includes('題目')) continue;
+      const rowErrors = [];
+      if (cells.length < 7) rowErrors.push('要有四個選項同答案');
+      if (cells.length > 8) rowErrors.push('欄位多過 8 欄');
+      if (!cells[1]?.trim()) rowErrors.push('題目唔可以留空');
+      const opts = [2, 3, 4, 5].map(n => cut(cells[n] || '', 12));
+      if (opts.some(x => !x)) rowErrors.push('四個選項都要填寫');
+      const ans = /^[A-D]$/.test(answerText) ? LETTERS.indexOf(answerText) : /^[1-4]$/.test(answerText) ? +answerText - 1 : -1;
+      if (ans < 0) rowErrors.push('答案要係 A–D 或 1–4');
+      if (new Set(opts).size !== opts.length) rowErrors.push('四個選項唔可以重複');
+      if (rowErrors.length) errors.push(`第 ${idx + 1} 行：${rowErrors.join('；')}`);
+      else rows.push([cut(cells[0] || '', 6), cut(cells[1], 80), opts, ans, cut(cells[7] || '', 60)]);
+      if (rows.length > 20) errors.push(`第 ${idx + 1} 行：最多只可以載入 20 題。`);
+    }
+    if (rows.length < 3) errors.push('題目要有 3 至 20 題。');
+    if (rows.length > 20 && !errors.some(e => e.includes('最多只可以載入'))) errors.push('最多只可以載入 20 題。');
+    if (errors.length) { document.getElementById('pasteError').textContent = errors.join('\n'); return; }
+    replaceCards(rows); document.getElementById('questionsError').textContent = '';
+  };
+
+  function csvField(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }
+  document.getElementById('downloadCsv').onclick = () => {
+    const csvRows = [['類別', '題目', 'A', 'B', 'C', 'D', '答案', '解釋'], ...sampleRows];
+    const csv = '\uFEFF' + csvRows.map(row => row.map(csvField).join(',')).join('\r\n');
+    const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    const a = document.createElement('a'); a.href = url; a.download = '題目範本.csv'; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+  document.getElementById('copyTsv').onclick = async () => {
+    const rows = [...qroot.children].map(card => [
+      cut(card.querySelector('.cat').value, 6), cut(card.querySelector('.question').value, 80),
+      ...[...card.querySelectorAll('.option')].map(x => cut(x.value, 12)),
+      LETTERS[[...card.querySelectorAll('input[type=radio]')].findIndex(x => x.checked)] || '', cut(card.querySelector('.why').value, 60),
+    ]);
+    const text = rows.map(row => row.map(v => v.replace(/[\t\r\n]/g, ' ')).join('\t')).join('\n');
+    const state = document.getElementById('copyState');
+    try { await navigator.clipboard.writeText(text); state.textContent = '已複製題目表格。'; }
+    catch (_) {
+      const box = document.createElement('textarea'); box.value = text; box.style.cssText = 'position:fixed;left:-9999px;top:0'; document.body.appendChild(box); box.focus(); box.select();
+      try { document.execCommand('copy'); state.textContent = '已選取題目表格，請複製保存。'; }
+      catch (_) { state.textContent = '已選取題目表格，請手動複製保存。'; }
+      box.remove();
+    }
+  };
+
+  function encodePayload(d) {
+    const bytes = new TextEncoder().encode(JSON.stringify(d));
+    let bin = ''; for (const b of bytes) bin += String.fromCharCode(b);
+    return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+  }
+  window.encodePayload = encodePayload;
+  document.getElementById('editor').addEventListener('submit', e => {
+    e.preventDefault(); clearErrors();
+    const titleEl = document.getElementById('gameTitle');
+    const title = cut(titleEl.value, 16), topic = cut(document.getElementById('topic').value, 20);
+    let valid = true;
+    if (!title) { titleEl.classList.add('errfield'); document.getElementById('titleError').textContent = '請填寫遊戲標題。'; valid = false; }
+    if (qroot.children.length < 3 || qroot.children.length > 20) { document.getElementById('questionsError').textContent = '請準備 3 至 20 題。'; valid = false; }
+    const questions = [...qroot.children].map((card, i) => {
+      const cat = cut(card.querySelector('.cat').value, 6);
+      const q = cut(card.querySelector('.question').value, 80);
+      const opts = [...card.querySelectorAll('.option')].map(x => cut(x.value, 12));
+      const ans = [...card.querySelectorAll('input[type=radio]')].findIndex(x => x.checked);
+      const why = cut(card.querySelector('.why').value, 60);
+      const errors = [];
+      if (!q) errors.push('問題唔可以留空');
+      if (opts.some(x => !x)) errors.push('四個選項都要填寫');
+      if (new Set(opts).size !== opts.length) errors.push('四個選項唔可以重複');
+      if (ans < 0) errors.push('請選擇正確答案');
+      card.querySelector('.qcard-error').textContent = errors.length ? `第 ${i + 1} 題：${errors.join('；')}。` : '';
+      if (errors.length) valid = false;
+      return [cat, q, opts, ans, why];
+    });
+    if (!valid) { document.getElementById('formError').textContent = '請修正以上資料，再產生遊戲 link。'; return; }
+    const payload = { v: 1, t: title, s: topic, q: questions };
+    const url = new URL('zhaoyun.html', location.href); url.hash = `pack=${encodePayload(payload)}&lang=zh`;
+    document.getElementById('gameLink').value = url.href;
+    document.getElementById('linkbox').classList.add('show'); document.getElementById('linkState').textContent = '';
+    document.getElementById('linkbox').scrollIntoView({ behavior: 'smooth', block: 'center' });
+  });
+  document.getElementById('copy').onclick = async () => {
+    const out = document.getElementById('gameLink'), state = document.getElementById('linkState');
+    try { await navigator.clipboard.writeText(out.value); state.textContent = '已複製，可以分享！'; }
+    catch (_) { out.focus(); out.select(); try { document.execCommand('copy'); state.textContent = '已選取 link，請複製分享。'; } catch (_) { state.textContent = '已選取 link，請手動複製分享。'; } }
+  };
+  document.getElementById('open').onclick = () => window.open(document.getElementById('gameLink').value, '_blank', 'noopener');
+  document.getElementById('share').onclick = () => {
+    const link = document.getElementById('gameLink').value;
+    window.open('https://wa.me/?text=' + encodeURIComponent(`玩下呢個遊戲溫習：${link}`), '_blank', 'noopener');
+  };
+})();
+</script>
+</body>
+</html>
