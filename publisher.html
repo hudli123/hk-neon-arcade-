@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<link rel="icon" href="favicon.svg">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>單騎破陣｜給出版社和學校：把課本題目變成三國動作遊戲</title>
+<meta name="description" content="出版社或老師填入題目，即產生遊戲連結或 QR code。學生用瀏覽器直接玩，不用安裝、不用登入，完成後有成績紙可傳給老師。">
+<style>
+:root{color-scheme:dark;--bg:#180d08;--panel:#2a170d;--line:#795426;--gold:#e0b050;--gold2:#ffe08a;--ink:#fff3dc;--muted:#d7bd91;--seal:#b8321f}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{margin:0;background:radial-gradient(ellipse at top,#452711 0,#180d08 60%);color:var(--ink);font:17px/1.65 system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",sans-serif}
+main{width:min(780px,100%);margin:auto;padding:28px 18px 64px}
+h1,h2,h3,.tablet b{font-family:"Noto Serif TC","Noto Serif CJK TC","Source Han Serif TC",PMingLiU,"Songti TC",serif;letter-spacing:.02em}
+h1{font-size:clamp(34px,8vw,54px);line-height:1.15;margin:12px 0 10px;color:var(--gold2);font-weight:900}
+h2{font-size:clamp(23px,5vw,29px);margin:0 0 14px;color:var(--gold2);font-weight:700}
+h3{font-size:19px;margin:0 0 6px;color:var(--gold2)}
+p{margin:0 0 12px}
+.lead{font-size:clamp(18px,3.4vw,21px);color:var(--ink);max-width:34em}
+.kicker{color:var(--muted);margin:0;font-size:16px}
+section{padding:28px 0 8px;border-top:1px solid var(--line);margin-top:22px}
+section:first-of-type{border-top:0;margin-top:0;padding-top:4px}
+.tablets{display:flex;gap:14px;margin:26px 0 6px;flex-wrap:wrap}
+.tablet{flex:1 1 100px;min-width:0;display:flex;flex-direction:column;justify-content:space-between;gap:12px;text-decoration:none;color:var(--ink);background:linear-gradient(180deg,#3a2110,#24130a);border:1px solid var(--gold);border-radius:8px 8px 22px 22px;padding:16px 14px 14px;min-height:190px;position:relative;box-shadow:inset 0 0 0 1px #0006,0 10px 24px #0007}
+.tablet:before{content:"";position:absolute;top:8px;left:50%;width:10px;height:10px;margin-left:-5px;border-radius:50%;background:#180d08;box-shadow:inset 0 1px 2px #000}
+.tablet b{display:block;writing-mode:vertical-rl;}
+.tablet.latin b{writing-mode:horizontal-tb;text-orientation:mixed;letter-spacing:.02em;line-height:1.1;margin-top:38px;}
+.tablet b{text-orientation:upright;font-size:clamp(22px,4.6vw,27px);line-height:1;color:var(--gold2);margin:14px auto 0;letter-spacing:.14em;font-weight:700}
+.tablet small{display:block;color:var(--muted);font-size:14px;text-align:center;line-height:1.4}
+.tablet .go{display:block;text-align:center;background:var(--gold);color:#261303;font-weight:700;border-radius:8px;padding:8px 6px;font-size:15px}
+.tablet:hover .go,.tablet:focus-visible .go{background:var(--gold2)}
+.tablet:focus-visible{outline:3px solid var(--gold2);outline-offset:3px}
+.note{color:var(--muted);font-size:15px}
+.steps{list-style:none;counter-reset:s;padding:0;margin:0;display:grid;gap:14px}
+.steps li{display:grid;grid-template-columns:52px 1fr;gap:14px;align-items:start}
+.steps li:before{counter-increment:s;content:counter(s,cjk-ideographic);font-family:"Noto Serif TC","Noto Serif CJK TC",PMingLiU,serif;font-size:30px;line-height:1.1;color:var(--gold);border:1px solid var(--line);border-radius:50%;width:52px;height:52px;display:grid;place-items:center;background:var(--panel)}
+.steps h3{margin-top:8px}
+figure{margin:18px 0 0;background:var(--panel);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+figure img{display:block;width:100%;height:auto}
+figcaption{padding:9px 13px;color:var(--muted);font-size:14px}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.two ul,.subjects ul,.faq{padding-left:1.2em;margin:0}
+.two li,.subjects li{margin:4px 0}
+.subjects ul{columns:2;column-gap:28px}
+.faq{list-style:none;padding:0;display:grid;gap:12px}
+.faq li{border-left:3px solid var(--line);padding-left:14px}
+.faq b{display:block;color:var(--gold2)}
+pre.report{white-space:pre-wrap;font:15px/1.5 ui-monospace,Menlo,Consolas,monospace;background:#120904;border:1px dashed var(--line);border-radius:10px;padding:14px 16px;color:var(--ink);margin:14px 0 0}
+.contact{display:grid;grid-template-columns:1fr auto;gap:18px;align-items:center}
+.seal{display:inline-grid;place-items:center;width:150px;height:78px;white-space:nowrap;border:3px solid var(--seal);color:var(--seal);border-radius:8px;font-family:"Noto Serif TC","Noto Serif CJK TC",PMingLiU,serif;font-size:25px;line-height:1.1;letter-spacing:.1em;font-weight:900;transform:rotate(-4deg);opacity:.92;text-decoration:none;padding:6px;text-align:center}
+.seal:hover,.seal:focus-visible{opacity:1;outline:0;box-shadow:0 0 0 3px #b8321f55}
+a{color:var(--gold2)}
+footer{margin-top:36px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:14px}
+@media(max-width:560px){.two{grid-template-columns:1fr}.subjects ul{columns:1}.contact{grid-template-columns:1fr}.seal{display:inline-grid;place-items:center;width:150px;height:78px;white-space:nowrap;border:3px solid var(--seal);color:var(--seal);border-radius:8px;font-family:"Noto Serif TC","Noto Serif CJK TC",PMingLiU,serif;font-size:25px;line-height:1.1;letter-spacing:.1em;font-weight:900;transform:rotate(-4deg);opacity:.92;text-decoration:none;padding:6px;text-align:center}}
+@media(prefers-reduced-motion:no-preference){.tablet{transition:transform .18s ease}.tablet:hover{transform:translateY(-3px)}}
+@media print{body{background:#fff;color:#000}main{padding:0}.tablet,.seal{display:inline-grid;place-items:center;width:150px;height:78px;white-space:nowrap;border:3px solid var(--seal);color:var(--seal);border-radius:8px;font-family:"Noto Serif TC","Noto Serif CJK TC",PMingLiU,serif;font-size:25px;line-height:1.1;letter-spacing:.1em;font-weight:900;transform:rotate(-4deg);opacity:.92;text-decoration:none;padding:6px;text-align:center}}
+</style>
+</head>
+<body>
+<main>
+<section>
+<p class="kicker">單騎破陣 — 給出版社和學校</p>
+<h1>把課本題目，<br>變成一場三國突圍戰。</h1>
+<p class="lead">編輯或老師填入題目和解釋，立即得到一條遊戲連結。學生用手機或電腦瀏覽器直接開，不用安裝、不用登入。敵將身上寫着四個選項，打倒正確的那個才能前進。</p>
+<div class="tablets">
+<a class="tablet" href="zhaoyun-quiz.html"><b>成語修辭</b><small>小五至初中中文<br>12 題</small><span class="go">試玩</span></a>
+<a class="tablet latin" href="https://hudli123.github.io/hk-neon-arcade-/zhaoyun.html#pack=eyJ2IjoxLCJ0IjoiV29yZCBCYXR0bGUiLCJzIjoiUDQgVm9jYWJ1bGFyeTogV2VhdGhlciIsInEiOltbIldlYXRoZXIiLCJJdCBpcyByYWluaW5nIGhlYXZpbHkuIFRoZSBza3kgaXMgZnVsbCBvZiBkYXJrIF9fXy4iLFsiY2xvdWRzIiwic3RhcnMiLCJraXRlcyIsImJpcmRzIl0sMCwiRGFyayBjbG91ZHMgYnJpbmcgcmFpbi4iXSxbIldlYXRoZXIiLCJJbiBzdW1tZXIgSG9uZyBLb25nIGlzIGhvdCBhbmQgX19fLiIsWyJodW1pZCIsImZyb3plbiIsInNub3d5IiwiZHJ5Il0sMCwiSHVtaWQgbWVhbnMgdGhlIGFpciBpcyB3ZXQuIl0sWyJXZWF0aGVyIiwiQSB2ZXJ5IHN0cm9uZyBzdG9ybSB3aXRoIHdpbmQgYW5kIHJhaW4gaXMgYSBfX18uIixbInR5cGhvb24iLCJicmVlemUiLCJyYWluYm93IiwiZm9nIl0sMCwiVHlwaG9vbiBzaWduYWxzOiBUMSwgVDMsIFQ4LCBUMTAuIl0sWyJXZWF0aGVyIiwiV2hlbiB0aGUgc3VuIGNvbWVzIG91dCBhZnRlciByYWluIHlvdSBtYXkgc2VlIGEgX19fLiIsWyJyYWluYm93Iiwic2hhZG93IiwidGh1bmRlciIsIm1pc3QiXSwwLCJBIHJhaW5ib3cgaGFzIHNldmVuIGNvbG91cnMuIl0sWyJXZWF0aGVyIiwiSSBjYW5ub3Qgc2VlIGZhciBiZWNhdXNlIG9mIHRoZSB0aGljayBfX18uIixbImZvZyIsInN1biIsImhlYXQiLCJ3aW5kIl0sMCwiRm9nIGlzIGEgY2xvdWQgbmVhciB0aGUgZ3JvdW5kLiJdLFsiV2VhdGhlciIsIldhdGVyIHRoYXQgZmFsbHMgZnJvbSB0aGUgc2t5IGluIHdpbnRlciBhcyB3aGl0ZSBmbGFrZXMgaXMgX19fLiIsWyJzbm93IiwiaGFpbCIsImR1c3QiLCJzYW5kIl0sMCwiU25vdyBpcyByYXJlIGluIEhvbmcgS29uZy4iXSxbIldlYXRoZXIiLCJUaGUgbG91ZCBzb3VuZCBhZnRlciBsaWdodG5pbmcgaXMgX19fLiIsWyJ0aHVuZGVyIiwibXVzaWMiLCJlY2hvIiwid2hpc3RsZSJdLDAsIkxpZ2h0IHRyYXZlbHMgZmFzdGVyIHRoYW4gc291bmQuIl0sWyJXZWF0aGVyIiwiUGxlYXNlIHRha2UgYW4gdW1icmVsbGEsIHRoZSBfX18gc2F5cyBpdCB3aWxsIHJhaW4uIixbImZvcmVjYXN0IiwicmVjaXBlIiwidGlja2V0IiwibWVudSJdLDAsIkEgZm9yZWNhc3QgdGVsbHMgdGhlIHdlYXRoZXIgYWhlYWQuIl0sWyJXZWF0aGVyIiwiQSBnZW50bGUsIGxpZ2h0IHdpbmQgaXMgYSBfX18uIixbImJyZWV6ZSIsImdhbGUiLCJzdG9ybSIsImJsYXN0Il0sMCwiQnJlZXplID0gc29mdCB3aW5kLiJdLFsiV2VhdGhlciIsIldlIHVzZSBhIF9fXyB0byBtZWFzdXJlIGhvdyBob3Qgb3IgY29sZCBpdCBpcy4iLFsidGhlcm1vbWV0ZXIiLCJydWxlciIsImNvbXBhc3MiLCJjbG9jayJdLDAsIlRoZXJtbyA9IGhlYXQsIG1ldGVyID0gbWVhc3VyZS4iXV19&lang=zh"><b>Weather</b><small>P4 English<br>10 questions</small><span class="go">Play</span></a>
+<a class="tablet" href="https://hudli123.github.io/hk-neon-arcade-/zhaoyun.html#pack=eyJ2IjoxLCJ0Ijoi6aaZ5riv5bi46K2Y5aSn5L2c5oiwIiwicyI6IuWwj-Wbm-W4uOitmO-8muiqjeitmOmmmea4ryIsInEiOltbIuWcsOeQhiIsIummmea4r-acgOmrmOWYheWxseS_gu-8nyIsWyLlpKfluL3lsbEiLCLlpKrlubPlsbEiLCLnjYXlrZDlsbEiLCLps7Plh7DlsbEiXSwwLCLlpKfluL3lsbHpq5ggOTU3IOexs--8jOWkquW5s-WxseWPquaciSA1NTIg57Gz44CCIl0sWyLlnLDnkIYiLCLntq3lpJrliKnkup7muK_kvY3mlrzpppnmuK_ls7blkIzpgorlgIvlnLDmlrnkuYvplpPvvJ8iLFsi5Lmd6b6N5Y2K5bO2Iiwi5aSn5ba85bGxIiwi6ZW35rSyIiwi5Y2X5Lir5bO2Il0sMCwi57at5riv5YWp5bK45L-C5riv5bO25ZCM5Lmd6b6N44CCIl0sWyLmrbflj7IiLCLpppnmuK_kv4LpgorkuIDlubTlm57mrbjkuK3lnIvvvJ8iLFsiMTk5NyDlubQiLCIxOTg0IOW5tCIsIjIwMDAg5bm0IiwiMTk4OSDlubQiXSwwLCIxOTk3IOW5tCA3IOaciCAxIOaXpeaIkOeri-eJueWIpeihjOaUv-WNgOOAgiJdLFsi5Lqk6YCaIiwi6Z2S6aas5aSn5qmL6YCj5o6l6Z2S6KGj5ZCM6YKK5YCL5bO277yfIixbIummrOeBoyIsIumVt-a0siIsIuWdqua0siIsIuiSsuWPsOWztiJdLDAsIumdkummrCA9IOmdkuihoyArIOmmrOeBo--8jOS_guWOu-apn-WgtOWYheS4u-imgemAmumBk-OAgiJdLFsi5Lqk6YCaIiwi6aaZ5riv5pyA5pep5ZiF6ZC16Lev5L-C77yfIixbIuS5neW7o-mQtei3ryIsIuWcsOS4i-mQtei3ryIsIui8lemQtSIsIuWxsemggue6nOi7iiJdLDMsIuWxsemggue6nOi7iiAxODg4IOW5tOmAmui7iu-8jOS_gummmea4r-esrOS4gOainemQtei3r-OAgiJdLFsi5Zyw55CGIiwi6aaZ5riv5YiG54K65bm-5aSa5YCL5Y2A6K2w5pyD5YiG5Y2A77yfIixbIjE4IOWAiyIsIjkg5YCLIiwiMTIg5YCLIiwiMjUg5YCLIl0sMCwi5riv5bO2IDQg5Y2A44CB5Lmd6b6NIDUg5Y2A44CB5paw55WMIDkg5Y2A77yM5YWxIDE4IOWNgOOAgiJdLFsi5paH5YyWIiwi6aaZ5riv5pyA5YW35Luj6KGo5oCn5ZiF5rih5rW35Lqk6YCa5bel5YW35L-C77yfIixbIuWkqeaYn-Wwj-i8qiIsIumbu-i7iiIsIuW3tOWjqyIsIueahOWjqyJdLDAsIuWkqeaYn-Wwj-i8qiAxODg4IOW5tOmWi-i-pu-8jOW-gOS-huS4reeSsOOAgeWwluaymeWSgOOAgeeBo-S7lOOAgiJdLFsi5Zyw55CGIiwi6aaZ5riv5ZyL6Zqb5qmf5aC05L2N5pa877yfIixbIui1pOmxsuinkiIsIuWVn-W-tyIsIuaymeeUsCIsIuWwh-i7jea-syJdLDAsIjE5OTgg5bm055Sx5ZWf5b635pCs5Y676LWk6bGy6KeS44CCIl0sWyLmlofljJYiLCLpppnmuK_lmIXms5XlrproirHkv4LvvJ8iLFsi5rSL57Sr6I2KIiwi5p2c6bWR6IqxIiwi5pyo5qOJ6IqxIiwi57Sr6JekIl0sMCwi5rSL57Sr6I2K5Za6IDE5NjUg5bm05oiQ54K66aaZ5riv5biC6Iqx44CCIl0sWyLlnLDnkIYiLCLpppnmuK_mnIDlpKflmIXls7bkv4LvvJ8iLFsi5aSn5ba85bGxIiwi6aaZ5riv5bO2Iiwi5Y2X5Lir5bO2Iiwi6ZW35rSyIl0sMCwi5aSn5ba85bGx6Z2i56mN57SEIDE0NyDlubPmlrnlhazph4zvvIzmr5TmuK_ls7blpKfov5HkuIDlgI3jgIIiXV19&lang=zh"><b>香港常識</b><small>小四常識<br>10 題</small><span class="go">試玩</span></a>
+</div>
+<p class="note">三個示範都是同一個遊戲引擎，只是換了題目。電腦用鍵盤，手機請打橫。</p>
+</section>
+
+<section>
+<h2>三步，一課一條連結</h2>
+<ol class="steps">
+<li><div><h3>填題目</h3><p>在<a href="editor.html">題目編輯器</a>逐題填，或在 Excel 填好整張表貼上。每條連結 3 至 20 題，附類別、四個選項、正確答案和解釋。</p></div></li>
+<li><div><h3>得到連結或 QR code</h3><p>題目直接編進連結裏，沒有伺服器、沒有帳戶。印在課本頁角、貼在工作紙，或在 WhatsApp 群組發出去。</p></div></li>
+<li><div><h3>學生玩，老師收成績紙</h3><p>先有一題不計分的練習教新手操作。打錯會扣血但不會死，答對即彈出解釋。完場的成績紙可一鍵複製或 WhatsApp 給老師。</p></div></li>
+</ol>
+<figure><img src="kit_question.webp" alt="遊戲畫面：題目顯示在上方，四個敵將身上各寫一個選項" width="1280" height="720" loading="lazy"><figcaption>題目在上方，四個敵將各帶一個選項。打倒寫着正確答案的那一個。</figcaption></figure>
+</section>
+
+<section>
+<h2>學生看到的，老師收到的</h2>
+<div class="two">
+<div><h3>學生</h3><ul><li>3D 動作戰鬥，趙雲或關羽可選</li><li>答對回血並顯示解釋，答錯扣兩成血</li><li>每題只計第一次作答</li><li>手機、平板、電腦瀏覽器皆可，約 2 MB 開始</li></ul></div>
+<div><h3>老師</h3><ul><li>學生可選填姓名</li><li>成績紙：首次作答得分、用時、要溫習的題號</li><li>複製或 WhatsApp 傳送，不用登入任何系統</li><li>資料留在學生裝置，網站不儲存姓名、題目或答案</li></ul></div>
+</div>
+<pre class="report">單騎破陣 成績
+學生：陳小明
+題目：成語修辭大作戰・主題：尊重別人
+結果：勝利
+一次答啱：10 / 12
+用時：3:42
+要再溫習：第 4、9 題
+日期：2026-10-18 15:20</pre>
+</section>
+
+<section class="subjects">
+<h2>同一引擎，不同學科</h2>
+<p>任何可以寫成四選一的題目都能用。我們已試過：</p>
+<ul>
+<li>中文：成語、修辭、標點、文言字詞</li>
+<li>英文：詞彙、文法、閱讀理解</li>
+<li>常識／人文：香港地理、歷史、公民</li>
+<li>數學：心算、單位換算、圖形性質</li>
+<li>科學：定義、實驗步驤、安全守則</li>
+<li>考試溫習：呈分試、DSE 必修範文</li>
+</ul>
+<p class="note">句子排序、配對題等新題型在規劃中；授權客戶可優先提出需求。</p>
+</section>
+
+<section>
+<h2>出版社常問</h2>
+<ul class="faq">
+<li><b>需要安裝或登入嗎？</b>不用。學生點連結或掃 QR 即玩，支援 iOS、Android、Windows、Mac 的現代瀏覽器。</li>
+<li><b>學生資料去了哪裏？</b>姓名和成績只存在學生自己的裝置，成績紙由學生主動傳給老師。網站只匿名統計開頁和完成次數。</li>
+<li><b>題目有限制嗎？</b>每條連結 3 至 20 題；題目 80 字、選項 12 字、解釋 60 字以內。一本書可以有幾十條連結，每課一條。</li>
+<li><b>可以用我們的品牌嗎？</b>可以。授權方案包括遊戲標題、角色皮膚和出版社標誌，並可託管在貴社網域。</li>
+<li><b>怎樣收費？</b>按課本系列年費授權，非獨家，引擎版權由我們保留。歡迎索取報價和試用。</li>
+</ul>
+</section>
+
+<section>
+<h2>索取報價或安排示範</h2>
+<div class="contact">
+<div><p>十五分鐘線上示範，或把貴社一課的題目寄來，我們兩個工作天內回傳可玩的連結。</p><p><b>聯絡：</b>（待填：WhatsApp／電郵）</p></div>
+<a class="seal" href="#contact">索取報價</a>
+</div>
+</section>
+<footer>單騎破陣 © 2026　角色與音樂均為原創或 CC 授權，詳見 <a href="https://github.com/hudli123/hk-neon-arcade-#readme">版權說明</a>。</footer>
+</main>
+<script src="count.js"></script>
+</body>
+</html>
