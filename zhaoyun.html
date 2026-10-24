@@ -68,6 +68,7 @@ body.en .screen h1{letter-spacing:4px}
 #pick button small{font-size:12px;letter-spacing:1px;opacity:.85;font-weight:normal}
 #startGY{background:linear-gradient(90deg,#1e6b3c,#3aa35c)}
 #help{position:absolute;left:50%;top:10px;transition:opacity 1s;transform:translateX(-50%);font-size:12px;opacity:.7;text-shadow:0 0 4px #000;white-space:nowrap}
+html.qwait #pick button{opacity:.45;pointer-events:none}
 #tb{position:fixed;right:134px;top:12px;display:none;gap:8px;z-index:6}body.playing #tb{display:flex}body.touch #tb{right:104px;top:10px}
 #tb button{width:40px;height:40px;border-radius:50%;border:2px solid rgba(255,220,150,.6);background:rgba(20,10,5,.6);color:#fff;font-size:17px;cursor:pointer;padding:0}
 #keys{position:fixed;left:50%;bottom:20%;transform:translateX(-50%);background:rgba(12,8,4,.8);border:1px solid rgba(255,220,150,.5);border-radius:14px;padding:12px 18px;display:grid;grid-template-columns:auto auto;gap:5px 16px;font-size:14px;z-index:5;transition:opacity .6s;pointer-events:none;align-items:center}
@@ -2351,12 +2352,16 @@ window.ZY_ASSETS.then(() => { $('loading').hidden = true; $('pick').hidden = fal
 // #bday=<payload> → zhaoyun_bday.js（解碼出題庫）+ zhaoyun_quiz.js；冇就同原本一樣
 (() => {
   const P = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));
-  const add = (src, then) => { const s = document.createElement('script'); s.src = src; s.onload = then; document.body.appendChild(s); };
-  if (P.has('pack')) { MODE = 'pack'; add('zhaoyun_pack.js', () => add('zhaoyun_quiz.js')); return; }
-  if (P.has('bday')) { MODE = 'bday'; add('zhaoyun_bday.js', () => add('zhaoyun_quiz.js')); return; }
+  const add = (src, then) => { const s = document.createElement('script'); s.src = src; s.onload = then; s.onerror = ready; document.body.appendChild(s); };
+  // 題目 script 未載好之前唔畀撳「出陣」，免得快網／快取之下開咗普通版（冇題目）
+  const ready = () => document.documentElement.classList.remove('qwait');
+  const quiz = () => add('zhaoyun_quiz.js', ready);
   const q = P.get('quiz');
-  if (!q || !/^[a-z0-9_-]+$/.test(q)) return;
+  if (!P.has('pack') && !P.has('bday') && (!q || !/^[a-z0-9_-]+$/.test(q))) return;
+  document.documentElement.classList.add('qwait');
+  if (P.has('pack')) { MODE = 'pack'; add('zhaoyun_pack.js', quiz); return; }
+  if (P.has('bday')) { MODE = 'bday'; add('zhaoyun_bday.js', quiz); return; }
   MODE = 'quiz';
-  add('quiz_' + q + '.js', () => add('zhaoyun_quiz.js'));
+  add('quiz_' + q + '.js', quiz);
 })();
 </script>
