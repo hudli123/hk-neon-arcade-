@@ -18,10 +18,13 @@ a.card img{display:block;width:100%;aspect-ratio:16/10;object-fit:cover;backgrou
 .meta h2{margin:0 0 4px;font-size:20px}
 .meta .tag{color:var(--mut);font-size:13px}
 .meta .play{display:inline-block;margin-top:10px;font-weight:800;font-size:14px;padding:6px 14px;border-radius:20px;background:linear-gradient(90deg,#ff2d95,#7b3dff)}
+.sec{max-width:1100px;margin:44px auto 14px;font-size:clamp(20px,3.4vw,28px);letter-spacing:.08em;color:var(--mut);text-align:center}
 #mine{max-width:1100px;margin:28px auto 0;color:var(--mut);font-size:13px;text-align:center}
 </style>
 <header><h1>HK NEON ARCADE</h1><p>Ten games. No download, no sign-up. Pick one.</p></header>
 <div class="grid" id="grid"></div>
+<h2 class="sec">教學工具 · FOR TEACHERS &amp; PUBLISHERS</h2>
+<div class="grid" id="tools"></div>
 <p id="mine" hidden></p>
 <script>
 const GAMES = [
@@ -36,10 +39,17 @@ const GAMES = [
   ['dimsum', 'DIM SUM PUSH', 'Puzzle · 10 levels'],
   ['starbreakout', '星際突圍 STAR BREAKOUT', 'Space shooter · 2–4 min (Chinese UI)'],
 ];
+const TOOLS = [
+  ['zhaoyun-quiz', '單騎破陣・問答版', '成語修辭 12 題 · 打倒正確答案嘅敵將 · 完場有成績紙傳老師'],
+  ['editor', '題目編輯器', '老師／出版社自己填題目 → 出遊戲 link · Excel 貼上都得'],
+  ['bday', '生日版製作', '填壽星名同 5 條問題 → 專屬生日遊戲 link'],
+  ['publisher', '出版社／學校合作', '點運作、三個示範、成績紙、合作方案'],
+];
 const grid = document.getElementById('grid');
-for (const [slug, name, tag] of GAMES) {
-  grid.insertAdjacentHTML('beforeend', `<a class="card" href="${slug}.html" data-slug="${slug}"><img src="img/${slug}.jpg" alt="${name}"><div class="meta"><h2>${name}</h2><div class="tag">${tag}</div><span class="play">PLAY ▶</span></div></a>`);
-}
+const card = (slug, name, tag, cta) => `<a class="card" href="${slug}.html" data-slug="${slug}"><img src="img/${slug}.jpg" alt="${name}"><div class="meta"><h2>${name}</h2><div class="tag">${tag}</div><span class="play">${cta}</span></div></a>`;
+for (const [slug, name, tag] of GAMES) grid.insertAdjacentHTML('beforeend', card(slug, name, tag, 'PLAY ▶'));
+const tools = document.getElementById('tools');
+for (const [slug, name, tag] of TOOLS) tools.insertAdjacentHTML('beforeend', card(slug, name, tag, 'OPEN ▶'));
 // your own play history on this device (the games write it to localStorage)
 try {
   const log = JSON.parse(localStorage.getItem('playlog') || '[]');
