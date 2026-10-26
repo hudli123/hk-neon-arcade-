@@ -87,5 +87,6 @@
   // 標題文字
   const t = document.getElementById('title');
   if (t) { const h = t.querySelector('h1'); if (h) h.textContent = '單挑・張郃'; const p = t.querySelector('p'); if (p) p.textContent = '一對一，三局兩勝，每局 60 秒。打低張郃！'; }
+  try { TX.goal = '目標：三局兩勝，每局 60 秒，打低張郃！'; } catch (e) {}
   document.documentElement.classList.remove('qwait');
 })();
