@@ -18,7 +18,7 @@ section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-rad
 <header><h1>單騎破陣・題目編輯器</h1><p class="intro">出版社 / 老師用：填你自己嘅題目，產生一條遊戲 link 畀學生玩。學生打倒寫住正確答案嘅敵將；打錯會扣血。最好用電腦玩，或者將手機打橫。</p></header>
 <form id="editor" novalidate>
 <section aria-labelledby="game-title-heading"><h2 id="game-title-heading">遊戲資料</h2><div class="grid"><div class="field"><label for="gameTitle">遊戲標題 <span aria-hidden="true">*</span></label><input id="gameTitle" type="text" maxlength="16" required placeholder="成語修辭大作戰"><p class="error" id="titleError" role="alert"></p></div><div class="field"><label for="topic">主題</label><input id="topic" type="text" maxlength="20" placeholder="主題：尊重別人"><p class="error"></p></div></div><div class="actions"><button type="button" class="secondary" id="demo">載入示範（成語修辭 12 題）</button></div></section>
-<section aria-labelledby="paste-heading"><h2 id="paste-heading">由 Excel / Google Sheets 貼上</h2><p class="hint">每行一題，欄次序：類別、題目、A、B、C、D、答案、解釋。答案填 A–D 或 1–4。</p><div class="field"><label for="paste">貼上表格</label><textarea id="paste" rows="6" placeholder="類別　題目　選項 A　選項 B　選項 C　選項 D　答案　解釋"></textarea><p class="hint">喺 Excel 填好，揀晒啲格（唔使標題行都得）複製，貼落上面個格。</p></div><div class="actions"><button type="button" id="loadPaste">載入貼上嘅題目</button><button type="button" class="secondary" id="downloadCsv">下載 Excel 範本（CSV）</button><button type="button" class="secondary" id="copyTsv">複製全部題目（表格格式）</button></div><p class="hint">題目唔會儲存喺網站，記得自己保留一份備份。</p><p class="error" id="pasteError" role="alert"></p><p class="hint" id="copyState" aria-live="polite"></p></section>
+<section aria-labelledby="paste-heading"><h2 id="paste-heading">由 Excel / Google Sheets 貼上</h2><p class="hint">每行一題，欄次序：類別、題目、A、B、C、D、答案、解釋。答案填 A–D 或 1–4。</p><div class="field"><label for="paste">貼上表格</label><textarea id="paste" rows="6" placeholder="類別　題目　選項 A　選項 B　選項 C　選項 D　答案　解釋"></textarea><p class="hint">喺 Excel 填好，揀晒啲格（唔使標題行都得）複製，貼落上面個格；或者直接「上載 CSV 檔」。Excel 儲 CSV 請揀「<b>CSV UTF-8</b>」，中文先唔會變亂碼。</p></div><div class="actions"><button type="button" id="loadPaste">載入貼上嘅題目</button><button type="button" id="uploadCsv">上載 CSV 檔</button><input type="file" id="csvFile" accept=".csv,.tsv,.txt,text/csv,text/plain" hidden><button type="button" class="secondary" id="downloadCsv">下載 Excel 範本（CSV）</button><button type="button" class="secondary" id="copyTsv">複製全部題目（表格格式）</button></div><p class="hint">題目唔會儲存喺網站，記得自己保留一份備份。</p><p class="error" id="pasteError" role="alert"></p><p class="hint" id="pasteState" aria-live="polite"></p><p class="hint" id="copyState" aria-live="polite"></p></section>
 <section aria-labelledby="questions-heading"><h2 id="questions-heading">題目卡（3–20 題）</h2><p class="hint">選項填好後，撳正確答案旁邊嘅圓圈。</p><div id="questions"></div><div class="actions"><button type="button" class="secondary" id="add">＋ 加一題</button></div><p class="error" id="questionsError" role="alert"></p></section>
 <section><button type="submit" id="make">產生遊戲 link</button><p class="error" id="formError" role="alert"></p><div class="linkbox" id="linkbox"><label for="gameLink" class="legend">你嘅遊戲 link</label><textarea id="gameLink" class="linkout" readonly aria-label="遊戲 link"></textarea><div class="actions link-actions"><button type="button" id="copy">複製</button><button type="button" class="secondary" id="open">開嚟試玩</button><button type="button" class="secondary" id="share">WhatsApp 分享</button></div><p id="linkState" class="hint" aria-live="polite"></p></div></section>
 </form>
@@ -101,15 +101,15 @@ section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-rad
     document.getElementById('gameTitle').classList.remove('errfield');
   }
 
-  document.getElementById('loadPaste').onclick = () => {
+  // 一行 = 一個 cells array（貼上：用 tab 分；CSV 檔：用 parseCsv）。驗證後載入題目卡。
+  function loadRows(records) {
     document.getElementById('pasteError').textContent = '';
-    const source = document.getElementById('paste').value.split(/\r?\n/);
     const rows = [];
     const errors = [];
-    for (let idx = 0; idx < source.length; idx++) {
-      const line = source[idx];
+    for (let idx = 0; idx < records.length; idx++) {
+      const cells = records[idx];
+      const line = cells.join('\t');
       if (!line.trim()) continue;
-      const cells = line.split('\t');
       const answerText = (cells[6] || '').trim().toUpperCase();
       const answerValid = /^[A-D]$/.test(answerText) || /^[1-4]$/.test(answerText);
       if (!rows.length && !errors.length && !answerValid && line.includes('題目')) continue;
@@ -128,8 +128,47 @@ section,.qcard{background:rgba(42,23,13,.94);border:1px solid #795426;border-rad
     }
     if (rows.length < 3) errors.push('題目要有 3 至 20 題。');
     if (rows.length > 20 && !errors.some(e => e.includes('最多只可以載入'))) errors.push('最多只可以載入 20 題。');
-    if (errors.length) { document.getElementById('pasteError').textContent = errors.join('\n'); return; }
+    if (errors.length) { document.getElementById('pasteError').textContent = errors.join('\n'); return false; }
     replaceCards(rows); document.getElementById('questionsError').textContent = '';
+    return true;
+  }
+  document.getElementById('loadPaste').onclick = () => {
+    loadRows(document.getElementById('paste').value.split(/\r?\n/).map(line => line.split('\t')));
+  };
+
+  // RFC 4180 CSV：支援引號、引號內嘅逗號／換行、"" 轉義；分隔符自動認逗號或 tab
+  function parseCsv(text) {
+    text = text.replace(/^\uFEFF/, '');
+    const firstLine = text.split(/\r?\n/, 1)[0] || '';
+    const sep = firstLine.includes('\t') && !firstLine.includes(',') ? '\t' : ',';
+    const records = []; let row = [], field = '', quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"') { if (text[i + 1] === '"') { field += '"'; i++; } else quoted = false; }
+        else field += c;
+      } else if (c === '"') quoted = true;
+      else if (c === sep) { row.push(field); field = ''; }
+      else if (c === '\n' || c === '\r') {
+        if (c === '\r' && text[i + 1] === '\n') i++;
+        row.push(field); records.push(row); row = []; field = '';
+      } else field += c;
+    }
+    if (field !== '' || row.length) { row.push(field); records.push(row); }
+    return records.map(r => r.map(v => v.replace(/[\r\n]+/g, ' ')));
+  }
+  document.getElementById('uploadCsv').onclick = () => document.getElementById('csvFile').click();
+  document.getElementById('csvFile').onchange = async e => {
+    const file = e.target.files && e.target.files[0]; e.target.value = '';
+    if (!file) return;
+    const err = document.getElementById('pasteError'); err.textContent = '';
+    const state = document.getElementById('pasteState'); state.textContent = '';
+    if (file.size > 512 * 1024) { err.textContent = '檔案太大（上限 512KB）。每個遊戲最多 20 題。'; return; }
+    let text;
+    try { text = new TextDecoder('utf-8', { fatal: true }).decode(await file.arrayBuffer()); }
+    catch (_) { err.textContent = `「${file.name}」唔係 UTF-8 編碼，中文會變亂碼。請喺 Excel 揀「另存新檔 → CSV UTF-8（逗號分隔）」再上載。`; return; }
+    if (!text.trim()) { err.textContent = `「${file.name}」係空檔。`; return; }
+    if (loadRows(parseCsv(text))) state.textContent = `已由「${file.name}」載入 ${qroot.children.length} 題，請檢查無誤再產生 link。`;
   };
 
   function csvField(v) { return '"' + String(v).replace(/"/g, '""') + '"'; }
