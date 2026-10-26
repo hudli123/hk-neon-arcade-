@@ -228,9 +228,9 @@
   // 標題文字
   const t = document.getElementById('title');
   if (t) { const h = t.querySelector('h1'); if (h) h.textContent = '名人亂鬥'; const p = t.querySelector('p'); if (p) p.textContent = '揀你嘅鬥士，一對一，三局兩勝，每局 60 秒。氣滿撳「絕招」。'; }
-  try { TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！'; TX.bossDown = 'K.O.!'; } catch (e) {}
+  try { TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！'; TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL')]); } catch (e) {}
   const bm = $('bM'); if (bm) bm.textContent = '絕招';
-  for (const el of document.querySelectorAll('#keys *')) if (el.children.length === 0 && el.textContent.includes('龍怒')) el.textContent = '絕招（條氣滿先用得）'; const lbls = document.querySelectorAll('#me .lbl'); if (lbls[1]) lbls[1].textContent = '絕招';
+  const lbls = document.querySelectorAll('#me .lbl'); if (lbls[1]) lbls[1].textContent = '絕招';
   // 揀角：用 4 個名人掣取代趙雲／關羽掣（模型暫用趙雲／關羽頂住，等 Meshy 角色到）
   const pick = $('pick'), s0 = $('start'), sg = $('startGY');
   if (pick && s0 && sg) {
