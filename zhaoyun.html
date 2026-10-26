@@ -2356,6 +2356,8 @@ window.ZY_ASSETS.then(() => { $('loading').hidden = true; $('pick').hidden = fal
   // 題目 script 未載好之前唔畀撳「出陣」，免得快網／快取之下開咗普通版（冇題目）
   const ready = () => document.documentElement.classList.remove('qwait');
   const quiz = () => add('zhaoyun_quiz.js', ready);
+  // 同一個分頁貼入另一條 #pack / #bday / #quiz link 只會改 hash，唔會重新載入 → 舊題目留低。改 hash 就 reload。
+  window.addEventListener('hashchange', () => location.reload());
   const q = P.get('quiz');
   if (!P.has('pack') && !P.has('bday') && (!q || !/^[a-z0-9_-]+$/.test(q))) return;
   document.documentElement.classList.add('qwait');
