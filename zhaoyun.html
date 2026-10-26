@@ -2352,7 +2352,8 @@ window.ZY_ASSETS.then(() => { $('loading').hidden = true; $('pick').hidden = fal
 // #bday=<payload> → zhaoyun_bday.js（解碼出題庫）+ zhaoyun_quiz.js；冇就同原本一樣
 (() => {
   const P = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));
-  const add = (src, then) => { const s = document.createElement('script'); s.src = src; s.onload = then; s.onerror = ready; document.body.appendChild(s); };
+  const VQ = new URLSearchParams(location.search).get('v');   // 頁面 ?v=xx 一併加到模式檔，更新時改 v 就唔會俾快取卡住
+  const add = (src, then) => { const s = document.createElement('script'); s.src = VQ ? src + '?v=' + encodeURIComponent(VQ) : src; s.onload = then; s.onerror = ready; document.body.appendChild(s); };
   // 題目 script 未載好之前唔畀撳「出陣」，免得快網／快取之下開咗普通版（冇題目）
   const ready = () => document.documentElement.classList.remove('qwait');
   const quiz = () => add('zhaoyun_quiz.js', ready);
