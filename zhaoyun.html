@@ -2359,8 +2359,9 @@ window.ZY_ASSETS.then(() => { $('loading').hidden = true; $('pick').hidden = fal
   // 同一個分頁貼入另一條 #pack / #bday / #quiz link 只會改 hash，唔會重新載入 → 舊題目留低。改 hash 就 reload。
   window.addEventListener('hashchange', () => location.reload());
   const q = P.get('quiz');
-  if (!P.has('pack') && !P.has('bday') && (!q || !/^[a-z0-9_-]+$/.test(q))) return;
+  if (!P.has('pack') && !P.has('bday') && !P.has('duel') && (!q || !/^[a-z0-9_-]+$/.test(q))) return;
   document.documentElement.classList.add('qwait');
+  if (P.has('duel')) { MODE = 'duel'; add('zhaoyun_duel.js', ready); return; }
   if (P.has('pack')) { MODE = 'pack'; add('zhaoyun_pack.js', quiz); return; }
   if (P.has('bday')) { MODE = 'bday'; add('zhaoyun_bday.js', quiz); return; }
   MODE = 'quiz';
