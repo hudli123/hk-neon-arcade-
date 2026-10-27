@@ -203,12 +203,30 @@
     ws.onclose = () => { if (NET.ws !== ws) return; NET.can = false; if (NET.retrying) return; if (NET.role && NET.peer && GAME.state === 'play') showDisconnect(); else if (NET.role && !NET.peer) netDisconnect(); };
     return ws;
   };
-  const netDisconnect = () => { NET.role = null; NET.peer = false; NET.hostF = NET.guestF = null; NET.code = ''; D.net = null; D.two = false; if (NET.ws) { const w = NET.ws; NET.ws = null; w.onopen = w.onmessage = w.onerror = w.onclose = null; w.close(); } renderNetUI(); };
+  const netDisconnect = () => { NET.role = null; NET.peer = false; NET.hostF = NET.guestF = null; NET.code = ''; D.net = null; D.two = false; if (NET.ws) { const w = NET.ws; NET.ws = null; w.onopen = w.onmessage = w.onerror = w.onclose = null; w.close(); } bgStop(); renderNetUI(); };
   const netHostPick = k => { NET.hostF = k; renderNetUI(); if (NET.guestF) startNetMatch(); };
   const netGuestPick = k => { NET.guestF = k; netSend({ t: 'hello', f: k }); renderNetUI(); };
+  // 背景 tick：window 俾人遮住/最小化嗰陣 rAF 會停，用 Worker timer 代打 GAME.step
+  let bgw = null, lastRafStep = 0, lastBgStep = 0, bgStepping = false;
+  function bgStart() {
+    if (bgw) return;
+    try {
+      bgw = new Worker(URL.createObjectURL(new Blob(['setInterval(()=>postMessage(0),33)'], { type: 'text/javascript' })));
+      bgw.onmessage = () => {
+        if (!NET.role || GAME.state !== 'play') return;
+        const now = performance.now();
+        if (now - lastRafStep <= 120) return;
+        const dt = Math.min(0.05, lastBgStep ? (now - lastBgStep) / 1000 : 0.033);
+        lastBgStep = now; bgStepping = true;
+        try { GAME.step(dt); } finally { bgStepping = false; }
+        sendSnapshot();
+      };
+    } catch (e) { bgw = null; }
+  }
+  function bgStop() { if (bgw) { bgw.terminate(); bgw = null; } lastBgStep = 0; }
   function startNetMatch() {
     if (!NET.hostF || !NET.guestF || NET.role !== 'host' || !NET.peer || GAME.state === 'play') return;
-    D.f1 = NET.hostF; D.f2 = NET.guestF; D.two = true; GAME.start(F1().rig);
+    D.f1 = NET.hostF; D.f2 = NET.guestF; D.two = true; GAME.start(F1().rig); bgStart();
   }
   function onNetMessage(m) {
     if (m.t === 'err') {
@@ -224,7 +242,7 @@
       if (!(m.f1 in FIGHTERS) || !(m.f2 in FIGHTERS)) return;
       D.net = 'guest'; D.two = true; D.f1 = m.f1; D.f2 = m.f2; NET.hostF = m.f1; NET.guestF = m.f2;
       $('again').disabled = false; $('again').textContent = '再戰';
-      GAME.start(m.rig || FIGHTERS[m.f1].rig); setNetStatus('網上對戰');
+      GAME.start(m.rig || FIGHTERS[m.f1].rig); setNetStatus('網上對戰'); bgStart();
     } else if (m.t === 'in' && NET.role === 'host') {
       const names = { a: 'atk', d: 'dash', o: 'dodge', s: 'spec' };
       for (const k of ['a', 'd', 'o', 's']) { const v = Number(m[k]); if (Number.isInteger(v) && v >= 0) { const diff = Math.min(8, Math.max(0, v - NET.c[k])); NET.queue[names[k]] = Math.min(10, NET.queue[names[k]] + diff); NET.c[k] = Math.max(NET.c[k], v); } }
@@ -462,6 +480,7 @@
   };
   const step0 = GAME.step.bind(GAME);
   GAME.step = function (rdt) {
+    if (!bgStepping) lastRafStep = performance.now();
     if (D.net === 'guest' && GAME.state !== 'title') { guestTick(rdt); return; }
     const live = GAME.state === 'play' && D.on;
     const guest = false;
