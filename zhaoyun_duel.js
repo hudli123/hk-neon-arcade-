@@ -19,7 +19,8 @@
   #dhud .clk{font-size:clamp(28px,3.6vw,46px);text-align:center;line-height:1;color:#ffe08a}
   #dhud .dots{text-align:center;font-size:14px;letter-spacing:3px;color:#ffd27a}
   #dround{position:fixed;left:0;right:0;top:36%;text-align:center;font-size:clamp(40px,9vw,96px);font-weight:900;color:#ffe08a;text-shadow:0 0 24px #ff9a2a,0 2px 4px #000;pointer-events:none;opacity:0;transition:opacity .25s;z-index:30}
-  @media (max-height:500px){#dhud{width:min(700px,calc(100vw - 230px));top:6px}#dhud .bar{height:14px}}`;
+  @media (max-height:500px){#dhud{width:min(700px,calc(100vw - 420px));top:6px;gap:6px;grid-template-columns:1fr 70px 1fr}#dhud .bar{height:14px}#dhud .clk{font-size:30px}}
+  body.touch #me .bars{display:none}body.touch #d2pl{display:none}`;
   document.head.appendChild(css);
   const hud = document.createElement('div'); hud.id = 'dhud'; hud.hidden = true;
   hud.innerHTML = `<div class="p1"><div class="nm"><span id="dn1">趙雲</span><span id="dh1"></span></div><div class="bar"><i id="db1"></i></div><div class="ms" id="dm1"><i></i></div></div>
@@ -301,7 +302,7 @@
   // 標題文字
   const t = document.getElementById('title');
   if (t) { const h = t.querySelector('h1'); if (h) h.textContent = '名人亂鬥'; const p = t.querySelector('p'); if (p) p.textContent = '揀你嘅鬥士，一對一，三局兩勝，每局 60 秒。氣滿撳「絕招」。'; }
-  try { TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！'; TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL')]); TX.keys.push(['↑ ↓ ← →', 'P2 移動（雙人同機）'], ['1 / 2 / 3 / 0', 'P2 攻擊／突進／閃避／絕招']); } catch (e) {}
+  try { TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！'; TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL')]); TX.keys.push(['↑ ↓ ← →', 'P2 移動（雙人同機）'], ['1 / 2 / 3 / 0', 'P2 攻擊／突進／閃避／絕招']); if (TX.keysTouch) TX.keysTouch = TX.keysTouch.map(([k, v]) => [k.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL'), v]); if (isTouch()) TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳「絕招」掣！'; } catch (e) {}
   const bm = $('bM'); if (bm) bm.textContent = '絕招';
   const lbls = document.querySelectorAll('#me .lbl'); if (lbls[1]) lbls[1].textContent = '絕招';
   // 揀角：用 4 個名人掣取代趙雲／關羽掣（模型暫用趙雲／關羽頂住，等 Meshy 角色到）
@@ -310,7 +311,7 @@
     s0.hidden = sg.hidden = true;
     const sel = document.createElement('div'); sel.style.cssText = 'flex-basis:100%;font-size:14px;opacity:.85;margin-bottom:4px';
     sel.innerHTML = `對手：<select id="dp2" style="font:inherit;padding:4px 8px;border-radius:6px"><option value="">隨機</option>${Object.entries(FIGHTERS).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join('')}</select>
-      &nbsp; <label style="cursor:pointer"><input type="checkbox" id="d2p"${D.two ? ' checked' : ''}> 雙人同機（P2 方向鍵 + 1/2/3/0）</label>`;
+      &nbsp; <label id="d2pl" style="cursor:pointer"><input type="checkbox" id="d2p"${D.two ? ' checked' : ''}> 雙人同機（P2 方向鍵 + 1/2/3/0）</label>`;
     pick.prepend(sel); const dp2 = sel.querySelector('select'); if (D.f2) dp2.value = D.f2;
     const d2p = sel.querySelector('#d2p');
     for (const [k, f] of Object.entries(FIGHTERS)) {
