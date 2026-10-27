@@ -13,15 +13,18 @@
   #dhud .p1 i{right:0}#dhud .p2 i{left:0}
   #dhud .nm{font-size:clamp(14px,1.6vw,20px);display:flex;justify-content:space-between;margin-bottom:3px}
   #dhud .p2 .nm{flex-direction:row-reverse}
+  #dhud .ms{height:7px;margin-top:3px;border:1px solid #e0b050;border-radius:3px;background:#1a0a04;overflow:hidden;position:relative}
+  #dhud .ms i{position:absolute;top:0;bottom:0;background:#ffe08a;transition:width .12s}#dhud .ms.full i{background:#fff;box-shadow:0 0 8px #ffe08a}
+  #dhud .p1 .ms i{right:0}#dhud .p2 .ms i{left:0}#dhud .hint{font-size:11px;opacity:.75;margin-top:2px;text-align:right}#dhud .p1 .hint{text-align:left}
   #dhud .clk{font-size:clamp(28px,3.6vw,46px);text-align:center;line-height:1;color:#ffe08a}
   #dhud .dots{text-align:center;font-size:14px;letter-spacing:3px;color:#ffd27a}
   #dround{position:fixed;left:0;right:0;top:36%;text-align:center;font-size:clamp(40px,9vw,96px);font-weight:900;color:#ffe08a;text-shadow:0 0 24px #ff9a2a,0 2px 4px #000;pointer-events:none;opacity:0;transition:opacity .25s;z-index:30}
   @media (max-height:500px){#dhud{width:min(700px,calc(100vw - 230px));top:6px}#dhud .bar{height:14px}}`;
   document.head.appendChild(css);
   const hud = document.createElement('div'); hud.id = 'dhud'; hud.hidden = true;
-  hud.innerHTML = `<div class="p1"><div class="nm"><span id="dn1">趙雲</span><span id="dh1"></span></div><div class="bar"><i id="db1"></i></div></div>
+  hud.innerHTML = `<div class="p1"><div class="nm"><span id="dn1">趙雲</span><span id="dh1"></span></div><div class="bar"><i id="db1"></i></div><div class="ms" id="dm1"><i></i></div></div>
     <div><div class="clk" id="dclk">60</div><div class="dots" id="ddots"></div></div>
-    <div class="p2"><div class="nm"><span id="dn2">張郃</span><span id="dh2"></span></div><div class="bar"><i id="db2"></i></div></div>`;
+    <div class="p2"><div class="nm"><span id="dn2">張郃</span><span id="dh2"></span></div><div class="bar"><i id="db2"></i></div><div class="ms" id="dm2" hidden><i></i></div><div class="hint" id="dk2" hidden>P2：方向鍵 移動 · 1 攻擊 · 2 突進 · 3 閃避 · 0 絕招</div></div>`;
   document.body.appendChild(hud);
   const rb = document.createElement('div'); rb.id = 'dround'; document.body.appendChild(rb);
   const $ = (id) => document.getElementById(id);
@@ -140,16 +143,82 @@
   };
   D.cast = cast;
 
+  // ===== 同機 2P（#2p=1 或標題剔「雙人同機」）：P2 用方向鍵 + 1/2/3/0（或 , . / Enter）操控對手 =====
+  D.two = Q.get('2p') === '1'; D.m2 = 0;
+  const P2K = { atk: ['1', ','], dash: ['2', '.'], dodge: ['3', '/'], spec: ['0', 'enter'] };
+  const P2IN = { atk: 0, dash: 0, dodge: 0, spec: 0 };
+  addEventListener('keydown', (e) => { if (!D.two || e.repeat) return; const k = e.key.toLowerCase(); for (const n in P2K) if (P2K[n].includes(k)) { P2IN[n] = 1; if (GAME.state === 'play') e.preventDefault(); } });
+  const ARROWS = ['arrowleft', 'arrowright', 'arrowup', 'arrowdown'];
+  const rm0 = readMove;
+  readMove = function () {   // 2P 時方向鍵唔再郁 P1
+    if (!D.two) return rm0();
+    const sv = ARROWS.map((k) => keys[k]); for (const k of ARROWS) keys[k] = false; rm0(); ARROWS.forEach((k, i) => { keys[k] = sv[i]; });
+  };
+  const p2move = () => { const mx = (keys.arrowright ? 1 : 0) - (keys.arrowleft ? 1 : 0), my = (keys.arrowup ? 1 : 0) - (keys.arrowdown ? 1 : 0); if (!mx && !my) return null; const [cf, cz] = fwd(camYaw); const wx = cf * my - cz * mx, wz = cz * my + cf * mx, L = Math.hypot(wx, wz); return [wx / L, wz / L]; };
+  const LIGHT = 22, DODGE = 23; let b2inv = 0;
+  const sb1 = stepBoss;
+  stepBoss = function (dt) {
+    if (!D.two || !boss.alive) return sb1(dt);
+    const b = boss, hal = bossG.userData.hal;
+    b2inv = Math.max(0, b2inv - dt);
+    if (GAME.state !== 'play') { P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0; return; }
+    const dx = player.x - b.x, dz = player.z - b.z, d = Math.hypot(dx, dz) || 0.001, face = Math.atan2(dx, dz);
+    if (b.st === 0 || b.st === LIGHT || b.st === DODGE) {
+      b.flash -= dt; b.t += dt; b.cd -= dt;
+      b.x += b.vx * dt; b.z += b.vz * dt; b.vx *= Math.max(0, 1 - 4 * dt); b.vz *= Math.max(0, 1 - 4 * dt);
+      if (b.y > 0 || b.vy > 0) { b.vy -= 22 * dt; b.y += b.vy * dt; if (b.y <= 0) { b.y = 0; b.vy = 0; } }
+      if (b.st === 0) {
+        const mv = p2move();
+        if (mv) { b.x += mv[0] * 6 * dt; b.z += mv[1] * 6 * dt; b.yaw += angDiff(Math.atan2(mv[0], mv[1]), b.yaw) * Math.min(1, dt * 10); b.walkT = (b.walkT || 0) + dt * 9; }
+        else b.yaw += angDiff(face, b.yaw) * Math.min(1, dt * 5);
+        hal.rotation.set(-0.3, 0, 0);
+        if (b.cd <= 0) {
+          if (P2IN.atk) { b.st = LIGHT; b.t = 0; b.hitDone = 0; if (Math.abs(angDiff(face, b.yaw)) < 1.6) b.yaw = face; SND.swing(false); }
+          else if (P2IN.dash) { b.st = 3; b.t = 0; b.dashHit = 0; }
+          else if (P2IN.dodge) { b.st = DODGE; b.t = 0; const a = mv ? Math.atan2(mv[0], mv[1]) : face + Math.PI; b.vx = Math.sin(a) * 17; b.vz = Math.cos(a) * 17; b2inv = .45; SND.swing(false); }
+          else if (P2IN.spec && D.m2 >= 100 && !busy('p2')) { D.m2 = 0; cast('p2'); }
+        }
+      } else if (b.st === LIGHT) {   // 輕斬 0.42 秒
+        hal.rotation.set(0, lerp(1.3, -1.7, Math.min(1, b.t / 0.26)), 0);
+        if (!b.hitDone && b.t > 0.16) { b.hitDone = 1; if (d < 4.6 && Math.abs(angDiff(face, b.yaw)) < 1.5) hurtPlayer(14, b.x, b.z, false);
+          for (let k = 0; k < 8; k++) { const a = b.yaw - 1 + k / 8 * 2; emit(b.x + Math.sin(a) * 3.4, 1.5, b.z + Math.cos(a) * 3.4, 0, 0, 0, .22, 1.2, 0xff5a8a); } }
+        if (b.t > 0.42) { b.st = 0; b.cd = 0.12; }
+      } else {   // 閃避 0.4 秒
+        if (Math.random() < dt * 30) emit(b.x, 0.3, b.z, rand(-1, 1), rand(1, 2), rand(-1, 1), .4, 1.1, 0xc0b0a0);
+        if (b.t > 0.4) { b.st = 0; b.cd = 0.15; }
+      }
+      b.x = clamp(b.x, -ARENA + 2, ARENA - 2); b.z = clamp(b.z, -ARENA + 2, ARENA - 2);
+      if (d < 1.8) { player.x += dx / d * (1.8 - d); player.z += dz / d * (1.8 - d); }
+    } else {   // 原有招（突進 3→6、受擊 4／5、牆／衝撞）：暫時將 max 設 0 令 boss_ext 唔會自動放朱雀
+      const mx0 = b.max; b.max = 0; sb1(dt); b.max = mx0;   // max=0 → hp<max*0.7 永遠 false
+    }
+    P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0;
+  };
+  const hb1 = hitBoss;
+  hitBoss = function (...a) { if (D.two && b2inv > 0) return; return hb1.apply(this, a); };
+  // 2P 鏡頭：側面望住兩個人，距離跟兩人相隔
+  let camN = null, camP = null;
+  const cam2p = (rdt) => {
+    const ax = boss.x - player.x, az = boss.z - player.z, sep = Math.hypot(ax, az) || 1;
+    let nx = -az / sep, nz = ax / sep; if (camN && nx * camN[0] + nz * camN[1] < 0) { nx = -nx; nz = -nz; } camN = [nx, nz];
+    const mx = (player.x + boss.x) / 2, mz = (player.z + boss.z) / 2, dist = clamp(sep * .55 + 5.5, 8, 20), h = 3.2 + sep * .14;
+    const tg = [mx + nx * dist, h, mz + nz * dist, mx, 1.6 + (player.y + boss.y) * .25, mz];
+    if (!camP) camP = tg.slice(); else for (let i = 0; i < 6; i++) camP[i] = lerp(camP[i], tg[i], Math.min(1, rdt * (i < 3 ? 5 : 7)));
+    camYaw = Math.atan2(-nx, -nz);
+    const sh = camShake * camShake * 0.8; window.__camOverride = [camP[0] + rand(-sh, sh), camP[1] + rand(-sh, sh), camP[2], camP[3], camP[4], camP[5]];
+  };
+  D.p2in = P2IN;
+
   // 冇雜兵：唔再生兵，開波時清場
   stepSpawns = function () {};
   const clearCrowd = () => { for (let i = 0; i < NMAX; i++) S.alive[i] = 0; };
 
   const resetRound = () => {
     clearCrowd();
-    clearPR(); clearWall(); clearRam(); D.aiCd = rand(3.5, 5); D.specBuf = 0;
+    clearPR(); clearWall(); clearRam(); D.aiCd = rand(3.5, 5); D.specBuf = 0; D.m2 = 0; camP = camN = null; window.__camOverride = null;
     Object.assign(player, { x: 0, z: 7, y: 0, vy: 0, yaw: Math.PI, hp: player.max, musou: 0, st: 'idle', t: 0, move: null, inv: 1 });
     Object.assign(boss, { alive: true, spawned: true, hp: OPP_HP, max: OPP_HP, st: 0, t: 0, cd: 1.2, x: 0, z: -7, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0, poise: 60, dashHit: 0 });
-    bossG.visible = true; $('boss').hidden = true; D.lastBossHp = boss.hp;
+    bossG.visible = true; $('boss').hidden = true; D.lastBossHp = boss.hp; D.lastPHp = player.hp;
     D.t = ROUND_T; D.ending = 0; D.on = true;
     say(`第 ${D.round} 回合`);
   };
@@ -162,7 +231,7 @@
     hero.scale.setScalar(1.12 * F1().scale); bossG.scale.setScalar(1.3 * F2().scale);
     D.round = 1; D.p1 = D.p2 = 0;
     $('dn1').textContent = F1().name; $('dn2').textContent = F2().name; $('face').textContent = F1().short;
-    hud.hidden = false; $('ko').hidden = true;
+    hud.hidden = false; $('ko').hidden = true; $('dm2').hidden = $('dk2').hidden = !D.two;
     resetRound();
   };
 
@@ -187,7 +256,7 @@
     endRound('p2');                      // 玩家血盡
   };
   const finish = (win) => {
-    over0(win); clearPR(); clearWall(); clearRam();
+    over0(win); clearPR(); clearWall(); clearRam(); window.__camOverride = null;
     const L = win ? F2() : F1(), Wn = win ? F1() : F2();
     $('otitle').textContent = win ? `${Wn.name} 勝出` : `${Wn.name} 勝出`;
     $('ostats').innerHTML = `<div style="font-size:.9em;line-height:1.5;margin:6px 0 10px">${HEADLINE[win ? D.f2 : D.f1](Wn.name)}</div><div>${D.p1} : ${D.p2}</div>`;
@@ -203,15 +272,17 @@
     // 玩家絕招：龍怒鍵改做放絕招（唔再出龍）
     if (IN.musou) { IN.musou = 0; if (live && player.musou >= 100) D.specBuf = .5; }
     if (live && D.specBuf > 0) { D.specBuf -= rdt; if ((player.st === 'idle' || player.st === 'run') && !busy('p1')) { D.specBuf = 0; player.musou = 0; cast('p1'); } }
-    if (GAME.state === 'play') { stepWall(rdt, true); stepRam(rdt, true); }
+    if (GAME.state === 'play') { stepWall(rdt, true); stepRam(rdt, true); if (D.two) cam2p(rdt); }
     step0(rdt);
     if (GAME.state === 'play') {
       stepPR(rdt);
       // 1v1 冇雜兵，絕招氣要快啲：打到對手即加，再加少少時間
       const dealt = D.lastBossHp - boss.hp; D.lastBossHp = boss.hp;
       if (live) player.musou = Math.min(100, player.musou + Math.max(0, dealt) * .8 + rdt * 3);
+      const dealt2 = D.lastPHp - player.hp; D.lastPHp = player.hp;
+      if (live && D.two) D.m2 = Math.min(100, D.m2 + Math.max(0, dealt2) * .8 + rdt * 3);
       // AI 絕招
-      if (live && boss.alive && boss.st === 0 && !busy('p2')) {
+      if (live && !D.two && boss.alive && boss.st === 0 && !busy('p2')) {
         D.aiCd -= rdt;
         if (D.aiCd <= 0) { const d = Math.hypot(player.x - boss.x, player.z - boss.z), sp = F2().spec;
           if ((sp === 'rocket' && d > 6) || sp === 'chips' || (sp === 'wall' && d < 11) || (sp === 'ram' && d > 5)) { cast('p2'); D.aiCd = rand(7, 10); } }
@@ -221,6 +292,8 @@
       $('db1').style.width = Math.max(0, player.hp / player.max * 100) + '%'; $('dh1').textContent = Math.max(0, Math.ceil(player.hp));
       $('db2').style.width = Math.max(0, boss.hp / boss.max * 100) + '%'; $('dh2').textContent = Math.max(0, Math.ceil(boss.hp));
       $('dclk').textContent = Math.ceil(D.t);
+      $('dm1').firstElementChild.style.width = player.musou + '%'; $('dm1').classList.toggle('full', player.musou >= 100);
+      if (D.two) { $('dm2').firstElementChild.style.width = D.m2 + '%'; $('dm2').classList.toggle('full', D.m2 >= 100); }
       $('ddots').textContent = '●'.repeat(D.p1) + '○'.repeat(WINS - D.p1) + '  ' + '○'.repeat(WINS - D.p2) + '●'.repeat(D.p2);
     }
   };
@@ -228,7 +301,7 @@
   // 標題文字
   const t = document.getElementById('title');
   if (t) { const h = t.querySelector('h1'); if (h) h.textContent = '名人亂鬥'; const p = t.querySelector('p'); if (p) p.textContent = '揀你嘅鬥士，一對一，三局兩勝，每局 60 秒。氣滿撳「絕招」。'; }
-  try { TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！'; TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL')]); } catch (e) {}
+  try { TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！'; TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL')]); TX.keys.push(['↑ ↓ ← →', 'P2 移動（雙人同機）'], ['1 / 2 / 3 / 0', 'P2 攻擊／突進／閃避／絕招']); } catch (e) {}
   const bm = $('bM'); if (bm) bm.textContent = '絕招';
   const lbls = document.querySelectorAll('#me .lbl'); if (lbls[1]) lbls[1].textContent = '絕招';
   // 揀角：用 4 個名人掣取代趙雲／關羽掣（模型暫用趙雲／關羽頂住，等 Meshy 角色到）
@@ -236,11 +309,13 @@
   if (pick && s0 && sg) {
     s0.hidden = sg.hidden = true;
     const sel = document.createElement('div'); sel.style.cssText = 'flex-basis:100%;font-size:14px;opacity:.85;margin-bottom:4px';
-    sel.innerHTML = `對手：<select id="dp2" style="font:inherit;padding:4px 8px;border-radius:6px"><option value="">隨機</option>${Object.entries(FIGHTERS).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join('')}</select>`;
+    sel.innerHTML = `對手：<select id="dp2" style="font:inherit;padding:4px 8px;border-radius:6px"><option value="">隨機</option>${Object.entries(FIGHTERS).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join('')}</select>
+      &nbsp; <label style="cursor:pointer"><input type="checkbox" id="d2p"${D.two ? ' checked' : ''}> 雙人同機（P2 方向鍵 + 1/2/3/0）</label>`;
     pick.prepend(sel); const dp2 = sel.querySelector('select'); if (D.f2) dp2.value = D.f2;
+    const d2p = sel.querySelector('#d2p');
     for (const [k, f] of Object.entries(FIGHTERS)) {
       const b = document.createElement('button'); b.className = 'fbtn'; b.dataset.f = k; b.innerHTML = `${f.name}<small>${f.specHint}</small>`; b.style.borderColor = f.col;
-      b.onclick = () => { D.f1 = k; const v = dp2.value; D.f2 = (v && v !== k) ? v : null; GAME.start(f.rig); };
+      b.onclick = () => { D.f1 = k; D.two = d2p.checked; const v = dp2.value; D.f2 = (v && v !== k) ? v : null; GAME.start(f.rig); };
       pick.appendChild(b);
     }
     const sync = () => { for (const b of pick.querySelectorAll('.fbtn')) { b.disabled = FIGHTERS[b.dataset.f].rig === 'gy' && sg.disabled; b.title = b.disabled ? '載入中…' : ''; } if (sg.disabled) setTimeout(sync, 200); };
