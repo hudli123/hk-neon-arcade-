@@ -172,6 +172,10 @@
   // ===== 網上對戰 network state / UI / snapshot renderer =====
   const NET = { role: null, ws: null, peer: false, code: '', hostF: null, guestF: null, c: { a: 0, d: 0, o: 0, s: 0 }, seen: { a: 0, d: 0, o: 0, s: 0 }, queue: { atk: 0, dash: 0, dodge: 0, spec: 0 }, mv: null, mvAt: 0, snap: null, lastSnap: 0, lastIn: '', lastInAt: 0, fxMeshes: new Map(), ping: 0, lastPing: 0, can: false, retrying: false, lost: null };
   D.NET = NET;
+  // 網上對戰唔可以俾 blur/visibilitychange/P/Esc 暫停 —— 主機一停對家都會卡住
+  const onlineLive = () => !!NET.role && (NET.peer || GAME.state === 'play');
+  const sp0 = setPause;
+  setPause = function (v) { if (v && onlineLive()) return; return sp0(v); };
   const netSend = (obj) => { if (NET.ws && NET.ws.readyState === WebSocket.OPEN) { try { NET.ws.send(JSON.stringify(obj)); } catch (e) {} } };
   const worldMove = () => { const mx = IN.mx || 0, my = IN.my || 0; if (!mx && !my) return null; const [cf, cz] = fwd(camYaw), wx = cf * my - cz * mx, wz = cz * my + cf * mx, n = Math.hypot(wx, wz) || 1; return [wx / n, wz / n]; };
   function sendIn(force = false) {
@@ -260,6 +264,7 @@
       if (s) netStatus.textContent = s;
     }
     if (netUI.querySelector('[data-net-action="cancel"]')) netUI.querySelector('[data-net-action="cancel"]').hidden = !active;
+    const bp = $('bPause'); if (bp) bp.hidden = onlineLive();
     const myTurn = active && NET.peer && ((NET.role === 'host' && !NET.hostF) || (NET.role === 'guest' && !NET.guestF));
     for (const b of $('pick').querySelectorAll('.fbtn')) { b.disabled = !!NET.role && (!NET.peer || NET.role === 'guest' && !!NET.guestF); b.classList.toggle('pickme', !!myTurn && !b.disabled); }
   }
