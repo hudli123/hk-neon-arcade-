@@ -63,29 +63,36 @@ async def handler(ws, _path=None):   # websockets >=13: handler(ws)；<=12: hand
                 if live(room['host']):
                     room = None
                     await tell(ws, {'t': 'err', 'e': 'taken'})
+                    print(f'join host {code} taken', flush=True)
                     return
                 if len(rooms) > MAX_ROOMS:
                     rooms.pop(code, None)
                     room = None
                     await tell(ws, {'t': 'err', 'e': 'busy'})
+                    print(f'join host {code} busy', flush=True)
                     return
                 room['host'] = ws
                 peer = room['guest']
+                print(f'open host {code}', flush=True)
             else:
                 room = rooms.get(code)
                 if not room or not live(room['host']):
                     room = None
                     await tell(ws, {'t': 'err', 'e': 'noroom'})
+                    print(f'join guest {code} noroom', flush=True)
                     return
                 if live(room['guest']):
                     room = None
                     await tell(ws, {'t': 'err', 'e': 'full'})
+                    print(f'join guest {code} full', flush=True)
                     return
                 room['guest'] = ws
                 peer = room['host']
+                print(f'join guest {code} ok', flush=True)
         if live(peer):
             await tell(ws, {'t': 'peer', 'on': 1})
             await tell(peer, {'t': 'peer', 'on': 1})
+            print(f'pair {code}', flush=True)
         while True:
             try:
                 raw = await asyncio.wait_for(ws.recv(), timeout=30)
@@ -106,6 +113,12 @@ async def handler(ws, _path=None):   # websockets >=13: handler(ws)；<=12: hand
                 continue
             p = room['guest'] if is_host else room['host']
             if live(p):
+                if raw.startswith('{"t":"hello"'):
+                    print(f'msg {code} hello', flush=True)
+                elif raw.startswith('{"t":"start"'):
+                    print(f'msg {code} start', flush=True)
+                elif raw.startswith('{"t":"rematch"'):
+                    print(f'msg {code} rematch', flush=True)
                 try:
                     await p.send(raw)
                 except Exception:
@@ -115,6 +128,7 @@ async def handler(ws, _path=None):   # websockets >=13: handler(ws)；<=12: hand
             async with rooms_lock:
                 me = room['host'] if is_host else room['guest']
                 if me is ws:
+                    print(f'leave {"host" if is_host else "guest"} {code}', flush=True)
                     if is_host:
                         other = room['guest']
                         rooms.pop(code, None)

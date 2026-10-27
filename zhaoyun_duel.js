@@ -20,7 +20,9 @@
   #dhud .dots{text-align:center;font-size:14px;letter-spacing:3px;color:#ffd27a}
   #dround{position:fixed;left:0;right:0;top:36%;text-align:center;font-size:clamp(40px,9vw,96px);font-weight:900;color:#ffe08a;text-shadow:0 0 24px #ff9a2a,0 2px 4px #000;pointer-events:none;opacity:0;transition:opacity .25s;z-index:30}
   @media (max-height:500px){#dhud{width:min(700px,calc(100vw - 420px));top:6px;gap:6px;grid-template-columns:1fr 70px 1fr}#dhud .bar{height:14px}#dhud .clk{font-size:30px}}
-  body.touch #me .bars{display:none}body.touch #d2pl{display:none}`;
+  body.touch #me .bars{display:none}body.touch #d2pl{display:none}
+  #pick .fbtn.pickme{animation:dnetpulse 1s infinite}
+  @keyframes dnetpulse{0%,100%{box-shadow:0 0 0 2px #ffe08a}50%{box-shadow:0 0 16px 5px #ffe08a}}`;
   document.head.appendChild(css);
   const hud = document.createElement('div'); hud.id = 'dhud'; hud.hidden = true;
   hud.innerHTML = `<div class="p1"><div class="nm"><span id="dn1">趙雲</span><span id="dh1"></span></div><div class="bar"><i id="db1"></i></div><div class="ms" id="dm1"><i></i></div></div>
@@ -186,18 +188,20 @@
   let netFxId = 0;
   // PR mesh snapshots use stable IDs across packets.
   const netSocket = (role, code) => {
+    const old = NET.ws;   // 一個 client 一條線：舊線即刻斷開兼拆晒啲 handler，免得舊房訊息搞亂新局
+    if (old) { old.onopen = old.onmessage = old.onerror = old.onclose = null; try { old.close(); } catch (e) {} }
     const base = Q.get('ws') || `${location.protocol === 'https:' ? 'wss:' : 'ws:'}//${location.host}/ws`;
     const u = new URL(base, location.href); u.searchParams.set('r', code); u.searchParams.set('role', role);
     const ws = new WebSocket(u.href); NET.ws = ws; NET.role = role; NET.code = code; NET.peer = false; NET.retrying = false;
-    ws.onopen = () => { NET.can = true; if (role === 'host') { NET.hostF = null; NET.guestF = null; } renderNetUI(); };
-    ws.onmessage = e => { let m; try { m = JSON.parse(e.data); } catch (err) { return; } onNetMessage(m); };
-    ws.onerror = () => { if (!NET.retrying && !NET.peer && NET.role) showNetError('連線失敗，請檢查網絡後再試。'); };
+    ws.onopen = () => { if (NET.ws !== ws) return; NET.can = true; if (role === 'host') { NET.hostF = null; NET.guestF = null; } renderNetUI(); };
+    ws.onmessage = e => { if (NET.ws !== ws) return; let m; try { m = JSON.parse(e.data); } catch (err) { return; } onNetMessage(m); };
+    ws.onerror = () => { if (NET.ws !== ws) return; if (!NET.retrying && !NET.peer && NET.role) showNetError('連線失敗，請檢查網絡後再試。'); };
     ws.onclose = () => { if (NET.ws !== ws) return; NET.can = false; if (NET.retrying) return; if (NET.role && NET.peer && GAME.state === 'play') showDisconnect(); else if (NET.role && !NET.peer) netDisconnect(); };
     return ws;
   };
-  const netDisconnect = () => { NET.role = null; NET.peer = false; NET.hostF = NET.guestF = null; NET.code = ''; D.net = null; D.two = false; if (NET.ws) { const w = NET.ws; NET.ws = null; w.close(); } renderNetUI(); };
-  const netHostPick = k => { NET.hostF = k; renderNetUI(); if (NET.guestF) startNetMatch(); else setNetStatus('已揀 ' + FIGHTERS[k].name + '，等對手揀角色…'); };
-  const netGuestPick = k => { NET.guestF = k; netSend({ t: 'hello', f: k }); setNetStatus('已揀 ' + FIGHTERS[k].name + '，等房主開始…'); for (const b of $('pick').querySelectorAll('.fbtn')) b.disabled = true; };
+  const netDisconnect = () => { NET.role = null; NET.peer = false; NET.hostF = NET.guestF = null; NET.code = ''; D.net = null; D.two = false; if (NET.ws) { const w = NET.ws; NET.ws = null; w.onopen = w.onmessage = w.onerror = w.onclose = null; w.close(); } renderNetUI(); };
+  const netHostPick = k => { NET.hostF = k; renderNetUI(); if (NET.guestF) startNetMatch(); };
+  const netGuestPick = k => { NET.guestF = k; netSend({ t: 'hello', f: k }); renderNetUI(); };
   function startNetMatch() {
     if (!NET.hostF || !NET.guestF || NET.role !== 'host' || !NET.peer || GAME.state === 'play') return;
     D.f1 = NET.hostF; D.f2 = NET.guestF; D.two = true; GAME.start(F1().rig);
@@ -210,9 +214,8 @@
     } else if (m.t === 'peer') {
       NET.peer = !!m.on; renderNetUI();
       if (!m.on && NET.role) { if (GAME.state === 'play') showDisconnect(); else setNetStatus('對手離開咗房間。'); }
-      else if (m.on) setNetStatus(NET.role === 'host' ? `房間碼：${NET.code} — 叫朋友喺自己部機撳「入房」打呢個碼。等對手揀角色。` : '已連線！揀你嘅鬥士。');
     } else if (m.t === 'hello' && NET.role === 'host') {
-      if (m.f in FIGHTERS) { NET.guestF = m.f; setNetStatus('對手已揀 ' + FIGHTERS[m.f].name + '。請揀你嘅鬥士。'); renderNetUI(); startNetMatch(); }
+      if (m.f in FIGHTERS) { NET.guestF = m.f; renderNetUI(); startNetMatch(); }
     } else if (m.t === 'start' && NET.role === 'guest') {
       if (!(m.f1 in FIGHTERS) || !(m.f2 in FIGHTERS)) return;
       D.net = 'guest'; D.two = true; D.f1 = m.f1; D.f2 = m.f2; NET.hostF = m.f1; NET.guestF = m.f2;
@@ -239,10 +242,26 @@
   function renderNetUI() {
     if (!netUI) return;
     const active = !!NET.role; netUI.hidden = false;
-    if (netCode) netCode.textContent = NET.code ? `房間碼：${NET.code} — 叫朋友喺自己部機撳「入房」打呢個碼` : '';
-    if (netStatus && NET.peer && NET.role === 'host' && !NET.hostF) netStatus.textContent = NET.guestF ? `對手已揀 ${FIGHTERS[NET.guestF].name}。請揀你嘅鬥士。` : '對手已加入，請揀你嘅鬥士。';
+    if (netCode) netCode.textContent = !NET.code ? '' : (NET.role === 'guest' ? `已入房間 ${NET.code}` : `房間碼：${NET.code}`);
+    if (netStatus && NET.role) {
+      let s = '';
+      if (NET.role === 'host') {
+        if (!NET.peer) s = `叫朋友喺佢部機撳「入房」，輸入 ${NET.code}。等緊朋友入房…`;
+        else if (!NET.hostF && !NET.guestF) s = '朋友已入房 ✓ 兩邊各自揀一個角色，揀齊就自動開打。';
+        else if (!NET.hostF) s = `朋友揀咗 ${FIGHTERS[NET.guestF].name} ✓ 輪到你揀角色！`;
+        else if (!NET.guestF) s = `你揀咗 ${FIGHTERS[NET.hostF].name} ✓ 等朋友揀角色…`;
+        else s = '開打！';
+      } else if (NET.role === 'guest') {
+        if (!NET.peer) s = '等緊房主…';
+        else if (!NET.guestF) s = '已入房 ✓ 揀你嘅角色（揀齊就自動開打）';
+        else if (!NET.hostF) s = `你揀咗 ${FIGHTERS[NET.guestF].name} ✓ 等房主揀角色…`;
+        else s = '開打！';
+      }
+      if (s) netStatus.textContent = s;
+    }
     if (netUI.querySelector('[data-net-action="cancel"]')) netUI.querySelector('[data-net-action="cancel"]').hidden = !active;
-    for (const b of $('pick').querySelectorAll('.fbtn')) b.disabled = !!NET.role && (!NET.peer || NET.role === 'guest' && !!NET.guestF);
+    const myTurn = active && NET.peer && ((NET.role === 'host' && !NET.hostF) || (NET.role === 'guest' && !NET.guestF));
+    for (const b of $('pick').querySelectorAll('.fbtn')) { b.disabled = !!NET.role && (!NET.peer || NET.role === 'guest' && !!NET.guestF); b.classList.toggle('pickme', !!myTurn && !b.disabled); }
   }
   function initNetUI(sel, d2p, dp2) {
     const host = location.hostname;
@@ -258,7 +277,7 @@
     const cancel = document.createElement('button'); cancel.dataset.netAction = 'cancel'; cancel.textContent = '取消'; cancel.hidden = true;
     row.append(open, join, code, cancel, codeText, st, err); sel.after(row); netUI = row; netStatus = st; netCode = codeText; netInput = code; netErr = err;
     open.onclick = () => { if (netErr) netErr.hidden = true; D.net = 'host'; D.two = false; d2p.checked = false; const c = String(1000 + Math.floor(Math.random() * 9000)); netSocket('host', c); setNetStatus('連線中…'); renderNetUI(); };
-    join.onclick = () => { const c = code.value.trim(); if (!/^\d{4}$/.test(c)) { showNetError('請輸入 4 位數房間碼。'); return; } if (netErr) netErr.hidden = true; D.net = 'guest'; D.two = true; netSocket('guest', c); setNetStatus('連線中…'); renderNetUI(); };
+    join.onclick = () => { const c = code.value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\s+/g, '').trim(); code.value = c; if (!/^\d{4}$/.test(c)) { showNetError('請輸入 4 位數房間碼。'); return; } if (netErr) netErr.hidden = true; D.net = 'guest'; D.two = true; netSocket('guest', c); setNetStatus('連線中…'); renderNetUI(); };
     cancel.onclick = () => { netDisconnect(); D.two = d2p.checked; setNetStatus('已取消。'); };
     if (Q.get('net') === '1') { row.hidden = false; }
     const again = $('again'); again.onclick = () => { if (NET.role === 'guest') { netSend({ t: 'rematch' }); again.disabled = true; again.textContent = '等房主重新開始…'; } else GAME.start(); };
