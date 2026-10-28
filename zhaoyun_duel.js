@@ -248,8 +248,8 @@
       for (const k of ['a', 'd', 'o', 's']) { const v = Number(m[k]); if (Number.isInteger(v) && v >= 0) { const diff = Math.min(8, Math.max(0, v - NET.c[k])); NET.queue[names[k]] = Math.min(10, NET.queue[names[k]] + diff); NET.c[k] = Math.max(NET.c[k], v); } }
       if (Array.isArray(m.mv) && m.mv.length === 2 && m.mv.every(v => Number.isFinite(v) && Math.abs(v) <= 1.01)) { NET.mv = Math.hypot(m.mv[0], m.mv[1]) > .05 ? m.mv : null; NET.mvAt = Date.now(); }
     } else if (m.t === 'snap' && NET.role === 'guest') { NET.snap = m; NET.lastSnap = Date.now(); }
-    else if (m.t === 'ping' && NET.role === 'host') { NET.ping = Math.max(0, Date.now() - Number(m.ts)); updatePing(); netSend({ t: 'pong', ts: m.ts, ms: NET.ping }); }
-    else if (m.t === 'pong' && NET.role === 'guest') { NET.ping = Number(m.ms) || Math.max(0, Date.now() - Number(m.ts)); updatePing(); }
+    else if (m.t === 'ping' && NET.role === 'host') { netSend({ t: 'pong', ts: m.ts }); const r = Number(m.rtt); if (Number.isFinite(r) && r > 0) { NET.ping = r; updatePing(); } }
+    else if (m.t === 'pong' && NET.role === 'guest') { NET.ping = Math.max(0, Date.now() - Number(m.ts)); updatePing(); }
     else if (m.t === 'say' && NET.role === 'guest') { rb.textContent = String(m.x || ''); rb.style.opacity = 1; clearTimeout(say.h); say.h = setTimeout(() => { rb.style.opacity = 0; }, Math.min(5000, Number(m.ms) || 1100)); }
     else if (m.t === 'over' && NET.role === 'guest') {
       D.on = false; D.ending = 0; D.p1 = Number(m.p1) || 0; D.p2 = Number(m.p2) || 0;
@@ -341,7 +341,7 @@
     readMove();
     if (IN.atk) NET.c.a++; if (IN.chg) NET.c.d++; if (IN.dodge) NET.c.o++; if (IN.musou) NET.c.s++; if (IN.jump) NET.c.d++;
     const mv = worldMove(); NET.localMv = mv; sendIn();
-    if (Date.now() - NET.lastPing > 2000 && NET.ws && NET.ws.readyState === WebSocket.OPEN) { NET.lastPing = Date.now(); netSend({ t: 'ping', ts: Date.now() }); }
+    if (Date.now() - NET.lastPing > 1000 && NET.ws && NET.ws.readyState === WebSocket.OPEN) { NET.lastPing = Date.now(); netSend({ t: 'ping', ts: Date.now(), rtt: NET.ping }); }
     applySnapshot(rdt); syncNetEffects();
     if (D.two) cam2p(rdt);
     stepParticles(rdt); stepChunks(rdt); stepRings(rdt); stepFires(rdt);
