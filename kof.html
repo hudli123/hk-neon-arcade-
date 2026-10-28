@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<meta name="robots" content="noindex">
+<title>名人亂鬥 KOF</title>
+<style>
+  html,body{margin:0;height:100%;background:#08040a;overflow:hidden;font-family:monospace;-webkit-user-select:none;user-select:none;touch-action:none}
+  #c{position:fixed;inset:0;width:100%;height:100%;display:block}
+  #loading{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;color:#ffe08a;font-size:22px;font-weight:900;z-index:60;background:#08040a}
+  /* ---------- HUD ---------- */
+  #hud{position:fixed;inset:0;pointer-events:none;z-index:20;display:none;color:#fff3dc;font-weight:900;text-shadow:2px 2px 0 #000,-1px -1px 0 #000}
+  .bar{position:absolute;top:14px;width:38%;height:20px;border:2px solid #000;background:#3a0d0d;box-shadow:0 0 0 2px #ffe08a55}
+  .bar .fill{height:100%;width:100%;background:linear-gradient(180deg,#ffe08a,#e8342a);transition:width .08s}
+  .bar .ghost{position:absolute;inset:0;background:#8a2a1a;opacity:.0}
+  #hp1{left:3%}#hp2{right:3%}
+  #hp2 .fill{float:right}
+  .pname{position:absolute;top:38px;font-size:14px}
+  #n1{left:3%}#n2{right:3%;text-align:right}
+  .team{position:absolute;top:56px;font-size:12px;opacity:.85}
+  #t1{left:3%}#t2{right:3%;text-align:right}
+  .team i{display:inline-block;width:9px;height:9px;border-radius:2px;background:#ffe08a;margin:0 2px;border:1px solid #000}
+  .team i.off{background:#333;opacity:.4}
+  .team i.cur{outline:2px solid #fff}
+  #clk{position:absolute;top:8px;left:50%;transform:translateX(-50%);font-size:34px;color:#ffe08a;background:#180b08aa;padding:0 12px;border-radius:6px;border:2px solid #000}
+  .pow{position:absolute;bottom:14px;font-size:15px;display:flex;align-items:center;gap:6px}
+  #pw1{left:3%}#pw2{right:3%;flex-direction:row-reverse}
+  .pow .st{display:inline-block;width:16px;height:16px;border-radius:50%;background:#2a1a0a;border:2px solid #000}
+  .pow .st.full{background:radial-gradient(circle at 35% 30%,#fff,#ffb02a 60%,#a33)}
+  .pow .num{font-size:19px;color:#ffe08a}
+  .combo{position:absolute;top:110px;font-size:26px;color:#7ec8ff;display:none}
+  #cb1{left:3%}#cb2{right:3%}
+  #cap{position:absolute;top:38%;left:50%;transform:translate(-50%,-50%);font-size:64px;color:#ffe08a;letter-spacing:4px;opacity:0;text-shadow:4px 4px 0 #000,0 0 22px #ff9}
+  #sub{position:absolute;top:52%;left:50%;transform:translateX(-50%);font-size:20px;color:#7ec8ff;opacity:0}
+  #ping{position:absolute;top:64px;left:50%;transform:translateX(-50%);font-size:12px;color:#fff3dc;background:#180b08aa;padding:3px 9px;border-radius:8px;display:none}
+  /* ---------- screens ---------- */
+  .screen{position:fixed;inset:0;z-index:40;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;background:#08040acc;color:#fff3dc;text-align:center}
+  .screen[hidden]{display:none}
+  .screen h1{font-size:44px;margin:0;color:#ffe08a;text-shadow:4px 4px 0 #500,0 0 30px #f80}
+  .screen p{margin:0;font-size:15px;opacity:.85}
+  .modes{display:flex;gap:10px;flex-wrap:wrap;justify-content:center}
+  .fbtn,button{font:inherit;font-weight:900;color:#fff3dc;background:#2a1410;border:2px solid #c9953b;border-radius:8px;padding:9px 16px;cursor:pointer}
+  button:hover{background:#3a1c12}
+  button:disabled{opacity:.4;cursor:default}
+  .fbtn.sel{background:#7a3b12;outline:3px solid #ffe08a}
+  .fbtn.t2{border-color:#7ec8ff}
+  .fbtn.t2.sel{background:#123a5a;outline-color:#7ec8ff}
+  #pickrow{display:flex;gap:10px;flex-wrap:wrap;justify-content:center;max-width:720px}
+  .fbtn .pic{display:block;font-size:30px}
+  .fbtn .nm{display:block;font-size:13px;margin-top:4px}
+  .fbtn .hp{display:block;font-size:11px;opacity:.75}
+  .slot{font-size:13px;min-height:20px;color:#ffe08a}
+  #netbox{display:flex;flex-direction:column;gap:6px;align-items:center;font-size:14px}
+  #netcode{font-weight:900;color:#ffe08a;font-size:17px}
+  #neterr{color:#ff8a7a;font-size:13px}
+  input{ font:inherit;padding:7px;border-radius:7px;border:1px solid #c9953b;text-align:center;width:90px;background:#180b08;color:#fff3dc}
+  .pickme{animation:kofpulse 1s infinite}
+  @keyframes kofpulse{0%,100%{box-shadow:0 0 0 2px #ffe08a}50%{box-shadow:0 0 16px 6px #ffe08a}}
+  /* ---------- touch controls ---------- */
+  #touch{position:fixed;inset:0;z-index:30;pointer-events:none;display:none}
+  #stick{position:absolute;left:26px;bottom:26px;width:130px;height:130px;border-radius:50%;border:2px solid #ffffff55;background:#ffffff12;pointer-events:auto}
+  #sticknub{position:absolute;left:45px;top:45px;width:40px;height:40px;border-radius:50%;background:#ffe08a88;border:2px solid #000}
+  .tbtn{position:absolute;border-radius:50%;border:2px solid #000;color:#fff;font-weight:900;pointer-events:auto;font-family:monospace}
+  .tbtn[data-b="a"]{right:150px;bottom:96px;width:56px;height:56px;background:#3aa34a}
+  .tbtn[data-b="b"]{right:76px;bottom:96px;width:56px;height:56px;background:#3a6ab0}
+  .tbtn[data-b="c"]{right:150px;bottom:26px;width:56px;height:56px;background:#c94f2a}
+  .tbtn[data-b="d"]{right:76px;bottom:26px;width:56px;height:56px;background:#b03080}
+  .tbtn[data-b="sp"]{right:14px;bottom:60px;width:48px;height:48px;background:#c9953b;font-size:12px}
+  @media (max-height:500px){
+    .screen h1{font-size:30px}
+    #cap{font-size:40px}
+    .bar{top:8px;height:16px}
+    #clk{font-size:24px;top:4px}
+    .pname{top:28px;font-size:12px}.team{top:44px;font-size:10px}
+    .pow{bottom:6px}
+  }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="loading">Loading… 0%</div>
+
+<div id="hud">
+  <div class="bar" id="hp1"><div class="ghost"></div><div class="fill"></div></div>
+  <div class="bar" id="hp2"><div class="ghost"></div><div class="fill"></div></div>
+  <div class="pname" id="n1"></div><div class="pname" id="n2"></div>
+  <div class="team" id="t1"></div><div class="team" id="t2"></div>
+  <div id="clk">60</div>
+  <div class="pow" id="pw1"><span class="num">0</span><span class="st"></span><span class="st"></span><span class="st"></span></div>
+  <div class="pow" id="pw2"><span class="num">0</span><span class="st"></span><span class="st"></span><span class="st"></span></div>
+  <div class="combo" id="cb1"></div><div class="combo" id="cb2"></div>
+  <div id="cap"></div><div id="sub"></div><div id="ping"></div>
+</div>
+
+<div class="screen" id="title" hidden>
+  <h1>名人亂鬥 KOF</h1>
+  <p>三局兩勝・六十秒・氣滿出必殺</p>
+  <div class="modes">
+    <button id="fmt">隊際：3v3</button>
+    <button id="mAi">vs AI</button>
+    <button id="m2p">同機 2P</button>
+    <button id="mHost">開房（網上）</button>
+    <button id="mJoin">入房</button>
+  </div>
+  <div id="netbox">
+    <div id="netcode"></div>
+    <div><input id="netin" placeholder="4 位房間碼" inputmode="numeric" maxlength="4"><button id="netjoinbtn" hidden>入房</button><button id="netcancel" hidden>取消</button></div>
+    <div id="netstatus"></div>
+    <div id="neterr" hidden></div>
+  </div>
+  <p id="keyshelp" style="font-size:12px;max-width:640px;line-height:1.6"></p>
+</div>
+
+<div class="screen" id="sel" hidden>
+  <h1 id="selh">揀人</h1>
+  <div class="slot" id="slot1">P1：—</div>
+  <div class="slot" id="slot2">P2：—</div>
+  <div id="pickrow"></div>
+  <p id="seltip" style="font-size:13px;opacity:.8"></p>
+</div>
+
+<div class="screen" id="end" hidden>
+  <h1 id="etitle"></h1>
+  <p id="ehead" style="font-size:15px;max-width:560px;line-height:1.6"></p>
+  <div class="modes"><button id="rematch">再戰</button><button id="totitle">返標題</button></div>
+</div>
+
+<div id="touch">
+  <div id="stick"><div id="sticknub"></div></div>
+  <button class="tbtn" data-b="a">A</button>
+  <button class="tbtn" data-b="b">B</button>
+  <button class="tbtn" data-b="c">C</button>
+  <button class="tbtn" data-b="d">D</button>
+  <button class="tbtn" data-b="sp">SP</button>
+</div>
+
+<script src="three_r128.min.js"></script>
+<script src="meshy_rig.js"></script>
+<script src="kof_game.js?v=8"></script>
+</body>
+</html>
