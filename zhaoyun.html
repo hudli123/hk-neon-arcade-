@@ -142,8 +142,48 @@ window.ZY_ASSETS = (() => {
 // 動作庫 window.MCLIPS 係由趙雲個 rig 出嘅；其他角色用「世界旋轉差」retarget：
 //   delta = 來源世界旋轉(動畫) × 來源綁定世界旋轉⁻¹；目標世界旋轉 = delta × 目標綁定世界旋轉；再轉返 local。
 // 兩邊都係 Meshy A-pose 綁定，所以 delta 可以直接搬。Hips 高度按盤骨高比例縮放。
+const mrigDec = (s, T) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new T(u.buffer); };
+// 將一個動作庫 CL（bones+clips+hips+fps）retarget 落 rigData RD 嘅骨架，全部 action 塞入 actions（mixer 要綁喺 rig 嘅 group）
+function mrigClips(RD, mixer, CL, want, actions) {
+  const dec = mrigDec;
+  const S = CL.bones, NS = S.length, srcIdx = {}; S.forEach((b, k) => { srcIdx[b.n] = k; });
+  const sBW = S.map((b) => new THREE.Quaternion().fromArray(b.bw)), sBWi = sBW.map((q) => q.clone().invert());
+  const tBW = RD.bones.map((b) => new THREE.Quaternion().fromArray(b.bw));
+  const same = RD.bones.every((b, k) => srcIdx[b.n] === k && sBW[k].angleTo(tBW[k]) < 1e-3);   // 同 rig 出：唔使計
+  const hipK = RD.bones[0].hl[1] / CL.hips[1];
+  const sW = S.map(() => new THREE.Quaternion()), tW = RD.bones.map(() => new THREE.Quaternion()), q = new THREE.Quaternion(), qi = new THREE.Quaternion();
+  for (const name in CL.clips) {
+    if (want && !want.includes(name)) continue;
+    const c = CL.clips[name], N = c.n, times = new Float32Array(N); for (let f = 0; f < N; f++) times[f] = f / CL.fps;
+    const srcQ = S.map((b) => (c.r[b.n] ? dec(c.r[b.n], Int16Array) : null));
+    const out = RD.bones.map(() => new Float32Array(N * 4));
+    for (let f = 0; f < N; f++) {
+      for (let k = 0; k < NS; k++) {   // 來源世界旋轉
+        const a = srcQ[k]; if (a) q.set(a[f * 4] / 32767, a[f * 4 + 1] / 32767, a[f * 4 + 2] / 32767, a[f * 4 + 3] / 32767).normalize(); else q.fromArray(S[k].r);
+        if (S[k].p >= 0) sW[k].multiplyQuaternions(sW[S[k].p], q); else sW[k].copy(q);
+      }
+      for (let k = 0; k < RD.bones.length; k++) {
+        const b = RD.bones[k], s = srcIdx[b.n];
+        if (same) { const a = srcQ[k]; if (a) q.set(a[f * 4] / 32767, a[f * 4 + 1] / 32767, a[f * 4 + 2] / 32767, a[f * 4 + 3] / 32767).normalize(); else q.fromArray(b.r); q.toArray(out[k], f * 4); continue; }
+        if (s === undefined) tW[k].copy(tBW[k]); else tW[k].multiplyQuaternions(sW[s], sBWi[s]).multiply(tBW[k]);
+        if (b.p >= 0) qi.copy(tW[b.p]).invert().multiply(tW[k]); else qi.copy(tW[k]);
+        qi.toArray(out[k], f * 4);
+      }
+    }
+    const tracks = RD.bones.map((b, k) => new THREE.QuaternionKeyframeTrack(b.n + '.quaternion', times, out[k]));
+    if (c.h) {
+      const h = dec(c.h, Int16Array), v = new Float32Array(N * 3), [bx, by, bz] = RD.bones[0].hl, [sx, sy, sz] = CL.hips;
+      for (let f = 0; f < N; f++) { v[f * 3] = bx + (h[f * 3] / 100 - sx) * hipK; v[f * 3 + 1] = by + (h[f * 3 + 1] / 100 - sy) * hipK; v[f * 3 + 2] = bz + (h[f * 3 + 2] / 100 - sz) * hipK; }
+      tracks.push(new THREE.VectorKeyframeTrack(RD.bones[0].n + '.position', times, v));
+    }
+    actions[name] = mixer.clipAction(new THREE.AnimationClip(name, (N - 1) / CL.fps, tracks));
+  }
+  return { srcIdx, sBW, tBW };
+}
+// 幫已經整好嘅 rig 補一個動作庫（名人亂鬥 musk 嘅拳腳 bank）
+window.addClipBank = function (R, bank, rigData) { mrigClips(rigData, R.mixer, bank, null, R.actions); };
 window.buildMeshyRig = function (R, CL, want) {
-  const dec = (s, T) => { const bin = atob(s), u = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u[i] = bin.charCodeAt(i); return new T(u.buffer); };
+  const dec = mrigDec;
   const p16 = dec(R.pos, Int16Array), n = p16.length / 3, pos = new Float32Array(n * 3);
   for (let i = 0; i < n * 3; i++) pos[i] = p16[i] / R.Q;
   const n8 = dec(R.nrm, Int8Array), nrm = new Float32Array(n * 3); for (let i = 0; i < n * 3; i++) nrm[i] = n8[i] / 127;
@@ -166,39 +206,8 @@ window.buildMeshyRig = function (R, CL, want) {
   const byName = {}; bones.forEach((b) => { byName[b.name] = b; });
 
   // ---- retarget ----
-  const S = CL.bones, NS = S.length, srcIdx = {}; S.forEach((b, k) => { srcIdx[b.n] = k; });
-  const sBW = S.map((b) => new THREE.Quaternion().fromArray(b.bw)), sBWi = sBW.map((q) => q.clone().invert());
-  const tBW = R.bones.map((b) => new THREE.Quaternion().fromArray(b.bw));
-  const same = R.bones.every((b, k) => srcIdx[b.n] === k && sBW[k].angleTo(tBW[k]) < 1e-3);   // 趙雲自己：唔使計
-  const hipK = R.bones[0].hl[1] / CL.hips[1];
-  const sW = S.map(() => new THREE.Quaternion()), tW = R.bones.map(() => new THREE.Quaternion()), q = new THREE.Quaternion(), qi = new THREE.Quaternion();
   const mixer = new THREE.AnimationMixer(group), actions = {};
-  for (const name in CL.clips) {
-    if (want && !want.includes(name)) continue;
-    const c = CL.clips[name], N = c.n, times = new Float32Array(N); for (let f = 0; f < N; f++) times[f] = f / CL.fps;
-    const srcQ = S.map((b) => (c.r[b.n] ? dec(c.r[b.n], Int16Array) : null));
-    const out = R.bones.map(() => new Float32Array(N * 4));
-    for (let f = 0; f < N; f++) {
-      for (let k = 0; k < NS; k++) {   // 來源世界旋轉
-        const a = srcQ[k]; if (a) q.set(a[f * 4] / 32767, a[f * 4 + 1] / 32767, a[f * 4 + 2] / 32767, a[f * 4 + 3] / 32767).normalize(); else q.fromArray(S[k].r);
-        if (S[k].p >= 0) sW[k].multiplyQuaternions(sW[S[k].p], q); else sW[k].copy(q);
-      }
-      for (let k = 0; k < R.bones.length; k++) {
-        const b = R.bones[k], s = srcIdx[b.n];
-        if (same) { const a = srcQ[k]; if (a) q.set(a[f * 4] / 32767, a[f * 4 + 1] / 32767, a[f * 4 + 2] / 32767, a[f * 4 + 3] / 32767).normalize(); else q.fromArray(b.r); q.toArray(out[k], f * 4); continue; }
-        if (s === undefined) tW[k].copy(tBW[k]); else tW[k].multiplyQuaternions(sW[s], sBWi[s]).multiply(tBW[k]);
-        if (b.p >= 0) qi.copy(tW[b.p]).invert().multiply(tW[k]); else qi.copy(tW[k]);
-        qi.toArray(out[k], f * 4);
-      }
-    }
-    const tracks = R.bones.map((b, k) => new THREE.QuaternionKeyframeTrack(b.n + '.quaternion', times, out[k]));
-    if (c.h) {
-      const h = dec(c.h, Int16Array), v = new Float32Array(N * 3), [bx, by, bz] = R.bones[0].hl, [sx, sy, sz] = CL.hips;
-      for (let f = 0; f < N; f++) { v[f * 3] = bx + (h[f * 3] / 100 - sx) * hipK; v[f * 3 + 1] = by + (h[f * 3 + 1] / 100 - sy) * hipK; v[f * 3 + 2] = bz + (h[f * 3 + 2] / 100 - sz) * hipK; }
-      tracks.push(new THREE.VectorKeyframeTrack(R.bones[0].n + '.position', times, v));
-    }
-    actions[name] = mixer.clipAction(new THREE.AnimationClip(name, (N - 1) / CL.fps, tracks));
-  }
+  const { srcIdx, sBW, tBW } = mrigClips(R, mixer, CL, want, actions);
   // 趙雲手骨 local 軸 → 呢個角色手骨 local 軸（武器方向校正用）
   const hs = srcIdx.RightHand, ht = R.bones.findIndex((b) => b.n === 'RightHand');
   const handAxis = (v) => v.clone().applyQuaternion(sBW[hs]).applyQuaternion(tBW[ht].clone().invert());
@@ -1070,6 +1079,27 @@ const CH = [
 const scaleMove = (m, k) => ({ ...m, dur: m.dur * k.dur, range: m.range + k.range, arc: Math.min(360, Math.max(m.arc, k.arc)), hits: m.hits.map(([t, d, kb, l]) => [t * k.dur, Math.round(d * k.dmg), kb * 1.2, l]) });
 const N_GY = [N[2], N[1], N[4], { ...N[0], anim: 'chop', arc: 120 }, N[4], N[5]].map((m) => scaleMove(m, { dur: 1.18, range: 1.2, arc: 170, dmg: 1.35 }));
 const CH_GY = CH.map((m) => scaleMove(m, { dur: 1.12, range: 1.4, arc: 0, dmg: 1.3 }));
+// 火箭商人：冇武器，拳腳為主 — 同傷同節奏，範圍細、弧窄、步幅短
+window.HERO_MOVES = null;   // null|'fist'（名人亂鬥 musk 先會 set 'fist'）
+const N_FIST = [
+  { dur: .32, hits: [[.11, 12, 3.2, 0]], range: 2.4, arc: 60, lunge: 1.5, anim: 'jab' },
+  { dur: .34, hits: [[.13, 11, 3, 0]], range: 2.4, arc: 70, lunge: 1.5, anim: 'jabR' },
+  { dur: .34, hits: [[.13, 11, 3, 0]], range: 2.6, arc: 100, lunge: 1.5, anim: 'hook' },
+  { dur: .4, hits: [[.1, 9, 2, 0], [.24, 9, 3, 0]], range: 2.6, arc: 80, lunge: 1.5, anim: 'combo2' },
+  { dur: .42, hits: [[.18, 14, 4.5, 0]], range: 2.8, arc: 110, lunge: 2, anim: 'elbow' },
+  { dur: .65, hits: [[.2, 12, 3, 0], [.34, 12, 3, 0], [.5, 16, 11, 5]], range: 2.8, arc: 140, lunge: 1.5, anim: 'bothfist', fin: 1 },
+];
+const CH_FIST = [
+  { dur: .56, hits: [[.26, 16, 2, 10]], range: 2.6, arc: 90, lunge: 2, anim: 'upper', name: 'C1' },
+  { dur: .52, hits: [[.24, 18, 1.5, 12]], range: 2.8, arc: 80, lunge: 3, anim: 'spartan', name: 'C2' },
+  { dur: .74, hits: [[.2, 10, 1, 8], [.36, 10, 1, 8], [.52, 12, 2, 9]], range: 2.8, arc: 180, lunge: 1, anim: 'combo3', hop: 7, name: 'C3' },
+  { dur: .77, hits: [[.5, 26, 11, 6]], range: 3.5, arc: 360, lunge: 1, anim: 'slamJump', hop: 9, quake: 1, name: 'C4' },
+  { dur: .95, hits: [...Array(8)].map((_, k) => [.14 + k * .08, 7, 1.2, 0]).concat([[.84, 14, 12, 4]]), range: 2.8, arc: 70, lunge: 5, anim: 'flurryF', name: 'C5' },
+  { dur: 1.22, hits: [...Array(9)].map((_, k) => [.16 + k * .11, 9, -2, 1]).concat([[1.18, 20, 14, 9]]), range: 2.8, arc: 180, lunge: 4, anim: 'tornadoF', name: 'C6' },
+];
+for (const mm of N_FIST.concat(CH_FIST)) mm.nopad = 1;
+const movesN = () => window.HERO_MOVES === 'fist' ? N_FIST : CHAR === 'gy' ? N_GY : N;
+const movesCH = () => window.HERO_MOVES === 'fist' ? CH_FIST : CHAR === 'gy' ? CH_GY : CH;
 function spearPose(anim, p) {
   // 回傳 [yaw, pitch, 伸出, 身轉]
   const e = (x) => 1 - (1 - x) * (1 - x);
@@ -1380,7 +1410,7 @@ function doHit(range, arc, dmg, kb, launch, opts = {}) {
   }
   if (boss.alive && boss.hitId !== id) {
     const dx = boss.x - cx, dz = boss.z - cz, d = Math.hypot(dx, dz);
-    if (d < range + 1.3 && (arc >= 360 || d < 1.2 || Math.abs(angDiff(Math.atan2(dx, dz), player.yaw)) < half + 0.2)) { boss.hitId = id; n++; hitBoss(dmg, kb, launch, dx / (d || 1), dz / (d || 1)); }
+    if (d < range + (opts.nopad ? 0.3 : 1.3) && (arc >= 360 || d < 1.2 || Math.abs(angDiff(Math.atan2(dx, dz), player.yaw)) < half + 0.2)) { boss.hitId = id; n++; hitBoss(dmg, kb, launch, dx / (d || 1), dz / (d || 1)); }
   }
   if (n) {
     addChain(n); if (!opts.musou) gainMusou(Math.min(n, 4) * 0.38);
@@ -1484,9 +1514,9 @@ function stepPlayer(dt) {
       if (IN.jump) { p.vy = 12; p.y = 0.01; SND.jump(); break; }
       if (IN.dodge) { startDodge(); break; }
       if (IN.atk || (IN.atkHeld && p.comboOpen < -0.15)) {
-        const k = p.comboOpen > 0 ? p.step : 0; startMove((CHAR === 'gy' ? N_GY : N)[k], 'attack', k); p.step = k + 1; break;
+        const k = p.comboOpen > 0 ? p.step : 0; startMove(movesN()[k], 'attack', k); p.step = k + 1; break;
       }
-      if (IN.chg) { const k = p.comboOpen > 0 ? Math.min(p.step, 5) : 0; startMove((CHAR === 'gy' ? CH_GY : CH)[k], 'charge', k); p.step = 0; }
+      if (IN.chg) { const k = p.comboOpen > 0 ? Math.min(p.step, 5) : 0; startMove(movesCH()[k], 'charge', k); p.step = 0; }
       break;
     }
     case 'attack': case 'charge': {
@@ -1498,7 +1528,7 @@ function stepPlayer(dt) {
       while (p.hitsDone < m.hits.length && p.t >= m.hits[p.hitsDone][0]) {
         const [, dmg, kb, launch] = m.hits[p.hitsDone], last = p.hitsDone === m.hits.length - 1;
         const fin = (m.fin || p.st === 'charge') && last;
-        doHit(m.range, m.arc, dmg, kb, launch, { fin, air: m.anim === 'rise' || m.anim === 'upthrust' });
+        doHit(m.range, m.arc, dmg, kb, launch, { fin, air: m.anim === 'rise' || m.anim === 'upthrust', nopad: m.nopad });
         if (m.anim === 'tornado' || m.anim === 'spin' || m.anim === 'rise') for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; emit(p.x + Math.cos(a) * 2.5, p.y + 1 + rand(0, 1.5), p.z + Math.sin(a) * 2.5, -Math.sin(a) * 9, 2, Math.cos(a) * 9, .3, 1.2, 0x8fd0ff, 0, 2); }
         if (m.quake && last) { ring(p.x, p.z, m.range + 1, 0xffd080, 0.5); ring(p.x, p.z, m.range * 0.6, 0xffffff, 0.3); SND.land(); for (let k = 0; k < 40; k++) { const a = Math.random() * TAU, r = rand(0.5, m.range); emit(p.x + Math.cos(a) * r, 0.3, p.z + Math.sin(a) * r, Math.cos(a) * 3, rand(4, 10), Math.sin(a) * 3, rand(.4, .8), rand(.8, 1.6), 0xc8a070, 20, 1); } }
         if (fin) { camShake = Math.max(camShake, 0.5); ring(p.x, p.z, m.range + 1.5, 0x9fd4ff, 0.4, 1.2); }
@@ -1506,8 +1536,8 @@ function stepPlayer(dt) {
       }
       if (p.t >= m.dur) {
         const q = p.queued; p.queued = null;
-        if (p.st === 'attack' && q === 'N' && p.step < 6) { const k = p.step; startMove((CHAR === 'gy' ? N_GY : N)[k], 'attack', k); p.step = k + 1; }
-        else if (p.st === 'attack' && q === 'C') { const k = Math.min(p.step, 5); startMove((CHAR === 'gy' ? CH_GY : CH)[k], 'charge', k); p.step = 0; }
+        if (p.st === 'attack' && q === 'N' && p.step < 6) { const k = p.step; startMove(movesN()[k], 'attack', k); p.step = k + 1; }
+        else if (p.st === 'attack' && q === 'C') { const k = Math.min(p.step, 5); startMove(movesCH()[k], 'charge', k); p.step = 0; }
         else { p.st = 'idle'; p.comboOpen = p.st === 'attack' ? 0.3 : 0.28; if (p.step >= 6) p.step = 0; p.move = null; }
       }
       break;
@@ -1683,7 +1713,7 @@ function stepBoss(dt) {
       hal.rotation.set(0, lerp(0, -2.2, Math.min(1, b.t / 0.8)), 0);
       if (b.t > 0.85) {
         b.st = 2; b.t = 0; SND.swing(true);
-        if (d < 5.5 && Math.abs(angDiff(face, b.yaw)) < 1.8) hurtPlayer(38, b.x, b.z, true);
+        if (d < (window.__bossRig && window.__bossRig.id === 'musk' ? 2.8 : 5.5) && Math.abs(angDiff(face, b.yaw)) < 1.8) hurtPlayer(38, b.x, b.z, true);
         for (let k = 0; k < 16; k++) { const a = b.yaw - 1.6 + k / 16 * 3.2; emit(b.x + Math.sin(a) * 4, 1.6, b.z + Math.cos(a) * 4, 0, 0, 0, .3, 1.6, 0xff5a8a); }
       }
       break;
@@ -1695,7 +1725,7 @@ function stepBoss(dt) {
       break;
     case 6: { // 突進
       const [fx, fz] = fwd(b.yaw); b.x += fx * 20 * dt; b.z += fz * 20 * dt;
-      if (d < 2.6 && !b.dashHit) { b.dashHit = 1; hurtPlayer(32, b.x, b.z, true); }
+      if (d < (window.__bossRig && window.__bossRig.id === 'musk' ? 1.9 : 2.6) && !b.dashHit) { b.dashHit = 1; hurtPlayer(32, b.x, b.z, true); }
       for (let i = 0; i < NMAX; i++) if (S.alive[i] && Math.hypot(S.x[i] - b.x, S.z[i] - b.z) < 1.6) { S.vx[i] = -fz * 8; S.vz[i] = fx * 8; }
       if (b.t > 0.5) { b.st = 0; b.cd = rand(1.5, 2.5); b.dashHit = 0; }
       break;
@@ -1736,7 +1766,7 @@ function syncVisuals(dt, rdt) {
   // 拖光
   _tipW.set(0, 0, ACT.tip); ACT.wi.localToWorld(_tipW); _midW.set(0, 0, 1.2); ACT.wi.localToWorld(_midW);
   if (ACT.model) { _tipW.copy(ACT.tipModel); heroBody.localToWorld(_tipW); _midW.copy(ACT.gripModel); heroBody.localToWorld(_midW); _midW.lerp(_tipW, 0.45); }
-  const swinging = p.st === 'attack' || p.st === 'charge' || p.st === 'musou' || p.st === 'dive';
+  const swinging = (p.st === 'attack' || p.st === 'charge' || p.st === 'musou' || p.st === 'dive') && window.HERO_MOVES !== 'fist';   // 拳腳唔拖武器光
   trailPts.unshift([_tipW.x, _tipW.y, _tipW.z, _midW.x, _midW.y, _midW.z]); if (trailPts.length > TRAIL_N) trailPts.pop();
   for (let i = 0; i < TRAIL_N; i++) {
     const q = trailPts[Math.min(i, trailPts.length - 1)]; trailPos.set(q.slice(0, 3), i * 6); trailPos.set(q.slice(3, 6), i * 6 + 3);
@@ -1921,9 +1951,20 @@ requestAnimationFrame(frame);
     rise: ['360_Power_Spin_Jump', 0.4, 0.93, 1.2, 1.57, 1.95],
     slam: ['Charged_Ground_Slam', 0.6, 1.63, 2.1],
     chop: ['Heavy_Hammer_Swing', 0.8, 1.53, 1.8],
+    // 火箭商人拳腳（zy_clips_fist.js → MCLIPS_FIST，得 musk rig 先有呢啲 action）
+    jab: ['Left_Jab_from_Guard', 0.25, 0.55, 1.1],
+    jabR: ['Right_Jab_from_Guard', 0.3, 0.7, 1.3],
+    hook: ['Left_Hook_from_Guard', 0.15, 0.45, 0.8],
+    combo2: ['Punch_Combo', 0.3, 0.75, 1.4, 2.0],
+    elbow: ['Elbow_Strike', 0.4, 1.05, 1.7],
+    bothfist: ['Punch_Forward_with_Both_Fists', 0.4, 1.0, 1.8, 2.6, 3.2],
+    upper: ['Right_Uppercut_from_Guard', 0.2, 0.5, 0.85],
+    spartan: ['Spartan_Kick', 0.3, 0.75, 1.2],
+    combo3: ['Punch_Combo', 0.3, 0.6, 1.15, 1.7, 2.25],
+    slamJump: ['Jumping_Punch', 0.5, 1.55, 2.3],
   };
-  const LOOP = { flurry: ['Triple_Combo_Attack', 0.55, 0.95, 3], tornado: ['Double_Blade_Spin', 0.6, 1.6, 1.4] };   // [動作, 由, 到, 每秒幾轉]
-  const LOCKY = { Basic_Jump: 1, '360_Power_Spin_Jump': 1, Charged_Ground_Slam: 1, BeHit_FlyUp: 1 };   // 跳高由遊戲（p.y / hop）話事
+  const LOOP = { flurry: ['Triple_Combo_Attack', 0.55, 0.95, 3], tornado: ['Double_Blade_Spin', 0.6, 1.6, 1.4], flurryF: ['Punch_Combo', 0.5, 1.9, 2.2], tornadoF: ['Elbow_Strike', 0.5, 2.0, 1.6] };   // [動作, 由, 到, 每秒幾轉]
+  const LOCKY = { Basic_Jump: 1, '360_Power_Spin_Jump': 1, Charged_Ground_Slam: 1, BeHit_FlyUp: 1, Jumping_Punch: 1, Jump_and_Slam_Back_Down: 1 };   // 跳高由遊戲（p.y / hop）話事
   const AX0 = new THREE.Vector3(-0.645, 0.713, 0.277).normalize();   // 趙雲手骨座標：攻擊時槍「由胸口指出去」
   const Z = new THREE.Vector3(0, 0, 1);
   const CARRY = { idle: new THREE.Vector3(-0.15, 0.45, 0.88).normalize(), run: new THREE.Vector3(0.2, -0.28, -0.94).normalize() };   // heroBody 座標：企 = 槍尖向前向上；跑 = 拖槍
@@ -1936,7 +1977,8 @@ requestAnimationFrame(frame);
     C.model = null; C.H.each((m) => { m.visible = false; });
     let cur = null, prev = null, prevW = 0, loopT = 0, carryW = 1, carryDir = CARRY.idle.clone(), hidN = 0;
     function use(name) {
-      const a = R.actions[name];
+      let a = R.actions[name];
+      if (!a) a = R.actions.Combat_Stance;   // 冇呢個 action（例如 boss 用拳腳 bank 揀唔到張郃啲斬擊）就用企定
       if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; }
       return a;
     }
@@ -1962,7 +2004,8 @@ requestAnimationFrame(frame);
       } else if (p.st === 'musou') {
         if (p.t < 0.5) { a = use('Sword_Shout'); at(a, 0.8 + p.t * 0.9); }
         else { a = use('Double_Blade_Spin'); loopT += rdt * 1.5; at(a, 0.6 + (loopT % 1)); }
-      } else if (p.st === 'dive') { a = use('Heavy_Hammer_Swing'); at(a, 1.25 + Math.min(1, p.t / 0.3) * 0.28); }
+      } else if (p.st === 'phoenix') { a = use('Jump_and_Slam_Back_Down'); at(a, THREE.MathUtils.clamp(p.t / 1.35, 0, 1) * a.getClip().duration); }
+      else if (p.st === 'dive') { a = use('Heavy_Hammer_Swing'); at(a, 1.25 + Math.min(1, p.t / 0.3) * 0.28); }
       else if (p.st === 'dodge') { a = use('Roll_Dodge'); at(a, 0.1 + Math.min(1, p.t / 0.42) * 1.2); }
       else if (p.st === 'hurt') { a = use('Hit_Reaction'); at(a, Math.min(1, p.t / 0.45) * 0.8); }
       else if (p.y > 0.25) { a = use('Basic_Jump'); at(a, 1.75 + THREE.MathUtils.clamp(0.5 - p.vy / 24, 0, 1) * 0.7); }
@@ -2004,7 +2047,8 @@ requestAnimationFrame(frame);
     if (BOSSRIGS[id] || !window.MRIG[id]) return BOSSRIGS[id] || null;
     const R = buildMeshyRig(window.MRIG[id], window.MCLIPS);
     R.group.visible = false; bossG.add(R.group); R.axis = R.handAxis(AX0);
-    BOSSRIGS[id] = { R, hipY: window.MRIG[id].bones[0].t[1] };
+    if (id === 'musk' && window.MCLIPS_FIST && window.addClipBank) window.addClipBank(R, window.MCLIPS_FIST, window.MRIG.musk);
+    BOSSRIGS[id] = { R, hipY: window.MRIG[id].bones[0].t[1], id };
     return BOSSRIGS[id];
   }
   window.setBossRig = function (id) {
@@ -2028,7 +2072,9 @@ requestAnimationFrame(frame);
       const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8).rotateX(Math.PI / 2), wrap); grip.position.z = 0; hal.add(grip);
       const pom = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.015, 6, 12), gold); pom.position.z = -0.17; hal.add(pom); }
     let cur = null, prev = null, prevW = 0, loopT = 0, lx = 0, lz = 0, mv = 0, hidN = 0;
-    const use = (name) => { const a = window.__bossRig.R.actions[name]; if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; } return a; };
+    // musk（火箭商人）冇刀：張郃斬擊動作 → 拳腳 bank 嘅對應動作
+    const BFIST = { Charged_Slash: 'Punch_Combo', Thrust_Slash: 'Right_Jab_from_Guard', Sword_Shout: 'Elbow_Strike', Triple_Combo_Attack: 'Punch_Combo', Charged_Ground_Slam: 'Jump_and_Slam_Back_Down', Heavy_Hammer_Swing: 'Jumping_Punch', Reaping_Swing: 'Left_Hook_from_Guard', Double_Blade_Spin: 'Elbow_Strike' };
+    const use = (name) => { let a = window.__bossRig.R.actions[name]; if (!a && window.__bossRig.id === 'musk') a = window.__bossRig.R.actions[BFIST[name] || name] || window.__bossRig.R.actions.Combat_Stance; if (!a) a = window.__bossRig.R.actions.Combat_Stance; if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; } return a; };
     const at = (a, t) => { a.time = THREE.MathUtils.clamp(t, 0, a.getClip().duration); };
     const lin = (t, t0, t1, c0, c1) => c0 + (c1 - c0) * THREE.MathUtils.clamp((t - t0) / (t1 - t0), 0, 1);
     const _hq = new THREE.Quaternion(), _gq = new THREE.Quaternion(), _p = new THREE.Vector3(), _f = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -2048,6 +2094,8 @@ requestAnimationFrame(frame);
       else if (st === 6) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.12, 0.55, 0.73)); }
       else if (st === 4) { a = use('Hit_Reaction'); at(a, lin(b.t, 0, 0.55, 0, 0.9)); }
       else if (st === 5) { a = use('BeHit_FlyUp'); at(a, 0.2); }
+      else if (st === 22) { a = use('Right_Jab_from_Guard'); at(a, lin(b.t, 0, 0.42, 0.15, 1.1)); }   // 名人亂鬥 2P 輕擊（musk 拳打）
+      else if (st === 24) { a = use('Jump_and_Slam_Back_Down'); at(a, THREE.MathUtils.clamp(b.t / 1.35, 0, 1) * a.getClip().duration); }   // 火鳳凰
       else if (st === 7) { a = use('Sword_Shout'); at(a, b.t < 1 ? lin(b.t, 0, 1, 0.8, 1.3) : 1.3); }   // 朱雀：舉刀（boss_ext.js）
       else if (st === 8) { a = use('Triple_Combo_Attack'); at(a, b.t < 0.25 ? lin(b.t, 0, 0.25, 0.45, 0.73) : b.t < 0.6 ? lin(b.t, 0.25, 0.6, 0.73, 1.5) : b.t < 0.95 ? lin(b.t, 0.6, 0.95, 1.5, 2.23) : lin(b.t, 0.95, 1.3, 2.23, 2.5)); }
       else if (st === 9) { a = use('Charged_Ground_Slam'); at(a, b.t < 0.35 ? lin(b.t, 0, 0.35, 0.3, 0.9) : b.t < 0.95 ? lin(b.t, 0.35, 0.95, 0.9, 1.63) : lin(b.t, 0.95, 1.5, 1.63, 2.2)); }

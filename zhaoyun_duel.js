@@ -36,7 +36,7 @@
 
   // ===== 四個名人（私人版）。換 Meshy 模型時只需改 rig；絕招邏輯喺下面 cast() =====
   const FIGHTERS = {
-    rocket: { name: '火箭商人', short: '火箭', rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: '火箭來襲', specHint: '遠距掉火箭' },
+    rocket: { name: '火箭商人', short: '火箭', rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: '火鳳凰降臨', specHint: '飛上天再炸落嚟' },
     tariff: { name: '關稅大帝', short: '關稅', rig: 'gy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: '關稅牆！', specHint: '封住對手 5 秒' },
     chip:   { name: '晶片教主', short: '晶片', rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: '晶片生成', specHint: '三塊晶片追蹤' },
     cart:   { name: '車力巨人', short: '巨人', rig: 'gy', col: '#b89a80', hp: 520, scale: 1.18, spec: 'ram', specName: '高速衝撞', specHint: '直線衝鋸對手' },
@@ -50,10 +50,12 @@
   // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
   const muskReady = (async () => {
     try {
-      const [jb, tb] = await Promise.all([
+      const [jb, tb, cb] = await Promise.all([
         fetch('zy_rig_musk.js').then((r) => { if (!r.ok) throw new Error('rig ' + r.status); return r.arrayBuffer(); }),
-        fetch('zy_tex_musk.webp').then((r) => { if (!r.ok) throw new Error('tex ' + r.status); return r.arrayBuffer(); })]);
+        fetch('zy_tex_musk.webp').then((r) => { if (!r.ok) throw new Error('tex ' + r.status); return r.arrayBuffer(); }),
+        fetch('zy_clips_fist.js').then((r) => { if (!r.ok) throw new Error('clips ' + r.status); return r.arrayBuffer(); })]);
       const s = document.createElement('script'); s.text = new TextDecoder().decode(jb) + '\n//# sourceURL=zy_rig_musk.js'; document.head.appendChild(s);
+      const s2 = document.createElement('script'); s2.text = new TextDecoder().decode(cb) + '\n//# sourceURL=zy_clips_fist.js'; document.head.appendChild(s2);
       if (window.MRIG && window.MRIG.musk) window.MRIG.musk.tex = URL.createObjectURL(new Blob([tb], { type: 'image/webp' }));
     } catch (e) { console.warn('musk load failed', e); }
   })();
@@ -66,6 +68,7 @@
     if (id !== 'zy' && !heroRigs[id]) {
       if (!window.MRIG || !window.MRIG[id] || !window.MRIG_ATTACH) return false;
       window.MRIG_ATTACH(C, id, MUSK_SCALE);   // attach 會暫時將 C.mrig/rigUpdate 指向新 rig
+      if (id === 'musk' && window.MCLIPS_FIST && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_FIST, window.MRIG.musk);
       heroRigs[id] = { mrig: C.mrig, rigUpdate: C.rigUpdate };
       C.mrig = heroRigs.zy.mrig; C.rigUpdate = heroRigs.zy.rigUpdate;
     }
@@ -73,6 +76,7 @@
     C.mrig = heroRigs[use].mrig; C.rigUpdate = heroRigs[use].rigUpdate;
     for (const k in heroRigs) heroRigs[k].mrig.group.visible = k === use;
     C.w.visible = use === 'zy';   // 火箭商人冇槍
+    window.HERO_MOVES = use === 'musk' ? 'fist' : null;   // musk：N/CH 轉拳腳表
     return true;
   }
   function applyRigs() {
@@ -164,16 +168,81 @@
   };
   const clearRam = () => { if (RAM) { if (RAM.who === 'p1' && player.st === 'ram') player.st = 'idle'; if (RAM.who === 'p2' && boss.st === RAMST) boss.st = 0; RAM = null; } };
 
+  // ===== 火鳳凰降臨（火箭商人絕招）：0–0.55s 飛上天 → 0.55–1s 紅圈跟目標 → 1–1.3s 俯衝 → 7.5m 大爆炸 =====
+  const PHXST = 24, PHX_R = 7.5;
+  let PHX = null;
+  const phxMat = (c, o = .95) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
+  const mkWarnRing = () => new THREE.Mesh(new THREE.RingGeometry(PHX_R - .55, PHX_R, 44).rotateX(-Math.PI / 2), phxMat(0xff2818, .7));
+  const phxFx = [];   // 爆炸後續效果（火球、焦痕），host/guest 共用
+  const stepPhxFx = (dt) => {
+    for (let i = phxFx.length - 1; i >= 0; i--) {
+      const f = phxFx[i]; f.t += dt; const k = Math.min(1, f.t / f.dur);
+      if (f.kind === 'ball') { f.m.scale.setScalar(lerp(.5, 7, k)); f.m.material.opacity = .9 * (1 - k); }
+      else if (f.kind === 'scorch') f.m.material.opacity = .55 * (1 - k);
+      if (f.t >= f.dur) { scene.remove(f.m); phxFx.splice(i, 1); }
+    }
+  };
+  const phxBoom = (x, z) => {   // 大爆炸視效（host 同 guest 都咁樣砌）
+    boom(x, 1.5, z, 0xff7020, 200);
+    ring(x, z, PHX_R, 0xff9040, .7); setTimeout(() => ring(x, z, PHX_R, 0xffd090, .7), 130); setTimeout(() => ring(x, z, PHX_R, 0xfff0c0, .7), 260);
+    const ball = new THREE.Mesh(new THREE.SphereGeometry(1, 20, 14), phxMat(0xffa030, .95)); ball.position.set(x, 1, z); scene.add(ball); phxFx.push({ m: ball, t: 0, dur: .5, kind: 'ball' });
+    const sc = new THREE.Mesh(new THREE.CircleGeometry(PHX_R * .8, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x140b06, transparent: true, opacity: .55, depthWrite: false, fog: false })); sc.position.set(x, .06, z); scene.add(sc); phxFx.push({ m: sc, t: 0, dur: 2, kind: 'scorch' });
+  };
+  const castPhx = (who) => {
+    const [x, z] = posOf(who);
+    PHX = { who, t: 0, x0: x, z0: z, tx: x, tz: z, ring: null, boom: 0 };
+    camShake = Math.max(camShake, .8); SND.musou();
+    if (who === 'p1') { player.st = 'phoenix'; player.t = 0; player.move = null; player.inv = Math.max(player.inv, 1.8); }
+    else { boss.st = PHXST; boss.t = 0; }
+    if (D.net === 'host') netSend({ t: 'fx', k: 'phx', who, ph: 0 });
+  };
+  const stepPhx = (rdt) => {
+    stepPhxFx(rdt);
+    if (!PHX) return;
+    PHX.t += rdt;
+    const me = PHX.who === 'p1' ? player : boss;
+    me.vy = 0;   // 唔俾地心吸力扯落嚟：step0 嘅重力對 phoenix 狀態都照計
+    if (PHX.t < .55) {   // 上天：火箭噴煙
+      const k = PHX.t / .55; me.y = 12 * k * k; me.x = PHX.x0; me.z = PHX.z0;
+      for (let i = 0; i < 4; i++) emit(me.x + rand(-.5, .5), me.y * .9 + rand(0, .6), me.z + rand(-.5, .5), rand(-1, 1), -rand(2, 5), rand(-1, 1), rand(.3, .6), rand(.8, 1.5), Math.random() < .5 ? 0xff8030 : 0x606060, 6, 0);
+    } else if (PHX.t < 1) {   // 空中瞄準：紅圈追目標，1 秒鎖死
+      me.y = 12;
+      const [tx, tz] = posOf(other(PHX.who)); PHX.tx = tx; PHX.tz = tz;
+      if (!PHX.ring) { PHX.ring = mkWarnRing(); scene.add(PHX.ring); }
+      PHX.ring.position.set(tx, .12, tz); PHX.ring.material.opacity = .5 + .3 * Math.sin(PHX.t * 30);
+    } else if (PHX.t < 1.3) {   // 俯衝：火尾
+      const k = (PHX.t - 1) / .3;
+      me.x = lerp(PHX.x0, PHX.tx, k); me.z = lerp(PHX.z0, PHX.tz, k); me.y = 12 * (1 - k);
+      for (let i = 0; i < 6; i++) { const a = Math.random() * TAU; emit(me.x + rand(-.6, .6), me.y + rand(0, 1.5), me.z + rand(-.6, .6), Math.cos(a) * rand(1, 4), rand(1, 4), Math.sin(a) * rand(1, 4), rand(.3, .6), rand(1, 1.8), Math.random() < .6 ? 0xffa030 : 0xff5018, -2, 0); }
+    } else {   // 落地爆
+      me.y = 0; me.x = PHX.tx; me.z = PHX.tz;
+      if (PHX.ring) { scene.remove(PHX.ring); PHX.ring = null; }
+      if (!PHX.boom) {
+        PHX.boom = 1; phxBoom(me.x, me.z);
+        const [tx, tz] = posOf(other(PHX.who));
+        if (Math.hypot(tx - me.x, tz - me.z) < PHX_R && aliveOf(other(PHX.who))) dmgTo(other(PHX.who), PHX.who === 'p1' ? 150 : 130, me.x, me.z, true);
+        flash(.7); camShake = 1.6; hitstop = Math.max(hitstop, .2); SND.bigboom();
+        if (D.net === 'host') netSend({ t: 'fx', k: 'phx', who: PHX.who, ph: 1, x: +me.x.toFixed(2), z: +me.z.toFixed(2) });
+      }
+      if (PHX.t > 1.55) {   // 埋尾：還原狀態
+        if (PHX.who === 'p1') { if (player.st === 'phoenix') player.st = 'idle'; }
+        else if (boss.st === PHXST) { boss.st = 0; boss.cd = 1.4; }
+        PHX = null;
+      }
+    }
+  };
+  const clearPhx = () => { if (!PHX) return; if (PHX.ring) scene.remove(PHX.ring); if (PHX.who === 'p1' && player.st === 'phoenix') { player.st = 'idle'; player.y = 0; } if (PHX.who === 'p2' && boss.st === PHXST) { boss.st = 0; boss.y = 0; } PHX = null; };
+
   // ---- 放絕招 ----
   D.FIGHTERS = FIGHTERS; D.state = () => ({ pr: PR.length, wall: W && W.who, wallBy: W && W.by, wallT: W && +W.t.toFixed(1), ram: RAM && RAM.who });
-  const busy = (who) => (RAM && RAM.who === who) || (W && W.by === who) || PR.some((o) => o.who === who);
+  const busy = (who) => (RAM && RAM.who === who) || (W && W.by === who) || (PHX && PHX.who === who) || PR.some((o) => o.who === who);
   const cast = (who) => {
     const F = who === 'p1' ? F1() : F2(); if (!F) return;
     const [x, z] = posOf(who), [tx, tz] = posOf(other(who)), a = Math.atan2(tx - x, tz - z);
     banner(`${F.name}：${F.specName}`, F.col, who === 'p2'); if (who === 'p1') flash(.35);
     if (D.net === 'host') netSend({ t: 'fx', k: 'cast', who });
     switch (F.spec) {
-      case 'rocket': shoot({ kind: 'rocket', who, m: mkRocket(), x: x + Math.sin(a) * 1.4, y: 1.7, z: z + Math.cos(a) * 1.4, a, sp: 19, turn: 1.4, life: 3.2, dmg: who === 'p1' ? 72 : 58, r: 1.6, big: true }); SND.musou(); break;
+      case 'rocket': castPhx(who); break;
       case 'chips': for (let k = 0; k < 3; k++) { const b = a + (k - 1) * .9; shoot({ kind: 'chip', who, m: mkChip(), x: x + Math.sin(b) * 1.6, y: 1.3, z: z + Math.cos(b) * 1.6, a: b, sp: 16, turn: 3.4, life: 3, dmg: who === 'p1' ? 28 : 22, r: 1.3, big: false, delay: .15 + k * .25 }); } break;
       case 'wall': castWall(who); break;
       case 'ram': castRam(who); break;
@@ -290,6 +359,9 @@
       const win = !!m.win; over0(win); setOverText(win);
     } else if (m.t === 'fx' && NET.role === 'guest' && m.k === 'cast') {
       const F = m.who === 'p1' ? F1() : F2(); if (F) { banner(`${F.name}：${F.specName}`, F.col, m.who === 'p2'); if (m.who === 'p1') flash(.35); }
+    } else if (m.t === 'fx' && NET.role === 'guest' && m.k === 'phx') {
+      if (m.ph === 0) { if (NET.phxRing) scene.remove(NET.phxRing); NET.phxRing = mkWarnRing(); NET.phxWho = m.who; scene.add(NET.phxRing); }
+      else if (m.ph === 1) { if (NET.phxRing) { scene.remove(NET.phxRing); NET.phxRing = null; } phxBoom(m.x, m.z); }
     } else if (m.t === 'rematch' && NET.role === 'host' && GAME.state === 'over') { GAME.start(); }
   }
   let netUI, netStatus, netCode, netInput, netErr, pingEl;
@@ -369,6 +441,7 @@
     for (const [id, m] of NET.fxMeshes) if (!wanted.has(id)) { scene.remove(m); NET.fxMeshes.delete(id); }
     if (fx.wall) { if (!NET.wallMesh) { NET.wallMesh = mkWall(); scene.add(NET.wallMesh); } NET.wallMesh.position.set(fx.wall.x, 0, fx.wall.z); NET.wallMesh.scale.y = Math.max(.01, 1 - fx.wall.t / 5); }
     else if (NET.wallMesh) { scene.remove(NET.wallMesh); NET.wallMesh = null; }
+    if (NET.phxRing) { const t = NET.phxWho === 'p1' ? boss : player; NET.phxRing.position.set(t.x, .12, t.z); NET.phxRing.material.opacity = .5 + .3 * Math.sin(Date.now() / 33); }   // 火鳳凰警告圈喺 guest 機跟目標
     if (fx.ram && Math.random() < .45) for (let i = 0; i < 3; i++) emit(fx.ram.x + rand(-1, 1), .3, fx.ram.z + rand(-1, 1), rand(-2, 2), rand(1, 3), rand(-2, 2), .35, .7, 0x8a7a68);
   }
   function guestTick(rdt) {
@@ -376,7 +449,7 @@
     if (IN.atk) NET.c.a++; if (IN.chg) NET.c.d++; if (IN.dodge) NET.c.o++; if (IN.musou) NET.c.s++; if (IN.jump) NET.c.d++;
     const mv = worldMove(); NET.localMv = mv; sendIn();
     if (Date.now() - NET.lastPing > 1000 && NET.ws && NET.ws.readyState === WebSocket.OPEN) { NET.lastPing = Date.now(); netSend({ t: 'ping', ts: Date.now(), rtt: NET.ping }); }
-    applySnapshot(rdt); syncNetEffects();
+    applySnapshot(rdt); syncNetEffects(); stepPhx(rdt);   // PHX==null on guest，淨係走 stepPhxFx 爆炸效果
     if (D.two) cam2p(rdt);
     stepParticles(rdt); stepChunks(rdt); stepRings(rdt); stepFires(rdt);
     syncVisuals(rdt, rdt); stepCamera(rdt); writeParticles();
@@ -408,7 +481,7 @@
       if (!D.on) { P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0; return; }
       for (const n in P2IN) P2IN[n] = NET.queue[n] > 0;
     }
-    if (b.st === 0 || b.st === LIGHT || b.st === DODGE) {
+    if (b.st === 0 || b.st === LIGHT || b.st === DODGE || b.st === PHXST) {   // PHXST 期間 stepPhx 揸 fit
       b.flash -= dt; b.t += dt; b.cd -= dt;
       b.x += b.vx * dt; b.z += b.vz * dt; b.vx *= Math.max(0, 1 - 4 * dt); b.vz *= Math.max(0, 1 - 4 * dt);
       if (b.y > 0 || b.vy > 0) { b.vy -= 22 * dt; b.y += b.vy * dt; if (b.y <= 0) { b.y = 0; b.vy = 0; } }
@@ -425,13 +498,13 @@
         }
       } else if (b.st === LIGHT) {   // 輕斬 0.42 秒
         hal.rotation.set(0, lerp(1.3, -1.7, Math.min(1, b.t / 0.26)), 0);
-        if (!b.hitDone && b.t > 0.16) { b.hitDone = 1; if (d < 4.6 && Math.abs(angDiff(face, b.yaw)) < 1.5) hurtPlayer(14, b.x, b.z, false);
-          for (let k = 0; k < 8; k++) { const a = b.yaw - 1 + k / 8 * 2; emit(b.x + Math.sin(a) * 3.4, 1.5, b.z + Math.cos(a) * 3.4, 0, 0, 0, .22, 1.2, 0xff5a8a); } }
+        if (!b.hitDone && b.t > 0.16) { b.hitDone = 1; const fist = F2().spec === 'rocket'; if (d < (fist ? 2.6 : 4.6) && Math.abs(angDiff(face, b.yaw)) < 1.5) hurtPlayer(14, b.x, b.z, false);
+          for (let k = 0; k < 8; k++) { const a = b.yaw - 1 + k / 8 * 2, rr = fist ? 2 : 3.4; emit(b.x + Math.sin(a) * rr, 1.5, b.z + Math.cos(a) * rr, 0, 0, 0, .22, 1.2, 0xff5a8a); } }
         if (b.t > 0.42) { b.st = 0; b.cd = 0.12; }
-      } else {   // 閃避 0.4 秒
+      } else if (b.st === DODGE) {   // 閃避 0.4 秒
         if (Math.random() < dt * 30) emit(b.x, 0.3, b.z, rand(-1, 1), rand(1, 2), rand(-1, 1), .4, 1.1, 0xc0b0a0);
         if (b.t > 0.4) { b.st = 0; b.cd = 0.15; }
-      }
+      }   // PHXST 唔郁：stepPhx 揸 fit
       b.x = clamp(b.x, -ARENA + 2, ARENA - 2); b.z = clamp(b.z, -ARENA + 2, ARENA - 2);
       if (d < 1.8) { player.x += dx / d * (1.8 - d); player.z += dz / d * (1.8 - d); }
     } else {   // 原有招（突進 3→6、受擊 4／5、牆／衝撞）：暫時將 max 設 0 令 boss_ext 唔會自動放朱雀
@@ -440,7 +513,7 @@
     P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0;
   };
   const hb1 = hitBoss;
-  hitBoss = function (...a) { if (D.two && b2inv > 0) return; return hb1.apply(this, a); };
+  hitBoss = function (...a) { if ((D.two && b2inv > 0) || boss.st === PHXST) return; return hb1.apply(this, a); };   // 火鳳凰期間無敵
   // 2P 鏡頭：側面望住兩個人，距離跟兩人相隔
   let camN = null, camP = null;
   const cam2p = (rdt) => {
@@ -460,7 +533,7 @@
 
   const resetRound = () => {
     clearCrowd();
-    clearPR(); clearWall(); clearRam(); D.aiCd = rand(3.5, 5); D.specBuf = 0; D.m2 = 0; camP = camN = null; window.__camOverride = null;
+    clearPR(); clearWall(); clearRam(); clearPhx(); D.aiCd = rand(3.5, 5); D.specBuf = 0; D.m2 = 0; camP = camN = null; window.__camOverride = null;
     if (D.net === 'host') { for (const k in NET.queue) NET.queue[k] = 0; NET.mv = null; NET.mvAt = 0; }
     Object.assign(player, { x: 0, z: 7, y: 0, vy: 0, yaw: Math.PI, hp: player.max, musou: 0, st: 'idle', t: 0, move: null, inv: 1 });
     Object.assign(boss, { alive: true, spawned: true, hp: OPP_HP, max: OPP_HP, st: 0, t: 0, cd: 1.2, x: 0, z: -7, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0, poise: 60, dashHit: 0 });
@@ -509,7 +582,7 @@
     $('ostats').innerHTML = `<div style="font-size:.9em;line-height:1.5;margin:6px 0 10px">${HEADLINE[win ? D.f2 : D.f1](Wn.name)}</div><div>${D.p1} : ${D.p2}</div>`;
   };
   const finish = (win) => {
-    over0(win); clearPR(); clearWall(); clearRam(); window.__camOverride = null;
+    over0(win); clearPR(); clearWall(); clearRam(); clearPhx(); window.__camOverride = null;
     setOverText(win);
     if (D.net === 'host') netSend({ t: 'over', win: win ? 1 : 0, p1: D.p1, p2: D.p2 });
   };
@@ -531,7 +604,7 @@
     }
     if (IN.musou && !guest) { IN.musou = 0; if (live && player.musou >= 100) D.specBuf = .5; }
     if (live && !guest && D.specBuf > 0) { D.specBuf -= rdt; if ((player.st === 'idle' || player.st === 'run') && !busy('p1')) { D.specBuf = 0; player.musou = 0; cast('p1'); } }
-    if (GAME.state === 'play') { stepWall(rdt, true); stepRam(rdt, true); if (D.two || D.net) cam2p(rdt); }
+    if (GAME.state === 'play') { stepWall(rdt, true); stepRam(rdt, true); stepPhx(rdt); if (D.two || D.net) cam2p(rdt); }
     step0(rdt);
     if (GAME.state === 'play') {
       stepPR(rdt);
@@ -544,7 +617,7 @@
       if (live && !guest && !D.two && boss.alive && boss.st === 0 && !busy('p2')) {
         D.aiCd -= rdt;
         if (D.aiCd <= 0) { const d = Math.hypot(player.x - boss.x, player.z - boss.z), sp = F2().spec;
-          if ((sp === 'rocket' && d > 6) || sp === 'chips' || (sp === 'wall' && d < 11) || (sp === 'ram' && d > 5)) { cast('p2'); D.aiCd = rand(7, 10); } }
+          if ((sp === 'rocket' && d < 16) || sp === 'chips' || (sp === 'wall' && d < 11) || (sp === 'ram' && d > 5)) { cast('p2'); D.aiCd = rand(7, 10); } }
       }
     }
     if (!hud.hidden) {
