@@ -1998,10 +1998,25 @@ requestAnimationFrame(frame);
   };
   if (window.MRIG.guanyu) window.ZY_LATE.guanyu();
 
-  // ============ 敵將張郃：Meshy 模型，按 boss.st 揀動作；戟跟手 ============
+  // ============ 敵將：Meshy 模型（預設張郃，名人亂鬥可換其他角色）；按 boss.st 揀動作；武器跟手 ============
+  const BOSSRIGS = {};   // id -> { R, hipY }：所有已裝模型都喺 bossG 入面，visible 切換
+  function attachBossRig(id) {
+    if (BOSSRIGS[id] || !window.MRIG[id]) return BOSSRIGS[id] || null;
+    const R = buildMeshyRig(window.MRIG[id], window.MCLIPS);
+    R.group.visible = false; bossG.add(R.group); R.axis = R.handAxis(AX0);
+    BOSSRIGS[id] = { R, hipY: window.MRIG[id].bones[0].t[1] };
+    return BOSSRIGS[id];
+  }
+  window.setBossRig = function (id) {
+    const rec = attachBossRig(id); if (!rec) return false;
+    for (const k in BOSSRIGS) BOSSRIGS[k].R.group.visible = k === id;
+    window.__bossRig = rec;
+    const hal = bossG.userData.hal; if (hal) hal.visible = id === 'zhanghe';   // 刀只屬張郃
+    return true;
+  };
   function attachBoss() {
-    const R = buildMeshyRig(window.MRIG.zhanghe, window.MCLIPS), hal = bossG.userData.hal, hipY = window.MRIG.zhanghe.bones[0].t[1];
-    bossG.add(R.group); R.axis = R.handAxis(AX0);
+    const rec = attachBossRig('zhanghe'); if (!rec) return;
+    const R = rec.R, hal = bossG.userData.hal, hipY = rec.hipY;
     // BG 09-29：張郃用刀唔用戟 → 收埋戟，換一把單手大刀（刀柄喺掌心，刀身沿 +z）
     hal.children.forEach((c) => { c.visible = false; });
     { const steel = new THREE.MeshLambertMaterial({ color: 0xc8ced8, emissive: 0x181c22 }), gold = new THREE.MeshLambertMaterial({ color: 0xc89a3a, emissive: 0x2a1c04 }),
@@ -2013,7 +2028,7 @@ requestAnimationFrame(frame);
       const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8).rotateX(Math.PI / 2), wrap); grip.position.z = 0; hal.add(grip);
       const pom = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.015, 6, 12), gold); pom.position.z = -0.17; hal.add(pom); }
     let cur = null, prev = null, prevW = 0, loopT = 0, lx = 0, lz = 0, mv = 0, hidN = 0;
-    const use = (name) => { const a = R.actions[name]; if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; } return a; };
+    const use = (name) => { const a = window.__bossRig.R.actions[name]; if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; } return a; };
     const at = (a, t) => { a.time = THREE.MathUtils.clamp(t, 0, a.getClip().duration); };
     const lin = (t, t0, t1, c0, c1) => c0 + (c1 - c0) * THREE.MathUtils.clamp((t - t0) / (t1 - t0), 0, 1);
     const _hq = new THREE.Quaternion(), _gq = new THREE.Quaternion(), _p = new THREE.Vector3(), _f = new THREE.Vector3(), _d = new THREE.Vector3();
@@ -2022,7 +2037,7 @@ requestAnimationFrame(frame);
       sv0(dt, rdt);
       if (!boss.alive) return;
       if (hidN < 3 || BOSS.parts.torso && BOSS.parts.torso[0].visible) { BOSS.each((o) => { o.visible = false; }); hidN++; }
-      const b = boss, st = b.st;
+      const R = window.__bossRig.R, hipY = window.__bossRig.hipY, b = boss, st = b.st;
       if (dt > 1e-4) mv += ((Math.hypot(b.x - lx, b.z - lz) / dt > 1 ? 1 : 0) - mv) * 0.3;
       lx = b.x; lz = b.z;
       bossG.rotation.x = 0;
@@ -2052,7 +2067,7 @@ requestAnimationFrame(frame);
       _d.copy(R.axis).applyQuaternion(_hq).applyQuaternion(_gq);
       hal.position.copy(_p); hal.quaternion.setFromUnitVectors(Z, _d);
     };
-    window.__bossRig = R;
+    window.setBossRig('zhanghe');
   }
   if (window.MRIG.zhanghe) window.ZY_LATE.zhanghe();
 })();

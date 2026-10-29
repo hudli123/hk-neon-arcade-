@@ -47,6 +47,40 @@
     chip:   (w) => `【突發】晶片教主敗陣，宣布下季推新卡——即日售罄；${w}冇買到`,
     cart:   (w) => `【突發】車力巨人衝得太快煞唔切，直出場外；${w}獲判勝`,
   };
+  // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
+  const muskReady = (async () => {
+    try {
+      const [jb, tb] = await Promise.all([
+        fetch('zy_rig_musk.js').then((r) => { if (!r.ok) throw new Error('rig ' + r.status); return r.arrayBuffer(); }),
+        fetch('zy_tex_musk.webp').then((r) => { if (!r.ok) throw new Error('tex ' + r.status); return r.arrayBuffer(); })]);
+      const s = document.createElement('script'); s.text = new TextDecoder().decode(jb) + '\n//# sourceURL=zy_rig_musk.js'; document.head.appendChild(s);
+      if (window.MRIG && window.MRIG.musk) window.MRIG.musk.tex = URL.createObjectURL(new Blob([tb], { type: 'image/webp' }));
+    } catch (e) { console.warn('musk load failed', e); }
+  })();
+  // ---- 主角模型切換：CHARS.zy 可以掛多個 rig，按 f1 揀邊個現形/動畫；趙雲 mesh + 槍照舊 ----
+  const MUSK_SCALE = 1.12;   // musk bbox 高 1.80m（同 zy 1.80 / zhanghe 1.85 同級），用返趙雲嘅 1.12
+  const heroRigs = {};   // 'zy' | 'musk' -> { mrig, rigUpdate }（rigUpdate 係 attach() 入面同一部狀態機，唔使複製）
+  function setHeroMesh(id) {   // id: 'zy' | 'musk'
+    const C = CHARS && CHARS.zy; if (!C || !C.mrig) return false;
+    if (!heroRigs.zy) heroRigs.zy = { mrig: C.mrig, rigUpdate: C.rigUpdate };
+    if (id !== 'zy' && !heroRigs[id]) {
+      if (!window.MRIG || !window.MRIG[id] || !window.MRIG_ATTACH) return false;
+      window.MRIG_ATTACH(C, id, MUSK_SCALE);   // attach 會暫時將 C.mrig/rigUpdate 指向新 rig
+      heroRigs[id] = { mrig: C.mrig, rigUpdate: C.rigUpdate };
+      C.mrig = heroRigs.zy.mrig; C.rigUpdate = heroRigs.zy.rigUpdate;
+    }
+    const use = heroRigs[id] ? id : 'zy';
+    C.mrig = heroRigs[use].mrig; C.rigUpdate = heroRigs[use].rigUpdate;
+    for (const k in heroRigs) heroRigs[k].mrig.group.visible = k === use;
+    C.w.visible = use === 'zy';   // 火箭商人冇槍
+    return true;
+  }
+  function applyRigs() {
+    setHeroMesh(D.f1 === 'rocket' && window.MRIG && window.MRIG.musk ? 'musk' : 'zy');
+    if (window.setBossRig) window.setBossRig(D.f2 === 'rocket' && window.MRIG && window.MRIG.musk ? 'musk' : 'zhanghe');
+  }
+  muskReady.then(() => { applyRigs(); const s = document.getElementById('pick'); if (s) s.dispatchEvent(new Event('muskloaded')); });
+
   const Q = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));
   const pickId = (v, not) => (v in FIGHTERS && v !== not) ? v : null;
   D.f1 = pickId(Q.get('p1')) || 'rocket';
@@ -284,7 +318,7 @@
     if (netUI.querySelector('[data-net-action="cancel"]')) netUI.querySelector('[data-net-action="cancel"]').hidden = !active;
     const bp = $('bPause'); if (bp) bp.hidden = onlineLive();
     const myTurn = active && NET.peer && ((NET.role === 'host' && !NET.hostF) || (NET.role === 'guest' && !NET.guestF));
-    for (const b of $('pick').querySelectorAll('.fbtn')) { b.disabled = !!NET.role && (!NET.peer || NET.role === 'guest' && !!NET.guestF); b.classList.toggle('pickme', !!myTurn && !b.disabled); }
+    for (const b of $('pick').querySelectorAll('.fbtn')) { b.disabled = (!!NET.role && (!NET.peer || NET.role === 'guest' && !!NET.guestF)) || (b.dataset.f === 'rocket' && !(window.MRIG && window.MRIG.musk)); b.classList.toggle('pickme', !!myTurn && !b.disabled); }
   }
   function initNetUI(sel, d2p, dp2) {
     const host = location.hostname;
@@ -441,6 +475,7 @@
     start0(c || F1().rig);
     player.max = F1().hp; player.hp = player.max;
     hero.scale.setScalar(1.12 * F1().scale); bossG.scale.setScalar(1.3 * F2().scale);
+    applyRigs();
     D.round = 1; D.p1 = D.p2 = 0;
     $('dn1').textContent = F1().name; $('dn2').textContent = F2().name; $('face').textContent = F1().short;
     hud.hidden = false; $('ko').hidden = true; $('dm2').hidden = $('dk2').hidden = !(D.two || D.net);
@@ -546,7 +581,8 @@
       };
       pick.appendChild(b);
     }
-    const sync = () => { for (const b of pick.querySelectorAll('.fbtn')) { b.disabled = FIGHTERS[b.dataset.f].rig === 'gy' && sg.disabled || (NET.role && !NET.peer); b.title = b.disabled ? '載入中…' : ''; } if (sg.disabled || (NET.role && !NET.peer)) setTimeout(sync, 200); };
+    const sync = () => { for (const b of pick.querySelectorAll('.fbtn')) { b.disabled = FIGHTERS[b.dataset.f].rig === 'gy' && sg.disabled || (b.dataset.f === 'rocket' && !(window.MRIG && window.MRIG.musk)) || (NET.role && !NET.peer); b.title = b.disabled ? '載入中…' : ''; } if (sg.disabled || (NET.role && !NET.peer)) setTimeout(sync, 200); };
+    pick.addEventListener('muskloaded', sync);
     sync();
     // ===== 網上對戰 UI（只喺非 GitHub Pages host 或 #net=1 先顯示） =====
     initNetUI(sel, d2p, dp2);
