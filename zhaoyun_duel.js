@@ -121,7 +121,9 @@
     body.rotation.x = Math.PI / 2; g.add(body);
     const nose = new THREE.Mesh(new THREE.ConeGeometry(.3, .7, 18), new THREE.MeshLambertMaterial({ color: 0x16181d })); nose.rotation.x = Math.PI / 2; nose.position.z = 1.45; g.add(nose);
     const band = new THREE.Mesh(new THREE.CylinderGeometry(.305, .305, .2, 18), new THREE.MeshLambertMaterial({ color: 0x16181d })); band.rotation.x = Math.PI / 2; band.position.z = 1.02; g.add(band);
-    for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.BoxGeometry(.05, .55, .5), new THREE.MeshLambertMaterial({ color: 0x16181d })); f.position.z = -.95; f.rotation.z = k / 4 * TAU; f.position.x = Math.sin(k / 4 * TAU) * .4; f.position.y = Math.cos(k / 4 * TAU) * .4; g.add(f); }
+    const finGeo = new THREE.CylinderGeometry(.16, .28, .3, 4, 1), finMat = new THREE.MeshLambertMaterial({ color: 0x2a2d33 });
+    for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(finGeo, finMat); f.scale.set(.22, 1, 1.2); f.position.set(Math.sin(k / 4 * TAU) * .34, Math.cos(k / 4 * TAU) * .34, -1); g.add(f); }
+    for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.BoxGeometry(.04, .16, .16), finMat); f.position.set(Math.sin(k / 4 * TAU) * .32, Math.cos(k / 4 * TAU) * .32, .85); g.add(f); }
     g.userData.phx = 1; return g;
   };
   const mkChip = () => { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.BoxGeometry(.8, .08, .8), new THREE.MeshBasicMaterial({ color: 0x39ff14 }))); const die = new THREE.Mesh(new THREE.BoxGeometry(.45, .14, .45), new THREE.MeshLambertMaterial({ color: 0x111111 })); die.position.y = .1; g.add(die); return g; };
@@ -287,8 +289,14 @@
     const k = e.key; if (k === '=' || k === '+') { zoomTo(1 / 1.12); e.preventDefault(); }
     else if (k === '-' || k === '_') { zoomTo(1.12); e.preventDefault(); }
   });
-  const tb = document.getElementById('tb');
-  if (tb) for (const [t, f, id] of [['＋', 1 / 1.25, 'dzin'], ['－', 1.25, 'dzout']]) { const b = document.createElement('button'); b.id = id; b.textContent = t; b.onclick = () => zoomTo(f); tb.appendChild(b); }
+  const dz = document.createElement('div'); dz.id = 'dzoom';
+  dz.style.cssText = 'position:fixed;right:14px;top:168px;display:flex;flex-direction:column;gap:6px;z-index:6';
+  for (const [t, f, id] of [['＋', 1 / 1.25, 'dzin'], ['－', 1.25, 'dzout']]) {
+    const b = document.createElement('button'); b.id = id; b.textContent = t;
+    b.style.cssText = 'width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.5);background:rgba(20,20,30,.55);color:#fff;font-size:18px;font-weight:900;cursor:pointer;touch-action:manipulation';
+    b.onclick = () => zoomTo(f); dz.appendChild(b);
+  }
+  document.body.appendChild(dz);
   const NKEY = { atk: 'a', dash: 'd', dodge: 'o', spec: 's' };   // guest 數字鍵 → input counters
   addEventListener('keydown', (e) => {
     if (e.repeat) return; const k = e.key.toLowerCase();
