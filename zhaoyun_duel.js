@@ -36,7 +36,7 @@
 
   // ===== 四個名人（私人版）。換 Meshy 模型時只需改 rig；絕招邏輯喺下面 cast() =====
   const FIGHTERS = {
-    rocket: { name: '火箭商人', short: '火箭', rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: '火鳳凰降臨', specHint: '飛上天再炸落嚟' },
+    rocket: { name: '火箭商人', short: '火箭', rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: '火鳳凰降臨', specHint: '射火箭上天再炸落嚟', mGain: .5 },
     tariff: { name: '關稅大帝', short: '關稅', rig: 'gy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: '關稅牆！', specHint: '封住對手 5 秒' },
     chip:   { name: '晶片教主', short: '晶片', rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: '晶片生成', specHint: '三塊晶片追蹤' },
     cart:   { name: '車力巨人', short: '巨人', rig: 'gy', col: '#b89a80', hp: 520, scale: 1.18, spec: 'ram', specName: '高速衝撞', specHint: '直線衝鋸對手' },
@@ -77,6 +77,7 @@
     for (const k in heroRigs) heroRigs[k].mrig.group.visible = k === use;
     C.w.visible = use === 'zy';   // 火箭商人冇槍
     window.HERO_MOVES = use === 'musk' ? 'fist' : null;   // musk：N/CH 轉拳腳表
+    window.MUSOU_GAIN = use === 'musk' && F1() ? F1().mGain || 1 : 1;   // musk 氣慢啲
     return true;
   }
   function applyRigs() {
@@ -189,10 +190,11 @@
     const sc = new THREE.Mesh(new THREE.CircleGeometry(PHX_R * .8, 36).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ color: 0x140b06, transparent: true, opacity: .55, depthWrite: false, fog: false })); sc.position.set(x, .06, z); scene.add(sc); phxFx.push({ m: sc, t: 0, dur: 2, kind: 'scorch' });
   };
   const castPhx = (who) => {
-    const [x, z] = posOf(who);
-    PHX = { who, t: 0, x0: x, z0: z, tx: x, tz: z, ring: null, boom: 0 };
+    const [x, z] = posOf(who), [tx0, tz0] = posOf(other(who)), a = Math.atan2(tx0 - x, tz0 - z);
+    const m = mkRocket(); m.scale.setScalar(2.2); m.userData.phx = 1; m.position.set(x + Math.sin(a), 1, z + Math.cos(a)); m.rotation.set(-Math.PI / 2, 0, 0); scene.add(m);
+    PHX = { who, t: 0, x0: x + Math.sin(a), z0: z + Math.cos(a), tx: tx0, tz: tz0, ring: null, boom: 0, m, rel: 0 };
     camShake = Math.max(camShake, .8); SND.musou();
-    if (who === 'p1') { player.st = 'phoenix'; player.t = 0; player.move = null; player.inv = Math.max(player.inv, 1.8); }
+    if (who === 'p1') { player.st = 'phoenix'; player.t = 0; player.move = null; player.inv = Math.max(player.inv, .5); }
     else { boss.st = PHXST; boss.t = 0; }
     if (D.net === 'host') netSend({ t: 'fx', k: 'phx', who, ph: 0 });
   };
@@ -200,38 +202,39 @@
     stepPhxFx(rdt);
     if (!PHX) return;
     PHX.t += rdt;
-    const me = PHX.who === 'p1' ? player : boss;
-    me.vy = 0;   // 唔俾地心吸力扯落嚟：step0 嘅重力對 phoenix 狀態都照計
+    if (!PHX.rel && PHX.t >= .5) {   // 放箭 0.5 秒就放返個施法者；火箭自己飛埋，中咗招都照炸
+      PHX.rel = 1;
+      if (PHX.who === 'p1') { if (player.st === 'phoenix') player.st = 'idle'; }
+      else if (boss.st === PHXST) { boss.st = 0; boss.cd = 1.4; }
+    }
+    const rm = PHX.m;
     if (PHX.t < .55) {   // 上天：火箭噴煙
-      const k = PHX.t / .55; me.y = 12 * k * k; me.x = PHX.x0; me.z = PHX.z0;
-      for (let i = 0; i < 4; i++) emit(me.x + rand(-.5, .5), me.y * .9 + rand(0, .6), me.z + rand(-.5, .5), rand(-1, 1), -rand(2, 5), rand(-1, 1), rand(.3, .6), rand(.8, 1.5), Math.random() < .5 ? 0xff8030 : 0x606060, 6, 0);
-    } else if (PHX.t < 1) {   // 空中瞄準：紅圈追目標，1 秒鎖死
-      me.y = 12;
+      const k = PHX.t / .55; rm.position.set(PHX.x0, 1 + 13 * k * k, PHX.z0); rm.rotation.set(-Math.PI / 2, 0, 0);
+      for (let i = 0; i < 4; i++) emit(rm.position.x + rand(-.5, .5), rm.position.y * .9 + rand(0, .6), rm.position.z + rand(-.5, .5), rand(-1, 1), -rand(2, 5), rand(-1, 1), rand(.3, .6), rand(.8, 1.5), Math.random() < .5 ? 0xff8030 : 0x606060, 6, 0);
+    } else if (PHX.t < 1) {   // 空中瞄準：轉頭向下，紅圈跟目標，1 秒鎖死
+      rm.position.set(PHX.x0, 14, PHX.z0);
       const [tx, tz] = posOf(other(PHX.who)); PHX.tx = tx; PHX.tz = tz;
+      rm.lookAt(tx, 0, tz);
       if (!PHX.ring) { PHX.ring = mkWarnRing(); scene.add(PHX.ring); }
       PHX.ring.position.set(tx, .12, tz); PHX.ring.material.opacity = .5 + .3 * Math.sin(PHX.t * 30);
     } else if (PHX.t < 1.3) {   // 俯衝：火尾
       const k = (PHX.t - 1) / .3;
-      me.x = lerp(PHX.x0, PHX.tx, k); me.z = lerp(PHX.z0, PHX.tz, k); me.y = 12 * (1 - k);
-      for (let i = 0; i < 6; i++) { const a = Math.random() * TAU; emit(me.x + rand(-.6, .6), me.y + rand(0, 1.5), me.z + rand(-.6, .6), Math.cos(a) * rand(1, 4), rand(1, 4), Math.sin(a) * rand(1, 4), rand(.3, .6), rand(1, 1.8), Math.random() < .6 ? 0xffa030 : 0xff5018, -2, 0); }
+      rm.position.set(lerp(PHX.x0, PHX.tx, k), 14 * (1 - k), lerp(PHX.z0, PHX.tz, k)); rm.lookAt(PHX.tx, 0, PHX.tz);
+      for (let i = 0; i < 6; i++) { const a = Math.random() * TAU; emit(rm.position.x + rand(-.6, .6), rm.position.y + rand(0, 1.5), rm.position.z + rand(-.6, .6), Math.cos(a) * rand(1, 4), rand(1, 4), Math.sin(a) * rand(1, 4), rand(.3, .6), rand(1, 1.8), Math.random() < .6 ? 0xffa030 : 0xff5018, -2, 0); }
     } else {   // 落地爆
-      me.y = 0; me.x = PHX.tx; me.z = PHX.tz;
+      if (rm) { scene.remove(rm); PHX.m = null; }
       if (PHX.ring) { scene.remove(PHX.ring); PHX.ring = null; }
       if (!PHX.boom) {
-        PHX.boom = 1; phxBoom(me.x, me.z);
+        PHX.boom = 1; phxBoom(PHX.tx, PHX.tz);
         const [tx, tz] = posOf(other(PHX.who));
-        if (Math.hypot(tx - me.x, tz - me.z) < PHX_R && aliveOf(other(PHX.who))) dmgTo(other(PHX.who), PHX.who === 'p1' ? 150 : 130, me.x, me.z, true);
+        if (Math.hypot(tx - PHX.tx, tz - PHX.tz) < PHX_R && aliveOf(other(PHX.who))) dmgTo(other(PHX.who), PHX.who === 'p1' ? 150 : 130, PHX.tx, PHX.tz, true);
         flash(.7); camShake = 1.6; hitstop = Math.max(hitstop, .2); SND.bigboom();
-        if (D.net === 'host') netSend({ t: 'fx', k: 'phx', who: PHX.who, ph: 1, x: +me.x.toFixed(2), z: +me.z.toFixed(2) });
+        if (D.net === 'host') netSend({ t: 'fx', k: 'phx', who: PHX.who, ph: 1, x: +PHX.tx.toFixed(2), z: +PHX.tz.toFixed(2) });
       }
-      if (PHX.t > 1.55) {   // 埋尾：還原狀態
-        if (PHX.who === 'p1') { if (player.st === 'phoenix') player.st = 'idle'; }
-        else if (boss.st === PHXST) { boss.st = 0; boss.cd = 1.4; }
-        PHX = null;
-      }
+      if (PHX.t > 1.55) PHX = null;   // 埋尾（施法者一早放返咗）
     }
   };
-  const clearPhx = () => { if (!PHX) return; if (PHX.ring) scene.remove(PHX.ring); if (PHX.who === 'p1' && player.st === 'phoenix') { player.st = 'idle'; player.y = 0; } if (PHX.who === 'p2' && boss.st === PHXST) { boss.st = 0; boss.y = 0; } PHX = null; };
+  const clearPhx = () => { if (!PHX) return; if (PHX.ring) scene.remove(PHX.ring); if (PHX.m) scene.remove(PHX.m); if (PHX.who === 'p1' && player.st === 'phoenix') player.st = 'idle'; if (PHX.who === 'p2' && boss.st === PHXST) boss.st = 0; PHX = null; };
 
   // ---- 放絕招 ----
   D.FIGHTERS = FIGHTERS; D.state = () => ({ pr: PR.length, wall: W && W.who, wallBy: W && W.by, wallT: W && +W.t.toFixed(1), ram: RAM && RAM.who });
@@ -289,7 +292,7 @@
   const snapshot = () => ({
     t: 'snap', p: { x: player.x, y: player.y, z: player.z, yaw: player.yaw, st: player.st, tm: player.t, anim: player.move && player.move.anim, dur: player.move && player.move.dur, runT: player.runT, vy: player.vy, inv: player.inv, hp: player.hp, max: player.max, mus: player.musou, flash: player.flash, kx: player.kx, kz: player.kz, dodgeX: player.dodgeX, dodgeZ: player.dodgeZ },
     b: { x: boss.x, y: boss.y, z: boss.z, yaw: boss.yaw, st: boss.st, tm: boss.t, walkT: boss.walkT || 0, vx: boss.vx, vz: boss.vz, vy: boss.vy, hp: boss.hp, max: boss.max, flash: boss.flash, alive: boss.alive, spawned: boss.spawned, cd: boss.cd, poise: boss.poise },
-    d: { round: D.round, p1: D.p1, p2: D.p2, t: D.t, on: D.on, ending: D.ending, m2: D.m2, m1: player.musou, camShake, hurtFlash, gt: GAME.t },
+    d: { round: D.round, p1: D.p1, p2: D.p2, t: D.t, on: D.on, ending: D.ending, m2: D.m2, m1: player.musou, camShake, hurtFlash, gt: GAME.t, phx: PHX && PHX.m ? { x: +PHX.m.position.x.toFixed(2), y: +PHX.m.position.y.toFixed(2), z: +PHX.m.position.z.toFixed(2), rx: +PHX.m.rotation.x.toFixed(2), ry: +PHX.m.rotation.y.toFixed(2) } : null },
     fx: { pr: PR.map(o => ({ id: o.netId, kind: o.kind, x: o.x, y: o.y, z: o.z, a: o.a, delay: o.delay || 0 })), wall: W && { x: W.x, z: W.z, t: W.t }, ram: RAM && { who: RAM.who, t: RAM.t, x: posOf(RAM.who)[0], z: posOf(RAM.who)[1] } }
   });
   let netFxId = 0;
@@ -427,7 +430,7 @@
     Object.assign(player, { st: p.st, t: p.tm, runT: p.runT, vy: p.vy, inv: p.inv, hp: p.hp, max: p.max, musou: p.mus, flash: p.flash, kx: p.kx, kz: p.kz, dodgeX: p.dodgeX, dodgeZ: p.dodgeZ, move: p.anim ? { anim: p.anim, dur: p.dur || 0.3 } : null });
     boss.x = lerp(boss.x, b.x, a); boss.y = lerp(boss.y, b.y, a); boss.z = lerp(boss.z, b.z, a); boss.yaw += angDiff(b.yaw, boss.yaw) * a;
     Object.assign(boss, { st: b.st, t: b.tm, walkT: b.walkT, vx: b.vx, vz: b.vz, vy: b.vy, hp: b.hp, max: b.max, flash: b.flash, alive: b.alive, spawned: b.spawned, cd: b.cd, poise: b.poise });
-    Object.assign(D, { round: d.round, p1: d.p1, p2: d.p2, t: d.t, on: d.on, ending: d.ending, m2: d.m2 });
+    Object.assign(D, { round: d.round, p1: d.p1, p2: d.p2, t: d.t, on: d.on, ending: d.ending, m2: d.m2 }); NET.phxSnap = d.phx || null;
     player.musou = d.m1; camShake = d.camShake || 0; hurtFlash = d.hurtFlash || 0; GAME.t = d.gt || GAME.t;
     NET.effects = m.fx || {};
   }
@@ -441,6 +444,10 @@
     for (const [id, m] of NET.fxMeshes) if (!wanted.has(id)) { scene.remove(m); NET.fxMeshes.delete(id); }
     if (fx.wall) { if (!NET.wallMesh) { NET.wallMesh = mkWall(); scene.add(NET.wallMesh); } NET.wallMesh.position.set(fx.wall.x, 0, fx.wall.z); NET.wallMesh.scale.y = Math.max(.01, 1 - fx.wall.t / 5); }
     else if (NET.wallMesh) { scene.remove(NET.wallMesh); NET.wallMesh = null; }
+    if (NET.phxSnap) { if (!NET.phxRocket) { NET.phxRocket = mkRocket(); NET.phxRocket.scale.setScalar(2.2); NET.phxRocket.userData.phx = 1; scene.add(NET.phxRocket); }
+      NET.phxRocket.position.set(NET.phxSnap.x, NET.phxSnap.y, NET.phxSnap.z); NET.phxRocket.rotation.set(NET.phxSnap.rx, NET.phxSnap.ry, 0);
+      if (NET.phxSnap.y > .5 && Math.random() < .8) emit(NET.phxSnap.x + rand(-.4, .4), NET.phxSnap.y + rand(0, .8), NET.phxSnap.z + rand(-.4, .4), rand(-1, 1), -rand(1, 4), rand(-1, 1), rand(.3, .6), rand(.8, 1.5), Math.random() < .6 ? 0xffa030 : 0xff5018, -2, 0); }
+    else if (NET.phxRocket) { scene.remove(NET.phxRocket); NET.phxRocket = null; }
     if (NET.phxRing) { const t = NET.phxWho === 'p1' ? boss : player; NET.phxRing.position.set(t.x, .12, t.z); NET.phxRing.material.opacity = .5 + .3 * Math.sin(Date.now() / 33); }   // 火鳳凰警告圈喺 guest 機跟目標
     if (fx.ram && Math.random() < .45) for (let i = 0; i < 3; i++) emit(fx.ram.x + rand(-1, 1), .3, fx.ram.z + rand(-1, 1), rand(-2, 2), rand(1, 3), rand(-2, 2), .35, .7, 0x8a7a68);
   }
@@ -533,7 +540,7 @@
 
   const resetRound = () => {
     clearCrowd();
-    clearPR(); clearWall(); clearRam(); clearPhx(); D.aiCd = rand(3.5, 5); D.specBuf = 0; D.m2 = 0; camP = camN = null; window.__camOverride = null;
+    clearPR(); clearWall(); clearRam(); clearPhx(); D.aiCd = F2() && F2().spec === 'rocket' ? rand(12, 15) : rand(3.5, 5); D.specBuf = 0; D.m2 = 0; camP = camN = null; window.__camOverride = null;
     if (D.net === 'host') { for (const k in NET.queue) NET.queue[k] = 0; NET.mv = null; NET.mvAt = 0; }
     Object.assign(player, { x: 0, z: 7, y: 0, vy: 0, yaw: Math.PI, hp: player.max, musou: 0, st: 'idle', t: 0, move: null, inv: 1 });
     Object.assign(boss, { alive: true, spawned: true, hp: OPP_HP, max: OPP_HP, st: 0, t: 0, cd: 1.2, x: 0, z: -7, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0, poise: 60, dashHit: 0 });
@@ -610,14 +617,14 @@
       stepPR(rdt);
       // 1v1 冇雜兵，絕招氣要快啲：打到對手即加，再加少少時間
       const dealt = D.lastBossHp - boss.hp; D.lastBossHp = boss.hp;
-      if (live && !guest) player.musou = Math.min(100, player.musou + Math.max(0, dealt) * .8 + rdt * 3);
+      if (live && !guest) player.musou = Math.min(100, player.musou + (Math.max(0, dealt) * .8 + rdt * 3) * ((F1() && F1().mGain) || 1));
       const dealt2 = D.lastPHp - player.hp; D.lastPHp = player.hp;
-      if (live && !guest && D.two) D.m2 = Math.min(100, D.m2 + Math.max(0, dealt2) * .8 + rdt * 3);
+      if (live && !guest && D.two) D.m2 = Math.min(100, D.m2 + (Math.max(0, dealt2) * .8 + rdt * 3) * ((F2() && F2().mGain) || 1));
       // AI 絕招
       if (live && !guest && !D.two && boss.alive && boss.st === 0 && !busy('p2')) {
         D.aiCd -= rdt;
         if (D.aiCd <= 0) { const d = Math.hypot(player.x - boss.x, player.z - boss.z), sp = F2().spec;
-          if ((sp === 'rocket' && d < 16) || sp === 'chips' || (sp === 'wall' && d < 11) || (sp === 'ram' && d > 5)) { cast('p2'); D.aiCd = rand(7, 10); } }
+          if ((sp === 'rocket' && d < 16) || sp === 'chips' || (sp === 'wall' && d < 11) || (sp === 'ram' && d > 5)) { cast('p2'); D.aiCd = sp === 'rocket' ? rand(16, 22) : rand(7, 10); } }
       }
     }
     if (!hud.hidden) {

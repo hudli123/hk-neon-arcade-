@@ -1081,6 +1081,7 @@ const N_GY = [N[2], N[1], N[4], { ...N[0], anim: 'chop', arc: 120 }, N[4], N[5]]
 const CH_GY = CH.map((m) => scaleMove(m, { dur: 1.12, range: 1.4, arc: 0, dmg: 1.3 }));
 // 火箭商人：冇武器，拳腳為主 — 同傷同節奏，範圍細、弧窄、步幅短
 window.HERO_MOVES = null;   // null|'fist'（名人亂鬥 musk 先會 set 'fist'）
+window.MUSOU_GAIN = 1;   // 名人亂鬥個別鬥士嘅氣速（預設 1，正常模式唔變）
 const N_FIST = [
   { dur: .32, hits: [[.11, 12, 3.2, 0]], range: 2.4, arc: 60, lunge: 1.5, anim: 'jab' },
   { dur: .34, hits: [[.13, 11, 3, 0]], range: 2.4, arc: 70, lunge: 1.5, anim: 'jabR' },
@@ -1392,7 +1393,7 @@ function banner(text, color, small) {
   b.classList.remove('show'); void b.offsetWidth; b.classList.add('show');
 }
 function addChain(n) { chain += n; chainT = 2.2; maxChain = Math.max(maxChain, chain); }
-function gainMusou(v) { const was = player.musou >= 100; player.musou = Math.min(100, player.musou + v); if (!was && player.musou >= 100) { SND.tone(880, 0.3, 'triangle', 0.12, 1.5); } }
+function gainMusou(v) { const was = player.musou >= 100; player.musou = Math.min(100, player.musou + v * (window.MUSOU_GAIN || 1)); if (!was && player.musou >= 100) { SND.tone(880, 0.3, 'triangle', 0.12, 1.5); } }
 
 // 攻擊判定：一個 hit 事件打中範圍內所有敵人
 function doHit(range, arc, dmg, kb, launch, opts = {}) {
@@ -2004,7 +2005,7 @@ requestAnimationFrame(frame);
       } else if (p.st === 'musou') {
         if (p.t < 0.5) { a = use('Sword_Shout'); at(a, 0.8 + p.t * 0.9); }
         else { a = use('Double_Blade_Spin'); loopT += rdt * 1.5; at(a, 0.6 + (loopT % 1)); }
-      } else if (p.st === 'phoenix') { a = use('Jump_and_Slam_Back_Down'); at(a, THREE.MathUtils.clamp(p.t / 1.35, 0, 1) * a.getClip().duration); }
+      } else if (p.st === 'phoenix') { a = use('Right_Uppercut_from_Guard'); at(a, THREE.MathUtils.clamp(p.t / 0.5, 0, 1) * a.getClip().duration); }   // 升箭手勢
       else if (p.st === 'dive') { a = use('Heavy_Hammer_Swing'); at(a, 1.25 + Math.min(1, p.t / 0.3) * 0.28); }
       else if (p.st === 'dodge') { a = use('Roll_Dodge'); at(a, 0.1 + Math.min(1, p.t / 0.42) * 1.2); }
       else if (p.st === 'hurt') { a = use('Hit_Reaction'); at(a, Math.min(1, p.t / 0.45) * 0.8); }
@@ -2095,7 +2096,7 @@ requestAnimationFrame(frame);
       else if (st === 4) { a = use('Hit_Reaction'); at(a, lin(b.t, 0, 0.55, 0, 0.9)); }
       else if (st === 5) { a = use('BeHit_FlyUp'); at(a, 0.2); }
       else if (st === 22) { a = use('Right_Jab_from_Guard'); at(a, lin(b.t, 0, 0.42, 0.15, 1.1)); }   // 名人亂鬥 2P 輕擊（musk 拳打）
-      else if (st === 24) { a = use('Jump_and_Slam_Back_Down'); at(a, THREE.MathUtils.clamp(b.t / 1.35, 0, 1) * a.getClip().duration); }   // 火鳳凰
+      else if (st === 24) { a = use('Right_Uppercut_from_Guard'); at(a, THREE.MathUtils.clamp(b.t / 0.5, 0, 1) * a.getClip().duration); }   // 火鳳凰升箭手勢
       else if (st === 7) { a = use('Sword_Shout'); at(a, b.t < 1 ? lin(b.t, 0, 1, 0.8, 1.3) : 1.3); }   // 朱雀：舉刀（boss_ext.js）
       else if (st === 8) { a = use('Triple_Combo_Attack'); at(a, b.t < 0.25 ? lin(b.t, 0, 0.25, 0.45, 0.73) : b.t < 0.6 ? lin(b.t, 0.25, 0.6, 0.73, 1.5) : b.t < 0.95 ? lin(b.t, 0.6, 0.95, 1.5, 2.23) : lin(b.t, 0.95, 1.3, 2.23, 2.5)); }
       else if (st === 9) { a = use('Charged_Ground_Slam'); at(a, b.t < 0.35 ? lin(b.t, 0, 0.35, 0.3, 0.9) : b.t < 0.95 ? lin(b.t, 0.35, 0.95, 0.9, 1.63) : lin(b.t, 0.95, 1.5, 1.63, 2.2)); }
