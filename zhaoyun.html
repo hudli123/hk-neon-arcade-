@@ -1802,7 +1802,7 @@ function stepCamera(rdt) {
   // 打緊嘅時候鏡頭慢慢轉去趙雲背後，唔會畀士兵遮住
   if (camId === null && (p.st === 'attack' || p.st === 'charge') && Math.abs(angDiff(p.yaw, camYaw)) > 0.9) camYaw += angDiff(p.yaw, camYaw) * Math.min(1, rdt * 1.6);
   const portrait = innerWidth < innerHeight;
-  const dist = (p.st === 'musou' ? 14 : 9) * (portrait ? 1.35 : 1), height = p.st === 'musou' ? 8.5 : 6.4;
+  const dist = (p.st === 'musou' ? 14 : 9) * (portrait ? 1.35 : 1) * (window.CAM_ZOOM_ON ? window.CAM_ZOOM : 1), height = (p.st === 'musou' ? 8.5 : 6.4) * (window.CAM_ZOOM_ON ? window.CAM_ZOOM : 1);
   const [fx, fz] = fwd(camYaw);
   const tx = p.x - fx * dist, tz = p.z - fz * dist, ty = height + p.y * 0.5;
   camera.position.x = lerp(camera.position.x, tx, Math.min(1, rdt * 8)); camera.position.z = lerp(camera.position.z, tz, Math.min(1, rdt * 8)); camera.position.y = lerp(camera.position.y, ty, Math.min(1, rdt * 6));
