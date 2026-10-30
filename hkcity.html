@@ -575,9 +575,38 @@ const U = { night: { value: 1 }, fogCol: { value: new THREE.Color(0x0c1224) }, f
 // 載入咗邊啲真模型圖幅：1024×1 嘅資料貼圖（R = 1 已載）。圖幅自動切細之後有幾百份，uniform 陣列喺部分手機放唔落
 const TILE_ON = new Uint8Array(1024 * 4), TILE_TEX = new THREE.DataTexture(TILE_ON, 1024, 1, THREE.RGBAFormat); TILE_TEX.magFilter = TILE_TEX.minFilter = THREE.NearestFilter; TILE_TEX.needsUpdate = true; U.tileTex.value = TILE_TEX;
 const setTileOn = (i, v) => { TILE_ON[i * 4] = v ? 255 : 0; TILE_TEX.needsUpdate = true; };
+// v72：桌面版新天空（漸變 + 太陽 + fbm 雲 + 星星 + 黃昏色帶）；?sky=0 或手機保留舊 shader
+const SKY2 = /[?&]sky=1/.test(location.search) || (!TOUCH && !/[?&]sky=0/.test(location.search));
 const sky = new THREE.Mesh(new THREE.SphereGeometry(10000, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: U,
   vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
-  fragmentShader: `uniform float night, storm; varying vec3 vP;
+  fragmentShader: SKY2 ? `uniform float night, storm, time; uniform vec3 fogCol, sunDir; varying vec3 vP;
+    float skH(vec2 p){ return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+    float skH3(vec3 p){ return fract(sin(dot(p, vec3(127.1, 311.7, 74.7))) * 43758.5453); }
+    float skN(vec2 p){ vec2 i = floor(p), f = fract(p); f = f * f * (3. - 2. * f); return mix(mix(skH(i), skH(i + vec2(1, 0)), f.x), mix(skH(i + vec2(0, 1)), skH(i + vec2(1, 1)), f.x), f.y); }
+    void main(){
+      vec3 d = normalize(vP); float h = d.y;
+      vec3 top = mix(vec3(.20,.42,.80), vec3(.01,.02,.06), night), hor = fogCol;
+      vec3 c = mix(hor, top, smoothstep(0., .5, max(h, 0.)));
+      float dk = clamp(1. - abs(night - .5) * 2., 0., 1.);   // 日夜切換中途嘅黃昏色帶
+      c += dk * vec3(.35,.13,-.02) * (1. - smoothstep(0., .25, max(h, 0.)));
+      float s = max(dot(d, normalize(sunDir)), 0.);   // 太陽盤 + 兩層暈
+      c += (smoothstep(.9994,.9997,s)*vec3(1.,.95,.85)*1.2 + pow(s,64.)*vec3(1.,.85,.6)*.35 + pow(s,6.)*vec3(1.,.9,.75)*.12) * (1.-night) * (1.-storm);
+      float cov = 0.; vec3 cloudCol = vec3(0.);
+      if (h > 0.) {   // 雲：投射上假想平面做 fbm
+        vec2 uv = d.xz / (h + .08) * 1.6 + vec2(time*.006, time*.002);
+        float f = 0., a = .5; for (int i = 0; i < 5; i++) { f += a * skN(uv); uv = uv * 2.03 + 19.7; a *= .5; }
+        cov = smoothstep(.50 - .15*storm, .78, f) * smoothstep(.02, .22, h);
+        cloudCol = mix(mix(vec3(.72,.76,.82), vec3(1.), .5 + .5*pow(s,4.)), vec3(.07,.08,.12), night);
+        cloudCol = mix(cloudCol, vec3(.12,.10,.16), storm);
+        c = mix(c, cloudCol, cov * (.85 - .45*night));
+      }
+      float star = night * (1.-storm) * smoothstep(.08,.35,h) * (1.-cov);   // 星：稀疏格仔閃爍
+      if (star > .001) {
+        float hs = skH3(floor(d * 380.));
+        if (hs > .9985) c += vec3(.9,.95,1.) * star * (.8 + .2*sin(time*3. + hs*40.));
+      }
+      gl_FragColor = vec4(c, 1.); }`
+  : `uniform float night, storm; varying vec3 vP;
     void main(){ float h = vP.y;
       vec3 dayTop = vec3(.32,.55,.9), dayHor = vec3(.78,.86,.95), nTop = vec3(.01,.02,.06), nHor = vec3(.07,.07,.15);
       vec3 top = mix(dayTop, nTop, night), hor = mix(dayHor, nHor, night);
