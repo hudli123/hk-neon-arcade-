@@ -2525,13 +2525,13 @@ const PEOPLE = (() => {
     let best = null, score = -2;
     const gx = Math.floor(c.x / 50), gz = Math.floor(c.z / 50);
     for (let dx = -1; dx <= 1; dx++) for (let dz = -1; dz <= 1; dz++) for (const sp of SG.get((gx + dx) * 100000 + gz + dz) || []) {
-      if (sp.ri === excludeRi) continue;
+      if (sp.ri === excludeRi || (sp.ri === c.lnBan && performance.now() < c.lnBanT)) continue;   // v72：啱啱喺呢段路卡過欄杆嘅唔好即刻搵返同一段
       const r = ROADS[sp.ri], [ax, az] = r.pts[sp.k], [bx, bz] = r.pts[sp.k + 1], len = Math.hypot(bx - ax, bz - az) || 1;
       const tx = (bx - ax) / len, tz = (bz - az) / len, s = Math.max(0, Math.min(len, (c.x - ax) * tx + (c.z - az) * tz)), qx = ax + tx * s, qz = az + tz * s;
       const rx = c.x - qx, rz = c.z - qz, cross = tx * rz - tz * rx, o = Math.hypot(rx, rz);
       if (!cross || o < 0.5 || o > 30) continue;
       const sg = Math.sign(cross), nx = -tz * sg, nz = tx * sg, px = qx + nx * o, pz = qz + nz * o;
-      if (Math.hypot(px - c.x, pz - c.z) > 1.5 || !laneOk(px, pz)) continue;
+      if (Math.hypot(px - c.x, pz - c.z) > 1.5 || !laneOk(px, pz) || RAILS.cross(c.x, c.z, px, pz)) continue;   // v72：上車位隔咗條欄杆嘅唔要
       const d0 = tx * c.tx + tz * c.tz, d = d0 >= 0 ? 1 : -1, fit = Math.abs(d0);
       if (fit > score) { score = fit; best = { ri: sp.ri, k: sp.k, s, sg, o, oT: o, d }; }
     }
@@ -2647,7 +2647,7 @@ const PEOPLE = (() => {
       if (blocked(x, z) || !walkOk(x, z) || !pedClear(x, z)) continue;
       if (Math.random() > 0.3 + SHOPF.density(x, z) / 14) continue;   // 鋪頭多嘅地方人多（旺角），冇鋪嘅街少人
       if (crowd.some((o) => o !== c && o.on && (o.x - x) ** 2 + (o.z - z) ** 2 < 2.6)) continue;   // 唔好生喺其他人身上（1.6 米內）
-      Object.assign(c, { x, z, ln, tx: sp.tx * dir, tz: sp.tz * dir, v: jog ? 2.5 + Math.random() * 0.5 : (0.95 + Math.random() * 0.65) * (K.slow || 1), idle, on: true, down: 0, flee: 0, tilt: 0, hop: 0, rainJog: false, rainGait: null, rainV: null, lnDodge: 0, lnThreat: false, lnBlockAt: -Infinity, lnBlocks: 0, st: 'walk', lead: null, pair: null,
+      Object.assign(c, { x, z, ln, tx: sp.tx * dir, tz: sp.tz * dir, v: jog ? 2.5 + Math.random() * 0.5 : (0.95 + Math.random() * 0.65) * (K.slow || 1), idle, on: true, down: 0, flee: 0, tilt: 0, hop: 0, rainJog: false, rainGait: null, rainV: null, lnDodge: 0, lnThreat: false, lnBlockAt: -Infinity, lnBlocks: 0, lnBan: null, lnBanT: 0, spd: 0, st: 'walk', lead: null, pair: null,
         gait: jog ? 'jog' : K.formal ? 'formal' : 'walk', anim: null, yaw: Math.atan2(sp.tx * dir, sp.tz * dir) });
       if (c.idle) { c.tx = -nx; c.tz = -nz; c.yaw = Math.atan2(c.tx, c.tz); }   // 企定嘅人面向馬路
       reset(c, c.idle ? 'idle' : c.gait);
@@ -2698,8 +2698,10 @@ const PEOPLE = (() => {
         const gx = L.x - L.tz * 0.75 * c.side - L.tx * c.back, gz = L.z + L.tx * 0.75 * c.side - L.tz * c.back, dx = gx - c.x, dz = gz - c.z, d = Math.hypot(dx, dz);
         if (d > 5) { c.lead = null; continue; }
         if (L.st === 'wait') { anim(c, 'idle'); c.tx = L.tx; c.tz = L.tz; continue; }
-        anim(c, c.gait); const sp = Math.min(L.v * 1.35, d / Math.max(dt, 1e-3));
+        const ox = c.x, oz = c.z, sp = Math.min(L.v * 1.35, d / Math.max(dt, 1e-3));
         if (d > 0.05) { const nx = c.x + dx / d * sp * dt, nz = c.z + dz / d * sp * dt; if ((walkOk(nx, nz) || !walkOk(c.x, c.z)) && (pedClear(nx, nz) || !pedClear(c.x, c.z)) && !RAILS.cross(c.x, c.z, nx, nz)) { c.x = nx; c.z = nz; } }
+        c.spd = (c.spd || 0) + (Math.hypot(c.x - ox, c.z - oz) / Math.max(dt, 1e-3) - (c.spd || 0)) * Math.min(1, dt * 5);   // v72：企定唔郁就唔好喺度扮跑
+        anim(c, c.spd > 0.5 ? c.gait : c.spd < 0.25 ? 'idle' : (c.anim || c.gait));
         c.tx = L.tx; c.tz = L.tz; continue;
       }
       if (c.st === 'wait') {   // 喺路邊等：有行人燈要綠公仔；斑馬線等一陣就過
@@ -2734,8 +2736,7 @@ const PEOPLE = (() => {
             ln.s += ln.d * avail; rem -= avail;
             const nk = ln.k + ln.d;
             if (nk >= 0 && nk < r.pts.length - 1) { ln.k = nk; ln.s = ln.d > 0 ? 0 : Math.hypot(r.pts[nk + 1][0] - r.pts[nk][0], r.pts[nk + 1][1] - r.pts[nk][1]); }
-            else { const edge = lanePt(ln); c.x = edge.x; c.z = edge.z; if (acquire(c, ln.ri)) break; }
-            if (c.ln === ln) { ln.d = -ln.d; rem = 0; }
+            else { const edge = lanePt(ln); c.x = edge.x; c.z = edge.z; if (acquire(c, ln.ri)) break; if (c.ln === ln) { ln.d = -ln.d; rem = 0; } }   // v72：淨係去到段路盡頭先掉頭，唔好喺彎位卡死
           }
         }
         if (c.ln !== ln) continue;
@@ -2746,7 +2747,7 @@ const PEOPLE = (() => {
         } else {
           if (performance.now() - c.lnBlockAt > 2000) c.lnBlocks = 0;
           c.lnBlockAt = performance.now(); c.lnBlocks++; ln.d = -ln.d;
-          if (c.lnBlocks >= 2) c.ln = null;
+          if (c.lnBlocks >= 2) { c.lnBan = ln.ri; c.lnBanT = performance.now() + 6000; c.ln = null; }   // v72：連續撞欄杆就暫時唔行呢段路
         }
         if (c.ln) {
           const X = c.cool > 0 ? null : nearX(c.x, c.z);
