@@ -1041,9 +1041,12 @@ const TILES = (() => {   // 每個圖幅切 4 份：幾何 + 遠距離貼圖（1
     t.state = 1; busy = true;
     try { const r = await loadTile('tiles/', t.s, 2); t.mesh = r.mesh; r.mesh.position.y = LIFT; t.mat = r.mat; t.hdr = r.hdr; t.lo = r.mat.map; scene.add(r.mesh); try { t.ak = autoKeep(t.i, r.mesh); } catch (e) { console.warn('autoKeep', e.message); }
       if (TCUT) try {   // v72：行人路上 5 米以下嘅真模型三角形唔畫（autoKeep 要睇未切嘅 mesh，所以要排喺佢後面）
-        const g = r.mesh.geometry, ix = g.index.array, pa = g.attributes.position.array, S = 1 / r.hdr.s, keep = [], tA = performance.now();
+        const g = r.mesh.geometry, ix = g.index.array, pa = g.attributes.position.array, S = 1 / r.hdr.s, keep = [], tA = performance.now(); t.tc2 = 0;
         for (let q = 0; q < ix.length; q += 3) { const A = ix[q] * 3, B = ix[q + 1] * 3, C = ix[q + 2] * 3;
-          if ((pa[A + 1] + pa[B + 1] + pa[C + 1]) * S / 3 < 5 && onPave((pa[A] + pa[B] + pa[C]) * S / 3 + r.hdr.c[0], (pa[A + 2] + pa[B + 2] + pa[C + 2]) * S / 3 + r.hdr.c[1])) continue;
+          const cx = (pa[A] + pa[B] + pa[C]) * S / 3 + r.hdr.c[0], cy = (pa[A + 1] + pa[B + 1] + pa[C + 1]) * S / 3, cz = (pa[A + 2] + pa[B + 2] + pa[C + 2]) * S / 3 + r.hdr.c[1], op = onPave(cx, cz);
+          let c2 = 0;   // v73：唔屬於任何樓宇腳印、又唔喺高架路底嘅碎片（行人路上蓋 / 招牌、馬路或石壆罅嘅矮盒）都唔畫
+          if (!(cy < 5 && op) && !nearBld(cx, cz) && !onElev(cx, cz) && ((cy < 40 && op) || (cy < 5 && (onRoad(cx, cz) || nearPave(cx, cz))))) c2 = 1;
+          if ((cy < 5 && op) || c2) { t.tc2 += c2; continue; }
           keep.push(ix[q], ix[q + 1], ix[q + 2]); }
         if (keep.length < ix.length) g.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
         t.tc = (ix.length - keep.length) / 3; t.tcms = Math.round(performance.now() - tA);   // 裁咗幾多個 + 用咗幾多毫秒（驗證用）
@@ -1089,6 +1092,7 @@ window.TILES = TILES;
 // 全部貼圖係 canvas 即場砌（瀝青、方磚、草、球場），UV = 世界座標 ÷ 貼圖闊度
 const PAVM = [], KERB_LINES = [];   // KERB_LINES：行人路石壆線（路邊嘢用）
 let onPave = () => false;   // v72：行人路 hit-test（真模型三角形裁剪用，未砌好前乜都唔係行人路）
+let nearBld = () => true, nearPave = () => false, onRoad = () => false, onElev = () => false;   // v73：未砌好前 nearBld 預設 true（保留三角形，唔切）
 // Meshy 路邊嘢（mprop.js，BG 09-29「消防栓、垃圾桶、紅綠燈用 3D model AI 去畫」）：geometry（可以平移 ox / oz）+ 貼圖（可以逐像素改色）
 function propGeo(R, ox = 0, oz = 0) {
   const d = (s, T) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new T(u.buffer); };
@@ -1182,13 +1186,29 @@ function grassDirt(mat, wood) {
     const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: col, map: GTEX[tex] })); scene.add(m); PAVM.push(m); return m;
   };
   groups.forEach((P, t) => flat(P, SZ[t], TX[t], COL[t]));
-  {   // v72：行人路（groups 1 / 3）三角形 hit-test，8 米格——真模型喺行人路上 5 米以下嘅三角形唔畫
-    const grid = new Map(), CS = 8;
-    const addT = (P) => { for (let i = 0; i < P.length; i += 9) { const x0 = Math.min(P[i], P[i + 3], P[i + 6]), x1 = Math.max(P[i], P[i + 3], P[i + 6]), z0 = Math.min(P[i + 2], P[i + 5], P[i + 8]), z1 = Math.max(P[i + 2], P[i + 5], P[i + 8]);
+  {   // v72/v73：行人路 / 車路三角形 hit-test + 大廈腳印距離，8 米格——真模型唔屬於樓宇嘅碎片唔畫
+    const CS = 8, gkey = (x, z) => Math.floor(x / CS) * 65536 + Math.floor(z / CS);
+    const mkGrid = () => new Map();
+    const addT = (grid, P) => { for (let i = 0; i < P.length; i += 9) { const x0 = Math.min(P[i], P[i + 3], P[i + 6]), x1 = Math.max(P[i], P[i + 3], P[i + 6]), z0 = Math.min(P[i + 2], P[i + 5], P[i + 8]), z1 = Math.max(P[i + 2], P[i + 5], P[i + 8]);
       for (let gx = Math.floor(x0 / CS); gx <= Math.floor(x1 / CS); gx++) for (let gz = Math.floor(z0 / CS); gz <= Math.floor(z1 / CS); gz++) { const k = gx * 65536 + gz; (grid.get(k) || grid.set(k, []).get(k)).push(P, i); } } };
-    addT(groups[1]); addT(groups[3]);
     const inT = (P, i, x, z) => { const ax = P[i], az = P[i + 2], bx = P[i + 3], bz = P[i + 5], cx = P[i + 6], cz = P[i + 8], d1 = (x - bx) * (az - bz) - (ax - bx) * (z - bz), d2 = (x - cx) * (bz - cz) - (bx - cx) * (z - cz), d3 = (x - ax) * (cz - az) - (cx - ax) * (z - az); return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0)); };
-    onPave = (x, z) => { const L = grid.get(Math.floor(x / CS) * 65536 + Math.floor(z / CS)); if (!L) return false; for (let q = 0; q < L.length; q += 2) if (inT(L[q], L[q + 1], x, z)) return true; return false; };
+    const gridTest = (grid) => (x, z) => { const L = grid.get(gkey(x, z)); if (!L) return false; for (let q = 0; q < L.length; q += 2) if (inT(L[q], L[q + 1], x, z)) return true; return false; };
+    const pgrid = mkGrid(), rgrid = mkGrid();
+    addT(pgrid, groups[1]); addT(pgrid, groups[3]);   // 行人路 + 安全島
+    addT(rgrid, groups[0]); addT(rgrid, groups[2]);   // 車路 + 後巷
+    onPave = gridTest(pgrid); onRoad = gridTest(rgrid);
+    nearPave = (x, z) => onPave(x, z) || onPave(x + 1.5, z) || onPave(x - 1.5, z) || onPave(x, z + 1.5) || onPave(x, z - 1.5);   // v73：行人路邊 1.5 米內都算（石壆罅）
+    {   // v73：大廈外環腳印（內或者邊 1.5 米內 = 屬於樓宇，保留真模型）
+      const bgrid = new Map(), BE = [];
+      for (let bi = 0; bi < BLD.length; bi++) { const r = BLD[bi].rings[0]; let x0 = 1e9, x1 = -1e9, z0 = 1e9, z1 = -1e9;
+        for (const [x, z] of r) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); z0 = Math.min(z0, z); z1 = Math.max(z1, z); }
+        const e = { r, x0: x0 - 1.5, x1: x1 + 1.5, z0: z0 - 1.5, z1: z1 + 1.5 }, ei = BE.push(e) - 1;
+        for (let gx = Math.floor(e.x0 / CS); gx <= Math.floor(e.x1 / CS); gx++) for (let gz = Math.floor(e.z0 / CS); gz <= Math.floor(e.z1 / CS); gz++) { const k = gx * 65536 + gz; (bgrid.get(k) || bgrid.set(k, []).get(k)).push(ei); } }
+      const inR = (r, x, z) => { let ins = false; for (let i = 0, j = r.length - 1; i < r.length; j = i++) { const [a, b] = r[i], [c, d] = r[j]; if ((b > z) !== (d > z) && x < (c - a) * (z - b) / (d - b) + a) ins = !ins; } return ins; };
+      const dEdge = (r, x, z) => { let m = 1e9; for (let i = 0; i < r.length; i++) { const a = r[i], c = r[(i + 1) % r.length], dx = c[0] - a[0], dz = c[1] - a[1], l2 = dx * dx + dz * dz || 1, t = Math.max(0, Math.min(1, ((x - a[0]) * dx + (z - a[1]) * dz) / l2)), ex = a[0] + dx * t - x, ez = a[1] + dz * t - z; m = Math.min(m, ex * ex + ez * ez); } return Math.sqrt(m); };
+      nearBld = (x, z) => { const L = bgrid.get(gkey(x, z)); if (!L) return false; for (const i of L) { const e = BE[i]; if (x < e.x0 || x > e.x1 || z < e.z0 || z > e.z1) continue; if (inR(e.r, x, z) || dEdge(e.r, x, z) <= 1.5) return true; } return false; };
+    }
+    onElev = (x, z) => window.ELEV && ELEV.surf(x, z, 200, 0, 'rfs') > 0.5;   // v73：頭上有高架路 / 天橋面就保留
   }
   if (window.KERB && KERB.mh) {   // 鋪面物料覆蓋層（底 = 陶土磚）：混凝土磚 / 花崗岩 / 混凝土 / 瀝青，逐塊蓋喺上面（polygonOffset 防閃）
     const B16 = b64i16(KERB.mb), MG = [null, [], [], [], []], MT = [null, 'cpav', 'gran', 'conc', 'asph'], MC = [0, 0xe8e6e0, 0xe8e6e0, 0xe8e6e0, 0x8a8c90]; let o = 0;
