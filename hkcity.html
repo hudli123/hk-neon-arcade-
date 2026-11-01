@@ -577,6 +577,8 @@ const TILE_ON = new Uint8Array(1024 * 4), TILE_TEX = new THREE.DataTexture(TILE_
 const setTileOn = (i, v) => { TILE_ON[i * 4] = v ? 255 : 0; TILE_TEX.needsUpdate = true; };
 // v72：桌面版新天空（漸變 + 太陽 + fbm 雲 + 星星 + 黃昏色帶）；?sky=0 或手機保留舊 shader
 const SKY2 = /[?&]sky=1/.test(location.search) || (!TOUCH && !/[?&]sky=0/.test(location.search));
+// v72：真模型行人路上 5 米以下嘅三角形唔畫，用返標準行人路；?tcut=0 關
+const TCUT = !/[?&]tcut=0/.test(location.search);
 const sky = new THREE.Mesh(new THREE.SphereGeometry(10000, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: U,
   vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
   fragmentShader: SKY2 ? `uniform float night, storm, time; uniform vec3 fogCol, sunDir; varying vec3 vP;
@@ -1066,7 +1068,16 @@ const TILES = (() => {   // 每個圖幅切 4 份：幾何 + 遠距離貼圖（1
   const setMap = (t, tex) => { t.mat.map = t.mat.emissiveMap = tex; t.mat.needsUpdate = true; };
   async function load(t) {
     t.state = 1; busy = true;
-    try { const r = await loadTile('tiles/', t.s, 2); t.mesh = r.mesh; r.mesh.position.y = LIFT; t.mat = r.mat; t.hdr = r.hdr; t.lo = r.mat.map; scene.add(r.mesh); try { t.ak = autoKeep(t.i, r.mesh); } catch (e) { console.warn('autoKeep', e.message); } t.state = 2; setTileOn(t.i, 1); roofToggle(t.i, false); }
+    try { const r = await loadTile('tiles/', t.s, 2); t.mesh = r.mesh; r.mesh.position.y = LIFT; t.mat = r.mat; t.hdr = r.hdr; t.lo = r.mat.map; scene.add(r.mesh); try { t.ak = autoKeep(t.i, r.mesh); } catch (e) { console.warn('autoKeep', e.message); }
+      if (TCUT) try {   // v72：行人路上 5 米以下嘅真模型三角形唔畫（autoKeep 要睇未切嘅 mesh，所以要排喺佢後面）
+        const g = r.mesh.geometry, ix = g.index.array, pa = g.attributes.position.array, S = 1 / r.hdr.s, keep = [], tA = performance.now();
+        for (let q = 0; q < ix.length; q += 3) { const A = ix[q] * 3, B = ix[q + 1] * 3, C = ix[q + 2] * 3;
+          if ((pa[A + 1] + pa[B + 1] + pa[C + 1]) * S / 3 < 5 && onPave((pa[A] + pa[B] + pa[C]) * S / 3 + r.hdr.c[0], (pa[A + 2] + pa[B + 2] + pa[C + 2]) * S / 3 + r.hdr.c[1])) continue;
+          keep.push(ix[q], ix[q + 1], ix[q + 2]); }
+        if (keep.length < ix.length) g.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
+        t.tc = (ix.length - keep.length) / 3; t.tcms = Math.round(performance.now() - tA);   // 裁咗幾多個 + 用咗幾多毫秒（驗證用）
+      } catch (e) { console.warn('tcut', e.message); }
+      t.state = 2; setTileOn(t.i, 1); roofToggle(t.i, false); }
     catch (e) { t.state = -1; console.warn('tile', t.s, e.message); }
     busy = false;
   }
@@ -1106,6 +1117,7 @@ window.TILES = TILES;
 // ---------- 地面：車路 / 行人路 / 後巷 / 安全島（路政署）+ 公園 / 樹林 / 球場 / 遊樂場（OpenStreetMap）----------
 // 全部貼圖係 canvas 即場砌（瀝青、方磚、草、球場），UV = 世界座標 ÷ 貼圖闊度
 const PAVM = [], KERB_LINES = [];   // KERB_LINES：行人路石壆線（路邊嘢用）
+let onPave = () => false;   // v72：行人路 hit-test（真模型三角形裁剪用，未砌好前乜都唔係行人路）
 // Meshy 路邊嘢（mprop.js，BG 09-29「消防栓、垃圾桶、紅綠燈用 3D model AI 去畫」）：geometry（可以平移 ox / oz）+ 貼圖（可以逐像素改色）
 function propGeo(R, ox = 0, oz = 0) {
   const d = (s, T) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new T(u.buffer); };
@@ -1199,6 +1211,14 @@ function grassDirt(mat, wood) {
     const m = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ color: col, map: GTEX[tex] })); scene.add(m); PAVM.push(m); return m;
   };
   groups.forEach((P, t) => flat(P, SZ[t], TX[t], COL[t]));
+  {   // v72：行人路（groups 1 / 3）三角形 hit-test，8 米格——真模型喺行人路上 5 米以下嘅三角形唔畫
+    const grid = new Map(), CS = 8;
+    const addT = (P) => { for (let i = 0; i < P.length; i += 9) { const x0 = Math.min(P[i], P[i + 3], P[i + 6]), x1 = Math.max(P[i], P[i + 3], P[i + 6]), z0 = Math.min(P[i + 2], P[i + 5], P[i + 8]), z1 = Math.max(P[i + 2], P[i + 5], P[i + 8]);
+      for (let gx = Math.floor(x0 / CS); gx <= Math.floor(x1 / CS); gx++) for (let gz = Math.floor(z0 / CS); gz <= Math.floor(z1 / CS); gz++) { const k = gx * 65536 + gz; (grid.get(k) || grid.set(k, []).get(k)).push(P, i); } } };
+    addT(groups[1]); addT(groups[3]);
+    const inT = (P, i, x, z) => { const ax = P[i], az = P[i + 2], bx = P[i + 3], bz = P[i + 5], cx = P[i + 6], cz = P[i + 8], d1 = (x - bx) * (az - bz) - (ax - bx) * (z - bz), d2 = (x - cx) * (bz - cz) - (bx - cx) * (z - cz), d3 = (x - ax) * (cz - az) - (cx - ax) * (z - az); return !((d1 < 0 || d2 < 0 || d3 < 0) && (d1 > 0 || d2 > 0 || d3 > 0)); };
+    onPave = (x, z) => { const L = grid.get(Math.floor(x / CS) * 65536 + Math.floor(z / CS)); if (!L) return false; for (let q = 0; q < L.length; q += 2) if (inT(L[q], L[q + 1], x, z)) return true; return false; };
+  }
   if (window.KERB && KERB.mh) {   // 鋪面物料覆蓋層（底 = 陶土磚）：混凝土磚 / 花崗岩 / 混凝土 / 瀝青，逐塊蓋喺上面（polygonOffset 防閃）
     const B16 = b64i16(KERB.mb), MG = [null, [], [], [], []], MT = [null, 'cpav', 'gran', 'conc', 'asph'], MC = [0, 0xe8e6e0, 0xe8e6e0, 0xe8e6e0, 0x8a8c90]; let o = 0;
     for (const h of KERB.mh) {
