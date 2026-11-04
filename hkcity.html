@@ -12645,7 +12645,7 @@ body.open #nchat{top:50px}
   async function showRooms(msg) {
     modal((b) => {
       const head = el('div'); head.style.cssText = 'display:flex;justify-content:space-between;align-items:baseline';
-      const lo = el('button', 'lnk', '登出 Log out'); lo.onclick = () => { tok = null; save(); showLogin(); };
+      const lo = el('button', 'lnk', '登出 Log out'); lo.onclick = () => { if (tok) api('logout', { t: tok }).catch(() => {}); tok = null; save(); showLogin(); };
       head.append(el('h3', '', `🏙 揀房間 Rooms`), lo);
       const hi = el('div', 'note', `你好 ${myName}！揀一間房一齊行街。`); hi.style.marginTop = '0';
       const list = el('div', '', '載入中… Loading'), er = el('div', 'err', msg || '');
@@ -12722,7 +12722,7 @@ body.open #nchat{top:50px}
       } catch (e) {
         if (!room) break;
         if (e.code === 'gone') { try { await join(room.id); } catch (e2) { sysLine('房間冇咗，返去揀房', true); room = null; clearRemotes(); showRooms(); break; } }
-        else if (e.code === 'auth') { room = null; clearRemotes(); tok = null; save(); showLogin(ERR.auth); break; }
+        else if (e.code === 'auth' || e.code === 'banned') { room = null; clearRemotes(); tok = null; save(); showLogin(ERR[e.code]); break; }
         else if (e.code === 'fast') iv = (e.body && e.body.iv) || iv;
         else { fails++; status(fails > 3 ? 'off' : 'slow'); }
       }
