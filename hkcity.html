@@ -1060,13 +1060,13 @@ const TILES = (() => {   // 每個圖幅切 4 份：幾何 + 遠距離貼圖（1
         if (keep.length < ix.length) g.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
         t.tc = (ix.length - keep.length) / 3; t.tcms = Math.round(performance.now() - tA);   // 裁咗幾多個 + 用咗幾多毫秒（驗證用）
       } catch (e) { console.warn('tcut', e.message); }
-      t.state = 2; setTileOn(t.i, 1); roofToggle(t.i, false); }
+      t.state = 2; t.fails = 0; setTileOn(t.i, 1); roofToggle(t.i, false); }
     catch (e) { t.fails = (t.fails || 0) + 1; t.state = t.fails < 4 ? 0 : -1; t.wait = performance.now() + 4000 * t.fails; console.warn('tile', t.s, e.message); }   // v74：網絡一次失手唔好永久穿窿，隔 4 / 8 / 12 秒再試
     busy = false;
   }
   async function upgrade(t, lvl = HI) {   // 換高解像度：載完先換，期間照用遠距離貼圖
     t.hiState = 1; busy = true;
-    try { const tex = await loadTileTex('tiles/', t.hdr, lvl); if (t.state === 2 && t.hiState === 1) { if (t.hi) t.hi.dispose(); t.hi = tex; t.hiLvl = lvl; setMap(t, tex); t.hiState = 2; } else tex.dispose(); }
+    try { const tex = await loadTileTex('tiles/', t.hdr, lvl); if (t.state === 2 && t.hiState === 1) { if (t.hi) t.hi.dispose(); t.hi = tex; t.hiLvl = lvl; setMap(t, tex); t.hiState = 2; t.hiFails = 0; } else tex.dispose(); }
     catch (e) { t.hiFails = (t.hiFails || 0) + 1; t.hiState = t.hiFails < 4 ? 0 : -1; t.hiWait = performance.now() + 4000 * t.hiFails; console.warn('tile hi', t.s, e.message); }
     busy = false;
   }
