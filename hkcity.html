@@ -575,7 +575,7 @@ const U = { night: { value: 1 }, fogCol: { value: new THREE.Color(0x0c1224) }, f
 // 載入咗邊啲真模型圖幅：1024×1 嘅資料貼圖（R = 1 已載）。圖幅自動切細之後有幾百份，uniform 陣列喺部分手機放唔落
 const TILE_ON = new Uint8Array(1024 * 4), TILE_TEX = new THREE.DataTexture(TILE_ON, 1024, 1, THREE.RGBAFormat); TILE_TEX.magFilter = TILE_TEX.minFilter = THREE.NearestFilter; TILE_TEX.needsUpdate = true; U.tileTex.value = TILE_TEX;
 const setTileOn = (i, v) => { TILE_ON[i * 4] = v ? 255 : 0; TILE_TEX.needsUpdate = true; };
-// v72：真模型行人路上 5 米以下嘅三角形唔畫，用返標準行人路；?tcut=0 關
+// v74：真模型喺行人路上、成個都喺 5 米以下嘅三角形唔畫，用返標準行人路；?tcut=0 關
 const TCUT = !/[?&]tcut=0/.test(location.search);
 const sky = new THREE.Mesh(new THREE.SphereGeometry(10000, 32, 16), new THREE.ShaderMaterial({ side: THREE.BackSide, depthWrite: false, uniforms: U,
   vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.); }',
@@ -1040,25 +1040,34 @@ const TILES = (() => {   // 每個圖幅切 4 份：幾何 + 遠距離貼圖（1
   async function load(t) {
     t.state = 1; busy = true;
     try { const r = await loadTile('tiles/', t.s, 2); t.mesh = r.mesh; r.mesh.position.y = LIFT; t.mat = r.mat; t.hdr = r.hdr; t.lo = r.mat.map; scene.add(r.mesh); try { t.ak = autoKeep(t.i, r.mesh); } catch (e) { console.warn('autoKeep', e.message); }
-      if (TCUT) try {   // v72：行人路上 5 米以下嘅真模型三角形唔畫（autoKeep 要睇未切嘅 mesh，所以要排喺佢後面）
-        const g = r.mesh.geometry, ix = g.index.array, pa = g.attributes.position.array, S = 1 / r.hdr.s, keep = [], tA = performance.now(); t.tc2 = 0;
+      if (TCUT) try {   // v74：行人路上嘅真模型矮碎片唔畫（autoKeep 要睇未切嘅 mesh，所以要排喺佢後面）
+        // 成個三角形（三粒頂點）都要喺 5 米以下先切：有頂點高過 5 米嘅（外牆、簷篷）一律唔郁，切咗會見到樓入面
+        const g = r.mesh.geometry, ix = g.index.array, pa = g.attributes.position.array, S = 1 / r.hdr.s, keep = [], tA = performance.now(), YM = 5 * r.hdr.s; t.tc2 = 0;
+        const vk = (V) => ((pa[V] + 32768) * 65536 + pa[V + 1] + 32768) * 65536 + pa[V + 2] + 32768, cutV = new Set(), half = [];
         for (let q = 0; q < ix.length; q += 3) { const A = ix[q] * 3, B = ix[q + 1] * 3, C = ix[q + 2] * 3;
-          const cx = (pa[A] + pa[B] + pa[C]) * S / 3 + r.hdr.c[0], cy = (pa[A + 1] + pa[B + 1] + pa[C + 1]) * S / 3, cz = (pa[A + 2] + pa[B + 2] + pa[C + 2]) * S / 3 + r.hdr.c[1], op = onPave(cx, cz);
-          let c2 = 0;   // v73：唔屬於任何樓宇腳印、又唔喺高架路底嘅碎片（行人路上蓋 / 招牌、馬路或石壆罅嘅矮盒）都唔畫
-          if (!(cy < 5 && op) && !nearBld(cx, cz) && !onElev(cx, cz) && ((cy < 40 && op) || (cy < 5 && (onRoad(cx, cz) || nearPave(cx, cz))))) c2 = 1;
-          if ((cy < 5 && op) || c2) { t.tc2 += c2; continue; }
+          if (pa[A + 1] < YM && pa[B + 1] < YM && pa[C + 1] < YM) {
+            const cx = (pa[A] + pa[B] + pa[C]) * S / 3 + r.hdr.c[0], cz = (pa[A + 2] + pa[B + 2] + pa[C + 2]) * S / 3 + r.hdr.c[1];
+            let np = onPave(cx, cz) ? 1 : 0, cut = 0;   // 重心 + 三粒頂點（向重心縮 20%）有兩點喺行人路就切：淨睇重心會留低半塊矮牆
+            for (const V of [A, B, C]) if (np < 2 && onPave(cx + (pa[V] * S + r.hdr.c[0] - cx) * 0.8, cz + (pa[V + 2] * S + r.hdr.c[1] - cz) * 0.8)) np++;
+            if (np >= 2) cut = 1;
+            else if (!nearBld(cx, cz) && !onElev(cx, cz) && (onRoad(cx, cz) || nearPave(cx, cz))) { t.tc2++; cut = 1; }   // 唔屬於任何樓宇腳印嘅矮盒（馬路 / 石壆罅）
+            if (cut) { cutV.add(vk(A)); cutV.add(vk(B)); cutV.add(vk(C)); continue; }
+            if (np) { half.push(q); continue; }
+          }
           keep.push(ix[q], ix[q + 1], ix[q + 2]); }
+        for (const q of half) { const A = ix[q] * 3, B = ix[q + 1] * 3, C = ix[q + 2] * 3;   // 同切咗嘅三角形共用一條邊、自己又掂到行人路嘅另一半（一塊四邊形嘅兩個三角形）都切埋
+          if (cutV.has(vk(A)) + cutV.has(vk(B)) + cutV.has(vk(C)) < 2) keep.push(ix[q], ix[q + 1], ix[q + 2]); }
         if (keep.length < ix.length) g.setIndex(new THREE.BufferAttribute(new Uint32Array(keep), 1));
         t.tc = (ix.length - keep.length) / 3; t.tcms = Math.round(performance.now() - tA);   // 裁咗幾多個 + 用咗幾多毫秒（驗證用）
       } catch (e) { console.warn('tcut', e.message); }
       t.state = 2; setTileOn(t.i, 1); roofToggle(t.i, false); }
-    catch (e) { t.state = -1; console.warn('tile', t.s, e.message); }
+    catch (e) { t.fails = (t.fails || 0) + 1; t.state = t.fails < 4 ? 0 : -1; t.wait = performance.now() + 4000 * t.fails; console.warn('tile', t.s, e.message); }   // v74：網絡一次失手唔好永久穿窿，隔 4 / 8 / 12 秒再試
     busy = false;
   }
   async function upgrade(t, lvl = HI) {   // 換高解像度：載完先換，期間照用遠距離貼圖
     t.hiState = 1; busy = true;
     try { const tex = await loadTileTex('tiles/', t.hdr, lvl); if (t.state === 2 && t.hiState === 1) { if (t.hi) t.hi.dispose(); t.hi = tex; t.hiLvl = lvl; setMap(t, tex); t.hiState = 2; } else tex.dispose(); }
-    catch (e) { t.hiState = -1; console.warn('tile hi', t.s, e.message); }
+    catch (e) { t.hiFails = (t.hiFails || 0) + 1; t.hiState = t.hiFails < 4 ? 0 : -1; t.hiWait = performance.now() + 4000 * t.hiFails; console.warn('tile hi', t.s, e.message); }
     busy = false;
   }
   function downgrade(t) { if (t.hi) { setMap(t, t.lo); t.hi.dispose(); t.hi = null; } t.hiState = 0; t.hiLvl = -1; }
@@ -1076,8 +1085,9 @@ const TILES = (() => {   // 每個圖幅切 4 份：幾何 + 遠距離貼圖（1
       else if (t.hiState === 2 && t.hiLvl === 0 && HI !== 0 && (k >= NEAR0 + 1 || d > RH0 + 30)) downgrade(t);   // 手機：唔再係最近嗰兩份 → 放返 4096
     });
     // 下一件事：最近嘅優先——載幾何（R 內）或者換高解像度（RH 內）；賽車淨係載幾何（比賽中唔好卡）
-    const ld = pin ? ranked.find(([d, t]) => t.state === 0 && pin.includes(t)) : ranked.slice(0, MAXN).find(([d, t]) => d <= R && t.state === 0);
-    const up = pin ? null : ranked.slice(0, MAXHI).find(([d, t], k) => d <= RH && t.state === 2 && (t.hiState === 0 || (k < NEAR0 && d <= RH0 && t.hiState === 2 && t.hiLvl !== 0)));
+    const now = performance.now(), rdy = (t) => t.state === 0 && !(t.wait > now);
+    const ld = pin ? ranked.find(([d, t]) => rdy(t) && pin.includes(t)) : ranked.slice(0, MAXN).find(([d, t]) => d <= R && rdy(t));
+    const up = pin ? null : ranked.slice(0, MAXHI).find(([d, t], k) => d <= RH && t.state === 2 && ((t.hiState === 0 && !(t.hiWait > now)) || (k < NEAR0 && d <= RH0 && t.hiState === 2 && t.hiLvl !== 0)));
     const upLvl = up && ranked.indexOf(up) < NEAR0 && up[0] <= RH0 ? 0 : HI;
     api.pending = (ld ? 1 : 0) + (up ? 1 : 0);
     if (busy) return;   // 一次載一樣
