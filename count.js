@@ -5,11 +5,11 @@
   const s = document.createElement('script');
   s.async = true;
   s.dataset.goatcounter = 'https://hkneon.goatcounter.com/count';
-  // allow_frame：俾人 embed 入 iframe（itch.io / Perchance 之類）都照數
+  // 唔好 load 就自動數；allow_local 方便喺自己電腦測試；allow_frame：俾人 embed 入 iframe（itch.io 之類）都照數
   s.dataset.goatcounterSettings = JSON.stringify({ no_onload: true, allow_local: true, allow_frame: true });
   // 宣傳入口用 ?from=perchance 之類 → 跟落 path 度，睇得出邊度帶人嚟
   const from = (/[?&]from=([\w-]{1,20})(?:&|$)/.exec(location.search) || [])[1];
-  window.countFrom = from ? '?from=' + from : '';   // 唔好 load 就自動數；allow_local 方便喺自己電腦測試
+  window.countFrom = from ? '?from=' + from : '';
   s.src = '//gc.zgo.at/count.js';
   s.onload = () => {   // 載入成功先數一個 page view；之後就俾遊戲自己數事件。只記路徑，唔記標題（題目名都唔送出去）
     try {
