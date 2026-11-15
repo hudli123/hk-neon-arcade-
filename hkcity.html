@@ -39,12 +39,33 @@ canvas{display:block}
 <script>
 // 載入畫面：tools/build.py 喺每段 script 之後插 BOOT(已下載比例)；去到 1 = 全部 script 行完 → 等遊戲畫完第一格先收起
 window.BOOT = (p) => {
-  const b = document.getElementById('boot'); if (!b) return;
+  const b = document.getElementById('boot'); if (!b || window.NOGL) return;
   b.querySelector('i').style.width = (p * 100).toFixed(1) + '%';
   b.querySelector('.bp').textContent = p < 1 ? '載入中 ' + Math.floor(p * 100) + '%' : '建立城市中…';
-  if (p >= 1) requestAnimationFrame(() => requestAnimationFrame(() => { b.style.opacity = 0; setTimeout(() => b.remove(), 500); }));
+  if (p >= 1) requestAnimationFrame(() => requestAnimationFrame(() => { b.style.opacity = 0; setTimeout(() => b.remove(), 500); HKC_EV('loaded'); }));
 };
-</script><script>window.BOOT && BOOT(0.000)</script>
+// 玩數（count.js → GoatCounter）：載完、入邊個模式、玩夠 2 / 10 分鐘（分頁喺前台先計）。每次開頁每樣只數一次；?from=xxx 會跟住事件名
+window.HKC_EV = (() => {
+  const done = new Set(), MODE = { mWalk: 'walk', mOpen: 'open', mNet: 'net', mRace: 'race' };
+  const ev = (n) => {
+    if (done.has(n)) return; done.add(n);
+    const go = (k) => window.goatcounter && goatcounter.count ? window.count('hkcity/' + n + (window.countFrom || '')) : k && setTimeout(go, 2000, k - 1);   // gc script 係 async，未到就等陣再試
+    go(8);
+  };
+  document.addEventListener('click', (e) => { const n = MODE[e.target && e.target.id]; if (n) ev(n); }, true);
+  let t = 0; setInterval(() => { if (!done.has('loaded') || document.visibilityState !== 'visible') return; t += 10; if (t >= 120) ev('t2m'); if (t >= 600) ev('t10m'); }, 10000);
+  return ev;
+})();
+// 冇 WebGL（舊機 / 硬件加速熄咗）：three.js 開唔到 context 就 throw，之前成個黑畫面冇解釋 → 留低載入畫面講明
+addEventListener('error', (e) => {
+  if (window.NOGL || !/WebGL context/.test(e.message || '')) return;
+  window.NOGL = 1; HKC_EV('nogl');
+  const b = document.getElementById('boot'); if (!b) return;
+  b.querySelector('.bb').remove();
+  b.querySelector('.bp').textContent = '呢部機開唔到 3D 畫面（WebGL）';
+  b.querySelector('.bs').textContent = '請用電腦版 Chrome 或 Edge 再開；或者喺瀏覽器設定開返「硬件加速」';
+});
+</script><script src="count.js"></script><script>window.BOOT && BOOT(0.000)</script>
 <div id="hud"><div id="street"></div></div>
 <div id="compass"><i id="compassR"><b>N</b><s></s></i></div><div id="modes"><button id="mFly" class="on">航拍</button><button id="mWalk">落街行</button><button id="mRace">賽車</button><button id="mOpen">開放世界</button><button id="mNet">🌐 聯機</button></div>
 <div id="time"><button id="tNight">夜晚</button><button id="tDay">日頭</button><button id="tRain">🌧 落雨</button><button id="tHelp">❓ 玩法</button></div>
