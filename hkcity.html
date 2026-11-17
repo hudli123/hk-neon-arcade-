@@ -12977,7 +12977,7 @@ body.open #nchat{top:50px}
     l.scrollTop = l.scrollHeight;
     if (quiet || chatOpen) return;
     if (pid && pid !== me) { unread++; badge(); }
-    const t = el('div'); if (pid) { const n = el('b', '', name + '：'); n.style.color = COLS[pid % COLS.length]; t.append(n); } t.append(document.createTextNode(unesc(text))); tick(t);
+    const t = el('div', pid ? 'nm' : ''); if (pid) { const n = el('b', '', name + '：'); n.style.color = COLS[pid % COLS.length]; t.append(n); } t.append(document.createTextNode(unesc(text))); tick(t);
   }
   $('nform').onsubmit = async (e) => {
     e.preventDefault(); const inp = $('ninp'), v = inp.value.trim(); if (!v || !room) return;

@@ -1,6 +1,6 @@
 // hkcity 日文對照表（hkcity.html 嘅語言 script 載入）。key = 畫面上嘅中文原文（一個 DOM 文字節點，頭尾空白唔計），value = 日文。
 // 表入面冇嘅字照出中文：街名、舖名、站名、途人對白、世界入面嘅招牌都係故意唔譯。
-// 有數字／名嘅句子用 rules（由上而下，第一條啱嘅就用）。canvas = 畫喺 canvas 上面嘅細標籤。
+// 有數字／名嘅句子用 rules（由上而下，第一條啱嘅就用）。canvas = 畫喺 canvas 上面嘅細標籤。skip = 唔譯嘅元素（CSS selector）。
 (() => {
   const T = (s) => window.HKC_T ? window.HKC_T(s) : s;
   const U = (s) => s.replace(/ 米/g, ' m').replace(/ 公里/g, ' km');
@@ -196,5 +196,6 @@
     [/^；.*$/, (m) => m],
   ];
   const canvas = { '外賣': '出前', '的士': 'TAXI', '小巴': 'バス', '⏳ 時空裂縫 ★★★★★': '⏳ 時空の裂け目 ★★★★★', '✅ 時空裂縫 ★★★★★': '✅ 時空の裂け目 ★★★★★' };
-  window.HKC_L10N = { lang: 'ja', text, rules, canvas };
+  // skip：玩家自己打嘅字唔好譯（聊天訊息 .nm、房名 .rm .t / #nroomname）
+  window.HKC_L10N = { lang: 'ja', text, rules, canvas, skip: '.nm, .rm .t, #nroomname' };
 })();

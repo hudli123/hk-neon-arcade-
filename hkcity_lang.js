@@ -24,8 +24,9 @@
     return m[1] + o + m[3];
   };
   const walk = (n) => {
-    if (n.nodeType === 3) { const p = n.parentNode && n.parentNode.nodeName; if (p !== 'SCRIPT' && p !== 'STYLE') { const v = tr(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; } return; }
-    if (n.nodeType !== 1 || n.nodeName === 'SCRIPT' || n.nodeName === 'STYLE') return;
+    const e = n.nodeType === 3 ? n.parentNode : n;
+    if (!e || e.nodeType !== 1 || e.nodeName === 'SCRIPT' || e.nodeName === 'STYLE' || (D.skip && e.closest(D.skip))) return;   // skip = 玩家自己打嘅字（聊天、房名）
+    if (n.nodeType === 3) { const v = tr(n.nodeValue); if (v !== n.nodeValue) n.nodeValue = v; return; }
     for (const a of ATTR) { const v = n.getAttribute(a); if (v) { const w = tr(v); if (w !== v) n.setAttribute(a, w); } }
     for (let c = n.firstChild; c; c = c.nextSibling) walk(c);
   };
