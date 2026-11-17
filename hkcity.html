@@ -35,6 +35,7 @@ canvas{display:block}
 #boot .bp{font-size:16px;font-weight:700} #boot .bs{font-size:12px;opacity:.6;padding:0 16px;text-align:center}
 </style>
 <body>
+<script src="hkcity_lang.js"></script>
 <div id="boot"><div class="bt">香港 3D 城市</div><div class="bb"><i></i></div><div class="bp">載入中 0%</div><div class="bs">檔案約 15 MB，用 Wi-Fi 會快啲</div></div>
 <script>
 // 載入畫面：tools/build.py 喺每段 script 之後插 BOOT(已下載比例)；去到 1 = 全部 script 行完 → 等遊戲畫完第一格先收起
@@ -68,7 +69,7 @@ addEventListener('error', (e) => {
 </script><script src="count.js"></script><script>window.BOOT && BOOT(0.000)</script>
 <div id="hud"><div id="street"></div></div>
 <div id="compass"><i id="compassR"><b>N</b><s></s></i></div><div id="modes"><button id="mFly" class="on">航拍</button><button id="mWalk">落街行</button><button id="mRace">賽車</button><button id="mOpen">開放世界</button><button id="mNet">🌐 聯機</button></div>
-<div id="time"><button id="tNight">夜晚</button><button id="tDay">日頭</button><button id="tRain">🌧 落雨</button><button id="tHelp">❓ 玩法</button></div>
+<div id="time"><button id="tNight">夜晚</button><button id="tDay">日頭</button><button id="tRain">🌧 落雨</button><button id="tHelp">❓ 玩法</button><button id="tLang" onclick="window.HKC_SETLANG && HKC_SETLANG()">日本語</button></div>
 <div id="helpbox" hidden><div class="hb"><div id="hbody"></div><button id="hclose">明白，開始！</button></div></div>
 <div id="help"></div>
 <div id="credit"></div><button id="credbtn">ⓘ 資料來源</button>
