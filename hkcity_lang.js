@@ -7,9 +7,10 @@
   try { if (lang) localStorage.setItem('hkcity-lang', lang); else lang = localStorage.getItem('hkcity-lang'); } catch (e) {}
   if (lang !== 'ja' && lang !== 'zh') lang = /^ja\b/i.test(navigator.language || '') ? 'ja' : 'zh';
   window.HKC_LANG = lang;
-  window.HKC_SETLANG = () => {
-    try { localStorage.setItem('hkcity-lang', lang === 'ja' ? 'zh' : 'ja'); } catch (e) {}
-    location.replace(location.pathname + location.search.replace(/([?&])lang=\w+&?/, '$1').replace(/[?&]$/, '') + location.hash);
+  window.HKC_SETLANG = () => {   // 新語言寫埋入網址：localStorage 用唔到（私隱模式）都轉到
+    const to = lang === 'ja' ? 'zh' : 'ja', u = new URL(location.href);
+    try { localStorage.setItem('hkcity-lang', to); } catch (e) {}
+    u.searchParams.set('lang', to); location.replace(u.href);
   };
   if (lang !== 'ja') return;
   document.documentElement.lang = 'ja';
