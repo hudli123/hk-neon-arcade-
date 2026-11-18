@@ -80,6 +80,7 @@ html = f'''<!doctype html>
 <!-- 自動產生（tools/make_hkrace.py）。改遊戲請改 hkrace_src.js，再行一次 tools/make_hkrace.py -->
 <style>[hidden]{{display:none!important}}html,body{{margin:0;height:100%;overflow:hidden;background:#000;color:#fff;font-family:system-ui,"PingFang HK","Microsoft JhengHei",sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}}canvas{{display:block}}#street{{position:fixed;left:50%;top:8px;transform:translateX(-50%);font-weight:800;text-shadow:0 1px 4px #000}}#credit{{position:fixed;left:6px;bottom:4px;font-size:10px;opacity:.6;pointer-events:none}}</style>
 </head><body class="race">
+<script src="hkcity_lang.js"></script>
 <div id="hud"><div id="street"></div></div><div id="credit">建築：地政總署 3D 模型（LandsD）</div>
 <script>{three}</script>
 <script>{tiles_js}</script>
