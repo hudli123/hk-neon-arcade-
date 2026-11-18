@@ -84,6 +84,7 @@
   }
   function applyRigs() {
     const have = (f) => MESH[f] && window.MRIG && window.MRIG[MESH[f]] ? MESH[f] : null;
+    window.NO_SUZAKU = !!D.f2;   // 對手係名人鬥士：唔放張郃嘅朱雀，只用自己嘅絕招
     setHeroMesh(have(D.f1) || 'zy');
     if (window.setBossRig) window.setBossRig(have(D.f2) || 'zhanghe');
   }

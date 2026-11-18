@@ -2266,7 +2266,7 @@ requestAnimationFrame(frame);
     phxCd -= dt;
     if (b.hp > b.max * 0.99) { used70 = used35 = false; phxCd = 10; }   // 新一隻 boss（再戰）
     // 血跌穿 70 % / 35 %：就算俾人連緊都爆氣（推開玩家）即刻放朱雀
-    if (b.st !== 7 && b.y <= 0 && GAME.state === 'play' && ((!used70 && b.hp < b.max * 0.7) || (!used35 && b.hp < b.max * 0.35))) {
+    if (!window.NO_SUZAKU && b.st !== 7 && b.y <= 0 && GAME.state === 'play' && ((!used70 && b.hp < b.max * 0.7) || (!used35 && b.hp < b.max * 0.35))) {
       if (b.hp < b.max * 0.7) used70 = true; if (b.hp < b.max * 0.35) used35 = true; phxCd = 18;
       b.st = 7; b.t = 0; b.vx = b.vz = 0; hitRing = false; banner(PX, '#ff6a2a'); SND.charge(); SND.roar(); ring(b.x, b.z, 6, 0xff6a2a, 0.4);
       const ex = player.x - b.x, ez = player.z - b.z, ed = Math.hypot(ex, ez) || 1; if (ed < 5) { player.kx = ex / ed * 14; player.kz = ez / ed * 14; }
@@ -2274,7 +2274,7 @@ requestAnimationFrame(frame);
     if (b.st === 0 && b.cd <= 0 && b.y <= 0 && GAME.state === 'play') {
       const d = Math.hypot(player.x - b.x, player.z - b.z), r = Math.random();
       let n = -1;
-      if (phxCd <= 0 && b.hp < b.max * 0.9 && r < 0.35) { n = 7; phxCd = 18; }
+      if (!window.NO_SUZAKU && phxCd <= 0 && b.hp < b.max * 0.9 && r < 0.35) { n = 7; phxCd = 18; }
       else if (d < 5.5 && r < 0.45) n = 8;
       else if (d > 7 && d < 18 && r < 0.4) n = 9;
       if (n >= 0) { b.st = n; b.t = 0; hitRing = false; hits = 0; cx = b.x; cz = b.z; tx = player.x; tz = player.z;
