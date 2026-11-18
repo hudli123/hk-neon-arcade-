@@ -331,6 +331,11 @@
     b.onclick = () => zoomTo(f); dz.appendChild(b);
   }
   document.body.appendChild(dz);
+  // ---- 返回主頁（角色選擇畫面）：對戰中喺縮放掣隔籬；完場畫面喺「再戰」隔籬 ----
+  const goHome = (ask) => { if (ask && !confirm('返回主頁？')) return; try { netDisconnect(); } catch (e) {} location.reload(); };
+  { const st = document.createElement('style'); st.textContent = '#dhome{display:none;position:fixed;right:56px;top:168px;z-index:6;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.5);background:rgba(20,20,30,.55);color:#fff;font-size:17px;cursor:pointer;padding:0;touch-action:manipulation}body.playing #dhome{display:block}'; document.head.appendChild(st);
+    const b = document.createElement('button'); b.id = 'dhome'; b.textContent = '🏠'; b.title = '返回主頁'; b.setAttribute('aria-label', '返回主頁'); b.onclick = () => goHome(true); document.body.appendChild(b);
+    const o = document.createElement('button'); o.id = 'dhome2'; o.textContent = '返回主頁'; o.onclick = () => goHome(false); $('over').appendChild(o); }
   const NKEY = { atk: 'a', dash: 'd', dodge: 'o', spec: 's' };   // guest 數字鍵 → input counters
   addEventListener('keydown', (e) => {
     if (e.repeat) return; const k = e.key.toLowerCase();
