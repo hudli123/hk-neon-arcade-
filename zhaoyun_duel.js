@@ -37,7 +37,7 @@
   // ===== 四個名人（私人版）。換 Meshy 模型時只需改 rig；絕招邏輯喺下面 cast() =====
   const FIGHTERS = {
     rocket: { name: '火箭商人', short: '火箭', rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: '火鳳凰降臨', specHint: '射火箭上天再炸落嚟', mGain: .5 },
-    tariff: { name: '關稅大帝', short: '關稅', rig: 'gy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: '關稅牆！', specHint: '封住對手 5 秒' },
+    tariff: { name: '關稅大帝', short: '關稅', rig: 'zy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: '關稅牆！', specHint: '封住對手 5 秒' },
     chip:   { name: '晶片教主', short: '晶片', rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: '晶片生成', specHint: '三塊晶片追蹤' },
     cart:   { name: '車力巨人', short: '巨人', rig: 'gy', col: '#b89a80', hp: 520, scale: 1.18, spec: 'ram', specName: '高速衝撞', specHint: '直線衝鋸對手' },
   };
@@ -48,41 +48,44 @@
     cart:   (w) => `【突發】車力巨人衝得太快煞唔切，直出場外；${w}獲判勝`,
   };
   // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
+  const MESH = { rocket: 'musk', tariff: 'trump', chip: 'jensen' };   // 鬥士 → Meshy 模型（冇載到就用返趙雲／張郃）
   const muskReady = (async () => {
-    try {
-      const [jb, tb, cb] = await Promise.all([
-        fetch('zy_rig_musk.js').then((r) => { if (!r.ok) throw new Error('rig ' + r.status); return r.arrayBuffer(); }),
-        fetch('zy_tex_musk.webp').then((r) => { if (!r.ok) throw new Error('tex ' + r.status); return r.arrayBuffer(); }),
-        fetch('zy_clips_fist.js').then((r) => { if (!r.ok) throw new Error('clips ' + r.status); return r.arrayBuffer(); })]);
-      const s = document.createElement('script'); s.text = new TextDecoder().decode(jb) + '\n//# sourceURL=zy_rig_musk.js'; document.head.appendChild(s);
-      const s2 = document.createElement('script'); s2.text = new TextDecoder().decode(cb) + '\n//# sourceURL=zy_clips_fist.js'; document.head.appendChild(s2);
-      if (window.MRIG && window.MRIG.musk) window.MRIG.musk.tex = URL.createObjectURL(new Blob([tb], { type: 'image/webp' }));
-    } catch (e) { console.warn('musk load failed', e); }
+    const get = (f) => fetch(f).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.arrayBuffer(); });
+    const run = (b, f) => { const s = document.createElement('script'); s.text = new TextDecoder().decode(b) + '\n//# sourceURL=' + f; document.head.appendChild(s); };
+    try { run(await get('zy_clips_fist.js'), 'zy_clips_fist.js'); } catch (e) { console.warn('fist clips load failed', e); return; }
+    await Promise.all(Object.values(MESH).map(async (id) => {
+      try {
+        const [jb, tb] = await Promise.all([get('zy_rig_' + id + '.js'), get('zy_tex_' + id + '.webp')]);
+        run(jb, 'zy_rig_' + id + '.js');
+        if (window.MRIG && window.MRIG[id]) window.MRIG[id].tex = URL.createObjectURL(new Blob([tb], { type: 'image/webp' }));
+      } catch (e) { console.warn(id + ' load failed', e); }
+    }));
   })();
   // ---- 主角模型切換：CHARS.zy 可以掛多個 rig，按 f1 揀邊個現形/動畫；趙雲 mesh + 槍照舊 ----
   const MUSK_SCALE = 1.12;   // musk bbox 高 1.80m（同 zy 1.80 / zhanghe 1.85 同級），用返趙雲嘅 1.12
-  const heroRigs = {};   // 'zy' | 'musk' -> { mrig, rigUpdate }（rigUpdate 係 attach() 入面同一部狀態機，唔使複製）
-  function setHeroMesh(id) {   // id: 'zy' | 'musk'
+  const heroRigs = {};   // 'zy' | 'musk' | 'trump' | 'jensen' -> { mrig, rigUpdate }（rigUpdate 係 attach() 入面同一部狀態機，唔使複製）
+  function setHeroMesh(id) {   // id: 'zy' | MESH 入面嘅模型
     const C = CHARS && CHARS.zy; if (!C || !C.mrig) return false;
     if (!heroRigs.zy) heroRigs.zy = { mrig: C.mrig, rigUpdate: C.rigUpdate };
     if (id !== 'zy' && !heroRigs[id]) {
       if (!window.MRIG || !window.MRIG[id] || !window.MRIG_ATTACH) return false;
       window.MRIG_ATTACH(C, id, MUSK_SCALE);   // attach 會暫時將 C.mrig/rigUpdate 指向新 rig
-      if (id === 'musk' && window.MCLIPS_FIST && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_FIST, window.MRIG.musk);
+      if (window.MCLIPS_FIST && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_FIST, window.MRIG[id]);
       heroRigs[id] = { mrig: C.mrig, rigUpdate: C.rigUpdate };
       C.mrig = heroRigs.zy.mrig; C.rigUpdate = heroRigs.zy.rigUpdate;
     }
     const use = heroRigs[id] ? id : 'zy';
     C.mrig = heroRigs[use].mrig; C.rigUpdate = heroRigs[use].rigUpdate;
     for (const k in heroRigs) heroRigs[k].mrig.group.visible = k === use;
-    C.w.visible = use === 'zy';   // 火箭商人冇槍
-    window.HERO_MOVES = use === 'musk' ? 'fist' : null;   // musk：N/CH 轉拳腳表
-    window.MUSOU_GAIN = use === 'musk' && F1() ? F1().mGain || 1 : 1;   // musk 氣慢啲
+    C.w.visible = use === 'zy';   // Meshy 角色冇槍
+    window.HERO_MOVES = use !== 'zy' ? 'fist' : null;   // Meshy 角色：N/CH 轉拳腳表
+    window.MUSOU_GAIN = use !== 'zy' && F1() ? F1().mGain || 1 : 1;   // musk 氣慢啲（mGain）
     return true;
   }
   function applyRigs() {
-    setHeroMesh(D.f1 === 'rocket' && window.MRIG && window.MRIG.musk ? 'musk' : 'zy');
-    if (window.setBossRig) window.setBossRig(D.f2 === 'rocket' && window.MRIG && window.MRIG.musk ? 'musk' : 'zhanghe');
+    const have = (f) => MESH[f] && window.MRIG && window.MRIG[MESH[f]] ? MESH[f] : null;
+    setHeroMesh(have(D.f1) || 'zy');
+    if (window.setBossRig) window.setBossRig(have(D.f2) || 'zhanghe');
   }
   muskReady.then(() => { applyRigs(); const s = document.getElementById('pick'); if (s) s.dispatchEvent(new Event('muskloaded')); });
 

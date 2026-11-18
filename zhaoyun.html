@@ -1080,6 +1080,7 @@ const scaleMove = (m, k) => ({ ...m, dur: m.dur * k.dur, range: m.range + k.rang
 const N_GY = [N[2], N[1], N[4], { ...N[0], anim: 'chop', arc: 120 }, N[4], N[5]].map((m) => scaleMove(m, { dur: 1.18, range: 1.2, arc: 170, dmg: 1.35 }));
 const CH_GY = CH.map((m) => scaleMove(m, { dur: 1.12, range: 1.4, arc: 0, dmg: 1.3 }));
 // 火箭商人：冇武器，拳腳為主 — 同傷同節奏，範圍細、弧窄、步幅短
+window.FIST_RIG = { musk: 1, trump: 1, jensen: 1 };   // 名人亂鬥冇武器嘅 Meshy 角色：用拳腳 bank
 window.HERO_MOVES = null;   // null|'fist'（名人亂鬥 musk 先會 set 'fist'）
 window.MUSOU_GAIN = 1;   // 名人亂鬥個別鬥士嘅氣速（預設 1，正常模式唔變）
 const N_FIST = [
@@ -1714,7 +1715,7 @@ function stepBoss(dt) {
       hal.rotation.set(0, lerp(0, -2.2, Math.min(1, b.t / 0.8)), 0);
       if (b.t > 0.85) {
         b.st = 2; b.t = 0; SND.swing(true);
-        if (d < (window.__bossRig && window.__bossRig.id === 'musk' ? 2.8 : 5.5) && Math.abs(angDiff(face, b.yaw)) < 1.8) hurtPlayer(38, b.x, b.z, true);
+        if (d < (window.__bossRig && window.__bossRig.fist ? 2.8 : 5.5) && Math.abs(angDiff(face, b.yaw)) < 1.8) hurtPlayer(38, b.x, b.z, true);
         for (let k = 0; k < 16; k++) { const a = b.yaw - 1.6 + k / 16 * 3.2; emit(b.x + Math.sin(a) * 4, 1.6, b.z + Math.cos(a) * 4, 0, 0, 0, .3, 1.6, 0xff5a8a); }
       }
       break;
@@ -1726,7 +1727,7 @@ function stepBoss(dt) {
       break;
     case 6: { // 突進
       const [fx, fz] = fwd(b.yaw); b.x += fx * 20 * dt; b.z += fz * 20 * dt;
-      if (d < (window.__bossRig && window.__bossRig.id === 'musk' ? 1.9 : 2.6) && !b.dashHit) { b.dashHit = 1; hurtPlayer(32, b.x, b.z, true); }
+      if (d < (window.__bossRig && window.__bossRig.fist ? 1.9 : 2.6) && !b.dashHit) { b.dashHit = 1; hurtPlayer(32, b.x, b.z, true); }
       for (let i = 0; i < NMAX; i++) if (S.alive[i] && Math.hypot(S.x[i] - b.x, S.z[i] - b.z) < 1.6) { S.vx[i] = -fz * 8; S.vz[i] = fx * 8; }
       if (b.t > 0.5) { b.st = 0; b.cd = rand(1.5, 2.5); b.dashHit = 0; }
       break;
@@ -2048,8 +2049,9 @@ requestAnimationFrame(frame);
     if (BOSSRIGS[id] || !window.MRIG[id]) return BOSSRIGS[id] || null;
     const R = buildMeshyRig(window.MRIG[id], window.MCLIPS);
     R.group.visible = false; bossG.add(R.group); R.axis = R.handAxis(AX0);
-    if (id === 'musk' && window.MCLIPS_FIST && window.addClipBank) window.addClipBank(R, window.MCLIPS_FIST, window.MRIG.musk);
-    BOSSRIGS[id] = { R, hipY: window.MRIG[id].bones[0].t[1], id };
+    const fist = !!window.FIST_RIG[id];
+    if (fist && window.MCLIPS_FIST && window.addClipBank) window.addClipBank(R, window.MCLIPS_FIST, window.MRIG[id]);
+    BOSSRIGS[id] = { R, hipY: window.MRIG[id].bones[0].t[1], id, fist };
     return BOSSRIGS[id];
   }
   window.setBossRig = function (id) {
@@ -2075,7 +2077,7 @@ requestAnimationFrame(frame);
     let cur = null, prev = null, prevW = 0, loopT = 0, lx = 0, lz = 0, mv = 0, hidN = 0;
     // musk（火箭商人）冇刀：張郃斬擊動作 → 拳腳 bank 嘅對應動作
     const BFIST = { Charged_Slash: 'Punch_Combo', Thrust_Slash: 'Right_Jab_from_Guard', Sword_Shout: 'Elbow_Strike', Triple_Combo_Attack: 'Punch_Combo', Charged_Ground_Slam: 'Jump_and_Slam_Back_Down', Heavy_Hammer_Swing: 'Jumping_Punch', Reaping_Swing: 'Left_Hook_from_Guard', Double_Blade_Spin: 'Elbow_Strike' };
-    const use = (name) => { let a = window.__bossRig.R.actions[name]; if (!a && window.__bossRig.id === 'musk') a = window.__bossRig.R.actions[BFIST[name] || name] || window.__bossRig.R.actions.Combat_Stance; if (!a) a = window.__bossRig.R.actions.Combat_Stance; if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; } return a; };
+    const use = (name) => { let a = window.__bossRig.R.actions[name]; if (!a && window.__bossRig.fist) a = window.__bossRig.R.actions[BFIST[name] || name] || window.__bossRig.R.actions.Combat_Stance; if (!a) a = window.__bossRig.R.actions.Combat_Stance; if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; } return a; };
     const at = (a, t) => { a.time = THREE.MathUtils.clamp(t, 0, a.getClip().duration); };
     const lin = (t, t0, t1, c0, c1) => c0 + (c1 - c0) * THREE.MathUtils.clamp((t - t0) / (t1 - t0), 0, 1);
     const _hq = new THREE.Quaternion(), _gq = new THREE.Quaternion(), _p = new THREE.Vector3(), _f = new THREE.Vector3(), _d = new THREE.Vector3();
