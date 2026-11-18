@@ -3121,10 +3121,10 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
   const b = document.getElementById('boot');
   if (b && !window.NOGL) { b.style.opacity = 0; setTimeout(() => b.remove(), 500); window.HKC_EV && HKC_EV('loaded'); }
   const add = (src, onload) => { const s = document.createElement('script'); s.src = src; s.async = true; if (onload) s.onload = onload; document.body.appendChild(s); };
-  add('hkcity_people.js', () => window.PEOPLE && PEOPLE.load3d && PEOPLE.load3d());
+  add('hkcity_people.js', () => PEOPLE.load3d());   // PEOPLE / TRAFFIC 係 top-level const，唔喺 window 上面
   if (!TOUCH) {
     add('hkcity_lm.js', () => window.attachLandmarks && attachLandmarks());
-    add('hkcity_cars.js', () => window.TRAFFIC && TRAFFIC.load3d && TRAFFIC.load3d());
+    add('hkcity_cars.js', () => TRAFFIC.load3d());
   }
   const late = ['hkcity_late_a.js', 'hkcity_indoor.js', 'hkcity_late_b.js'];
   let li = 0;
