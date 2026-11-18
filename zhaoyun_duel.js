@@ -37,15 +37,13 @@
   // ===== 四個名人（私人版）。換 Meshy 模型時只需改 rig；絕招邏輯喺下面 cast() =====
   const FIGHTERS = {
     rocket: { name: '火箭商人', short: '火箭', rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: '火鳳凰降臨', specHint: '射火箭上天再炸落嚟', mGain: .5 },
-    tariff: { name: '關稅大帝', short: '關稅', rig: 'zy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: '關稅牆！', specHint: '封住對手 5 秒' },
-    chip:   { name: '晶片教主', short: '晶片', rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: '晶片生成', specHint: '三塊晶片追蹤' },
-    cart:   { name: '車力巨人', short: '巨人', rig: 'gy', col: '#b89a80', hp: 520, scale: 1.18, spec: 'ram', specName: '高速衝撞', specHint: '直線衝鋸對手' },
+    tariff: { name: '關稅大帝', short: '關稅', rig: 'zy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: '關稅牆！', specHint: '火牆封住對手 5 秒' },
+    chip:   { name: '晶片教主', short: '晶片', rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: '晶片生成', specHint: '28 塊晶片追蹤' },
   };
   const HEADLINE = {
     rocket: (w) => `【突發】火箭商人嘅火箭落返自己頭上；${w}：「唔關我事」`,
     tariff: (w) => `【突發】關稅大帝敗陣，宣布對${w}加徵 300% 關稅，市場冇反應`,
     chip:   (w) => `【突發】晶片教主敗陣，宣布下季推新卡——即日售罄；${w}冇買到`,
-    cart:   (w) => `【突發】車力巨人衝得太快煞唔切，直出場外；${w}獲判勝`,
   };
   // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
   const MESH = { rocket: 'musk', tariff: 'trump', chip: 'jensen' };   // 鬥士 → Meshy 模型（冇載到就用返趙雲／張郃）
@@ -102,6 +100,11 @@
     if (who === 'p2') { const dx = boss.x - fx, dz = boss.z - fz, d = Math.hypot(dx, dz) || 1; if (big) boss.poise = 0; boss.hitId = -1; hitBoss(dmg, big ? 12 : 5, big ? 9 : 0, dx / d, dz / d); }
     else { const inv = player.inv; player.inv = 0; hurtPlayer(dmg, fx, fz, big); if (player.inv < inv) player.inv = inv; }
   };
+  const chipDmg = (who, dmg, fx, fz) => {   // 細傷害：唔硬直、唔擊退；會打死先行正常 dmgTo
+    const F = who === 'p2' ? boss : player;
+    if (F.hp - dmg <= 0) return dmgTo(who, dmg, fx, fz, false);
+    F.hp -= dmg; if (who === 'p2') boss.flash = Math.max(boss.flash || 0, .06);
+  };
   const boom = (x, y, z, col, n = 40) => { for (let k = 0; k < n; k++) { const a = Math.random() * TAU, s = rand(3, 12); emit(x, y, z, Math.cos(a) * s, rand(1, 9), Math.sin(a) * s, rand(.3, .8), rand(.8, 1.8), Math.random() < .5 ? col : 0xffffff, 10, 1.5); } ring(x, z, 5, col, 0.5); };
 
   // ---- 投射物（火箭、晶片） ----
@@ -130,7 +133,16 @@
     for (let k = 0; k < 4; k++) { const f = new THREE.Mesh(new THREE.BoxGeometry(.04, .16, .16), finMat); f.position.set(Math.sin(k / 4 * TAU) * .32, Math.cos(k / 4 * TAU) * .32, .85); g.add(f); }
     g.userData.phx = 1; return g;
   };
-  const mkChip = () => { const g = new THREE.Group(); g.add(new THREE.Mesh(new THREE.BoxGeometry(.8, .08, .8), new THREE.MeshBasicMaterial({ color: 0x39ff14 }))); const die = new THREE.Mesh(new THREE.BoxGeometry(.45, .14, .45), new THREE.MeshLambertMaterial({ color: 0x111111 })); die.position.y = .1; g.add(die); return g; };
+  const chipTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 128; const g = c.getContext('2d');
+    g.fillStyle = '#c9ccd2'; for (let k = 0; k < 8; k++) { const o = 14 + k * 13.4; g.fillRect(o, 0, 7, 128); g.fillRect(0, o, 128, 7); }   // 四邊針腳
+    g.fillStyle = '#17191d'; g.fillRect(12, 12, 104, 104); g.strokeStyle = '#3a3f47'; g.lineWidth = 2; g.strokeRect(13, 13, 102, 102);   // 封裝
+    g.fillStyle = '#2c9a3c'; g.fillRect(34, 34, 60, 60); g.strokeStyle = '#7dff8a'; g.lineWidth = 1;   // 晶粒 + 線路
+    for (let k = 1; k < 6; k++) { g.beginPath(); g.moveTo(34 + k * 10, 34); g.lineTo(34 + k * 10, 94); g.moveTo(34, 34 + k * 10); g.lineTo(94, 34 + k * 10); g.stroke(); }
+    g.fillStyle = '#e8eaee'; g.beginPath(); g.arc(24, 24, 4, 0, 7); g.fill();   // pin 1 點
+    return new THREE.CanvasTexture(c); })();
+  const chipGeo = new THREE.BoxGeometry(.62, .07, .62), chipSide = new THREE.MeshBasicMaterial({ color: 0x8a8f98 }), chipTop = new THREE.MeshBasicMaterial({ map: chipTex });
+  const chipMats = [chipSide, chipSide, chipTop, chipTop, chipSide, chipSide];
+  const mkChip = () => { const g = new THREE.Group(); const m = new THREE.Mesh(chipGeo, chipMats); m.rotation.x = Math.PI / 2; g.add(m); return g; };   // 面向飛行方向，轉起上嚟見到晶片面
   const shoot = (o) => { o.netId = ++netFxId; o.m.position.set(o.x, o.y, o.z); o.m.visible = !(o.delay > 0); scene.add(o.m); PR.push(o); };
   const stepPR = (dt) => {
     for (const o of PR) {
@@ -138,11 +150,11 @@
       const tgt = other(o.who), [tx, tz] = posOf(tgt), want = Math.atan2(tx - o.x, tz - o.z);
       o.a += clamp(angDiff(want, o.a), -o.turn * dt, o.turn * dt);
       o.x += Math.sin(o.a) * o.sp * dt; o.z += Math.cos(o.a) * o.sp * dt; o.life -= dt;
-      o.m.position.set(o.x, o.y, o.z); o.m.rotation.y = o.a; if (o.kind === 'chip') { o.m.rotation.x += dt * 9; o.y = 1.2 + Math.sin(o.life * 6) * .2; }
+      o.m.position.set(o.x, o.y, o.z); o.m.rotation.y = o.a; if (o.kind === 'chip') { o.m.rotation.z += dt * 7; o.y = o.y0 + Math.sin(o.life * 6 + o.y0 * 9) * .2; }
       if (o.kind === 'rocket') emit(o.x - Math.sin(o.a) * .8, o.y, o.z - Math.cos(o.a) * .8, rand(-2, 2), rand(0, 2), rand(-2, 2), .25, rand(.8, 1.4), Math.random() < .5 ? 0xffa030 : 0xffe080, 0, 2);
-      else if (Math.random() < dt * 20) emit(o.x, o.y, o.z, 0, .5, 0, .3, .7, 0x39ff14);
+      else if (Math.random() < dt * 8) emit(o.x, o.y, o.z, 0, .5, 0, .3, .6, 0x39ff14);
       const d = Math.hypot(tx - o.x, tz - o.z), hitR = o.r + (tgt === 'p2' ? .9 : 0);
-      if (d < hitR && aliveOf(tgt)) { o.dead = 1; boom(o.x, o.y, o.z, o.kind === 'rocket' ? 0xff6a30 : 0x39ff14, o.kind === 'rocket' ? 60 : 20); dmgTo(tgt, o.dmg, o.x, o.z, o.big); camShake = Math.max(camShake, o.big ? .8 : .3); if (o.big) { flash(.4); SND.bigboom(); } else SND.hit(1, false); }
+      if (d < hitR && aliveOf(tgt)) { o.dead = 1; boom(o.x, o.y, o.z, o.kind === 'rocket' ? 0xff6a30 : 0x39ff14, o.kind === 'rocket' ? 60 : 6); if (o.kind === 'chip') chipDmg(tgt, o.dmg, o.x, o.z); else dmgTo(tgt, o.dmg, o.x, o.z, o.big); camShake = Math.max(camShake, o.big ? .8 : .3); if (o.big) { flash(.4); SND.bigboom(); } else SND.hit(1, false); }
       else if (o.life <= 0 || Math.abs(o.x) > ARENA || Math.abs(o.z) > ARENA) { o.dead = 1; if (o.kind === 'rocket') { boom(o.x, o.y, o.z, 0xff6a30, 30); SND.land(); } }
     }
     for (let i = PR.length - 1; i >= 0; i--) if (PR[i].dead) { scene.remove(PR[i].m); PR.splice(i, 1); }
@@ -151,17 +163,33 @@
 
   // ---- 關稅牆 ----
   let W = null;
-  const wallTex = (() => { const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');
-    for (let i = 0; i < 12; i++) { g.fillStyle = i % 2 ? '#111' : '#ffd400'; g.fillRect(i * 48 - 24, 0, 48, 256); }
-    g.fillStyle = '#c40000'; g.fillRect(0, 70, 512, 116); g.fillStyle = '#fff'; g.font = 'bold 72px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('關稅 TARIFF', 256, 128); return new THREE.CanvasTexture(c); })();
-  const mkWall = () => { const g = new THREE.Group(); const mat = new THREE.MeshLambertMaterial({ map: wallTex }); for (let k = 0; k < 4; k++) { const m = new THREE.Mesh(new THREE.BoxGeometry(5.6, 3.4, .3), mat); const a = k * Math.PI / 2; m.position.set(Math.sin(a) * 2.8, 1.7, Math.cos(a) * 2.8); m.rotation.y = a; g.add(m); } return g; };
+  const wallTex = (() => { const c = document.createElement('canvas'); c.width = 512; c.height = 256; const g = c.getContext('2d');   // 紅磚牆
+    g.fillStyle = '#cfc6b8'; g.fillRect(0, 0, 512, 256);
+    for (let r = 0; r < 8; r++) for (let q = -1; q < 8; q++) { const x = q * 64 + (r % 2 ? 32 : 0), y = r * 32, v = Math.random();
+      g.fillStyle = `rgb(${150 + v * 50 | 0},${58 + v * 26 | 0},${40 + v * 18 | 0})`; g.fillRect(x + 2, y + 2, 60, 28);
+      g.fillStyle = 'rgba(255,255,255,.10)'; g.fillRect(x + 2, y + 2, 60, 4); g.fillStyle = 'rgba(0,0,0,.18)'; g.fillRect(x + 2, y + 26, 60, 4); }
+    return new THREE.CanvasTexture(c); })();
+  const wallMat = new THREE.MeshLambertMaterial({ map: wallTex, emissive: 0xff5a14, emissiveMap: wallTex, emissiveIntensity: .24 });
+  const wallGeo = new THREE.BoxGeometry(5.6, 3.4, .45);
+  const mkWall = () => { const g = new THREE.Group(); for (let k = 0; k < 4; k++) { const m = new THREE.Mesh(wallGeo, wallMat); const a = k * Math.PI / 2; m.position.set(Math.sin(a) * 2.8, 1.7, Math.cos(a) * 2.8); m.rotation.y = a; g.add(m); } return g; };
+  const FIRE = [0xff5a14, 0xffa030, 0xffe070];
+  const wallFire = (x, z, h, n) => {   // 四幅牆邊同牆頂出火
+    for (let i = Math.floor(n + Math.random()); i > 0; i--) { const k = Math.floor(Math.random() * 4), a = k * Math.PI / 2, s = rand(-2.8, 2.8), top = Math.random() < .5;
+      emit(x + Math.sin(a) * 2.8 + Math.cos(a) * s, top ? h : rand(.1, h), z + Math.cos(a) * 2.8 - Math.sin(a) * s, rand(-.6, .6), rand(2, 5.5), rand(-.6, .6), rand(.3, .6), rand(1.1, 2.2), FIRE[Math.floor(Math.random() * 3)], -2, 1); }
+  };
   const castWall = (who) => { const tgt = other(who), [tx, tz] = posOf(tgt); if (W) scene.remove(W.m);
-    W = { who: tgt, by: who, x: tx, z: tz, t: 5, m: mkWall() }; W.m.position.set(tx, 0, tz); W.m.scale.y = 0.01; scene.add(W.m); camShake = Math.max(camShake, .5); SND.land(); ring(tx, tz, 4, 0xffd400, .5);
+    W = { who: tgt, by: who, x: tx, z: tz, t: 5, burn: 0, m: mkWall() }; W.m.position.set(tx, 0, tz); W.m.scale.y = 0.01; scene.add(W.m); camShake = Math.max(camShake, .7); SND.land(); SND.bigboom(); flash(.3);
+    ring(tx, tz, 4, 0xff6a1a, .6); ring(tx, tz, 6.5, 0xffd060, .8); wallFire(tx, tz, .6, 60);
     if (tgt === 'p2') { boss.st = FRZ; boss.vx = boss.vz = 0; } else { player.st = 'frozen'; player.move = null; player.queued = null; } };
   const stepWall = (dt, pre) => {
     if (!W) return;
     if (pre) {
       W.t -= dt; W.m.scale.y = Math.min(1, W.m.scale.y + dt * 4);
+      const burning = W.t > 2;   // 頭 3 秒：火燒，每 0.2 秒 3 傷害（共 45）
+      wallMat.emissiveIntensity = burning ? .24 + .14 * Math.sin(W.t * 18) : .08;
+      wallFire(W.x, W.z, 3.4 * W.m.scale.y, dt * (burning ? 260 : 50));
+      if (burning && aliveOf(W.who)) { W.burn += dt; while (W && W.burn >= .2) { W.burn -= .2; const F0 = W.who === 'p1' ? player : boss; chipDmg(W.who, 3, W.x, W.z); emit(F0.x + rand(-.4, .4), rand(.6, 1.8), F0.z + rand(-.4, .4), 0, rand(2, 4), 0, .35, 1.4, FIRE[1], -2, 1); } }
+      if (!W) return;
       const F = W.who === 'p1' ? player : boss;
       if (W.who === 'p1') { if (player.st !== 'hurt') player.st = 'frozen'; IN.mx = IN.my = IN.atk = IN.chg = IN.jump = IN.dodge = 0; IN.atkHeld = false; }
       else if (boss.st === 7) { W.t = 0; }
@@ -271,7 +299,9 @@
     if (D.net === 'host') netSend({ t: 'fx', k: 'cast', who });
     switch (F.spec) {
       case 'rocket': castPhx(who); break;
-      case 'chips': for (let k = 0; k < 3; k++) { const b = a + (k - 1) * .9; shoot({ kind: 'chip', who, m: mkChip(), x: x + Math.sin(b) * 1.6, y: 1.3, z: z + Math.cos(b) * 1.6, a: b, sp: 16, turn: 3.4, life: 3, dmg: who === 'p1' ? 28 : 22, r: 1.3, big: false, delay: .15 + k * .25 }); } break;
+      case 'chips': for (let k = 0; k < 28; k++) {   // 28 塊晶片連環射出，每塊 3 傷害
+        const b = a + rand(-1.5, 1.5), y0 = rand(.7, 2.1);
+        shoot({ kind: 'chip', who, m: mkChip(), x: x + Math.sin(b) * 1.4, y: y0, y0, z: z + Math.cos(b) * 1.4, a: b, sp: rand(14, 18), turn: 3.8, life: 3, dmg: 3, r: 1.2, big: false, delay: .1 + k * .07 }); } break;
       case 'wall': castWall(who); break;
       case 'ram': castRam(who); break;
     }
@@ -486,7 +516,7 @@
       m.position.set(o.x, o.y, o.z); m.rotation.y = o.a; m.visible = !(o.delay > 0);
     }
     for (const [id, m] of NET.fxMeshes) if (!wanted.has(id)) { scene.remove(m); NET.fxMeshes.delete(id); }
-    if (fx.wall) { if (!NET.wallMesh) { NET.wallMesh = mkWall(); scene.add(NET.wallMesh); } NET.wallMesh.position.set(fx.wall.x, 0, fx.wall.z); NET.wallMesh.scale.y = Math.max(.01, 1 - fx.wall.t / 5); }
+    if (fx.wall) { if (!NET.wallMesh) { NET.wallMesh = mkWall(); scene.add(NET.wallMesh); } NET.wallMesh.position.set(fx.wall.x, 0, fx.wall.z); NET.wallMesh.scale.y = Math.min(1, Math.max(.01, (5 - fx.wall.t) * 4)); wallMat.emissiveIntensity = fx.wall.t > 2 ? .24 + .14 * Math.sin(fx.wall.t * 18) : .08; wallFire(fx.wall.x, fx.wall.z, 3.4 * NET.wallMesh.scale.y, fx.wall.t > 2 ? 4 : 1); }
     else if (NET.wallMesh) { scene.remove(NET.wallMesh); NET.wallMesh = null; }
     if (NET.phxSnap) { if (!NET.phxRocket) { NET.phxRocket = mkSpaceRocket(); NET.phxRocket.scale.setScalar(2.2); scene.add(NET.phxRocket); }
       NET.phxRocket.position.set(NET.phxSnap.x, NET.phxSnap.y, NET.phxSnap.z); NET.phxRocket.rotation.set(NET.phxSnap.rx, NET.phxSnap.ry, 0);
@@ -549,7 +579,7 @@
         }
       } else if (b.st === LIGHT) {   // 輕斬 0.42 秒
         hal.rotation.set(0, lerp(1.3, -1.7, Math.min(1, b.t / 0.26)), 0);
-        if (!b.hitDone && b.t > 0.16) { b.hitDone = 1; const fist = F2().spec === 'rocket'; if (d < (fist ? 2.6 : 4.6) && Math.abs(angDiff(face, b.yaw)) < 1.5) hurtPlayer(14, b.x, b.z, false);
+        if (!b.hitDone && b.t > 0.16) { b.hitDone = 1; const fist = !!(window.__bossRig && window.__bossRig.fist); if (d < (fist ? 2.6 : 4.6) && Math.abs(angDiff(face, b.yaw)) < 1.5) hurtPlayer(14, b.x, b.z, false);
           for (let k = 0; k < 8; k++) { const a = b.yaw - 1 + k / 8 * 2, rr = fist ? 2 : 3.4; emit(b.x + Math.sin(a) * rr, 1.5, b.z + Math.cos(a) * rr, 0, 0, 0, .22, 1.2, 0xff5a8a); } }
         if (b.t > 0.42) { b.st = 0; b.cd = 0.12; }
       } else if (b.st === DODGE) {   // 閃避 0.4 秒
@@ -594,20 +624,47 @@
     ring(x, z, 2.4, 0x9fe8ff, .45);
     for (let k = 0; k < 10; k++) emit(x, y + 1, z, rand(-5, 5), rand(0, 7), rand(-5, 5), rand(.15, .3), rand(.6, 1.1), 0x9fe8ff, 8, 2);
   };
-  window.__elec = { cnt: () => BOLTS.filter((b) => b.visible).length, burst: elecBurst };
+  // ---- 煙（晶片教主）：粒子系統係加色發光，煙要用普通混色嘅 sprite ----
+  const SMOKE = [], SMOKE_MAX = 48;
+  const smokeTex = (() => { const c = document.createElement('canvas'); c.width = c.height = 64; const g = c.getContext('2d'), gr = g.createRadialGradient(32, 32, 2, 32, 32, 31);
+    gr.addColorStop(0, 'rgba(235,238,242,.9)'); gr.addColorStop(.55, 'rgba(170,176,184,.45)'); gr.addColorStop(1, 'rgba(120,126,134,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); return new THREE.CanvasTexture(c); })();
+  const puff = (x, y, z, vx, vy, vz, life, size) => {
+    let s = SMOKE.find((o) => !o.visible);
+    if (!s && SMOKE.length < SMOKE_MAX) { s = new THREE.Sprite(new THREE.SpriteMaterial({ map: smokeTex, transparent: true, depthWrite: false, fog: false })); s.visible = false; SMOKE.push(s); scene.add(s); }
+    if (!s || s.visible) return;
+    s.position.set(x, y, z); s.v = [vx, vy, vz]; s.t = 0; s.life = life; s.s0 = size; s.scale.setScalar(size); s.material.opacity = .8; s.material.rotation = rand(0, 6.28); s.visible = true;
+  };
+  const smokeBurst = (x, y, z) => { for (let k = 0; k < 9; k++) puff(x + rand(-.3, .3), y + rand(.7, 1.5), z + rand(-.3, .3), rand(-2.2, 2.2), rand(.3, 1.8), rand(-2.2, 2.2), rand(.6, 1), rand(.9, 1.5)); ring(x, z, 2.2, 0xc8ccd2, .4); };
+  const fireBurst = (x, y, z) => {
+    for (let k = 0; k < 16; k++) emit(x + rand(-.3, .3), y + rand(.7, 1.5), z + rand(-.3, .3), rand(-4, 4), rand(1, 7), rand(-4, 4), rand(.25, .5), rand(1, 1.9), FIRE[Math.floor(Math.random() * 3)], -1, 2);
+    ring(x, z, 2.4, 0xff6a1a, .45);
+  };
+  const PUNCH = { rocket: 'elec', tariff: 'fire', chip: 'smoke' }, BURST = { elec: elecBurst, fire: fireBurst, smoke: smokeBurst };
+  const handFx = (R, fx, rdt) => {
+    if (!R || !R.bones || !R.bones.RightHand) return;
+    for (const h of [R.bones.RightHand, R.bones.LeftHand]) {
+      h.getWorldPosition(_bv);
+      if (fx === 'elec') {
+        if (Math.random() < rdt * 28) fireBolt(_bv.x, _bv.y, _bv.z, _bv.x + rand(-1, 1), _bv.y + rand(-.4, 1), _bv.z + rand(-1, 1), rand(.06, .12));
+        if (Math.random() < rdt * 18) emit(_bv.x, _bv.y, _bv.z, rand(-3, 3), rand(0, 4), rand(-3, 3), rand(.15, .3), rand(.4, .8), 0x9fe8ff, 6, 2);
+      } else if (fx === 'fire') {
+        if (Math.random() < rdt * 70) emit(_bv.x + rand(-.1, .1), _bv.y + rand(-.1, .1), _bv.z + rand(-.1, .1), rand(-1, 1), rand(1, 3.5), rand(-1, 1), rand(.2, .4), rand(.8, 1.5), FIRE[Math.floor(Math.random() * 3)], -1, 1.5);
+      } else if (Math.random() < rdt * 26) puff(_bv.x, _bv.y, _bv.z, rand(-.6, .6), rand(.3, 1.1), rand(-.6, .6), rand(.5, .9), rand(.5, .9));
+    }
+  };
+  window.__elec = { cnt: () => BOLTS.filter((b) => b.visible).length, burst: elecBurst, smoke: () => SMOKE.filter((s) => s.visible).length };
   const stepElec = (rdt) => {
     for (const b of BOLTS) { if (b.visible) { b.t += rdt; if (b.t >= b.life) b.visible = false; } }
+    for (const s of SMOKE) { if (s.visible) { s.t += rdt; const k = s.t / s.life; if (k >= 1) { s.visible = false; continue; }
+      s.position.x += s.v[0] * rdt; s.position.y += s.v[1] * rdt; s.position.z += s.v[2] * rdt; s.v[0] *= 1 - 1.5 * rdt; s.v[2] *= 1 - 1.5 * rdt; s.scale.setScalar(s.s0 * (1 + 1.6 * k)); s.material.opacity = .8 * (1 - k); } }
     if (GAME.state !== 'play' || !window.MCLIPS_FIST) { elec.pB = boss.hp; elec.pP = player.hp; return; }
-    const a1 = window.HERO_MOVES === 'fist' && (player.st === 'attack' || player.st === 'charge');
-    const a2 = F2() && F2().spec === 'rocket' && boss.alive && [1, 2, 3, 6, 8, 9, 22].includes(boss.st);
-    const R = a1 ? (heroRigs.musk && heroRigs.musk.mrig) : a2 ? (window.__bossRig && window.__bossRig.R) : null;
-    if (R && R.bones && R.bones.RightHand) {
-      const h = Math.random() < .5 ? R.bones.RightHand : R.bones.LeftHand; h.getWorldPosition(_bv);
-      if (Math.random() < rdt * 55) fireBolt(_bv.x, _bv.y, _bv.z, _bv.x + rand(-1, 1), _bv.y + rand(-.4, 1), _bv.z + rand(-1, 1), rand(.06, .12));
-      if (Math.random() < rdt * 35) emit(_bv.x, _bv.y, _bv.z, rand(-3, 3), rand(0, 4), rand(-3, 3), rand(.15, .3), rand(.4, .8), 0x9fe8ff, 6, 2);
-    }
-    if (a1 && boss.hp < elec.pB) elecBurst(boss.x, boss.y, boss.z);
-    if (a2 && player.hp < elec.pP) elecBurst(player.x, player.y, player.z);
+    const fx1 = window.HERO_MOVES === 'fist' && PUNCH[D.f1], fx2 = window.__bossRig && window.__bossRig.fist && PUNCH[D.f2];
+    const a1 = fx1 && (player.st === 'attack' || player.st === 'charge');
+    const a2 = fx2 && boss.alive && [1, 2, 3, 6, 8, 9, 22].includes(boss.st);
+    if (a1) handFx(heroRigs[MESH[D.f1]] && heroRigs[MESH[D.f1]].mrig, fx1, rdt);
+    if (a2) handFx(window.__bossRig.R, fx2, rdt);
+    if (a1 && boss.hp < elec.pB) BURST[fx1](boss.x, boss.y, boss.z);
+    if (a2 && player.hp < elec.pP) BURST[fx2](player.x, player.y, player.z);
     elec.pB = boss.hp; elec.pP = player.hp;
   };
   const svE = syncVisuals;
