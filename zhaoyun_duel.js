@@ -2,6 +2,7 @@
 // 第一版對手 = 張郃（AI 用返 stepBoss）。之後換 Meshy 角色只需換 bossG 嘅模型。
 (() => {
   'use strict';
+  const EN = typeof LANG !== 'undefined' && LANG === 'en', T = (zh, en) => EN ? en : zh;   // 英文版：#lang=en
   const ROUND_T = 60, WINS = 2, OPP_HP = 620;
   const FRZ = 20, RAMST = 21;   // boss 自定狀態（7–9 已被 boss_ext 朱雀／三連斬／劈地用咗）
   const D = { round: 0, p1: 0, p2: 0, t: ROUND_T, on: false, ending: 0 };
@@ -21,13 +22,15 @@
   #dround{position:fixed;left:0;right:0;top:36%;text-align:center;font-size:clamp(40px,9vw,96px);font-weight:900;color:#ffe08a;text-shadow:0 0 24px #ff9a2a,0 2px 4px #000;pointer-events:none;opacity:0;transition:opacity .25s;z-index:30}
   @media (max-height:500px){#dhud{width:min(700px,calc(100vw - 420px));top:6px;gap:6px;grid-template-columns:1fr 70px 1fr}#dhud .bar{height:14px}#dhud .clk{font-size:30px}}
   body.touch #me .bars{display:none}body.touch #d2pl{display:none}
+  #dhud .nm span{white-space:nowrap}body.en #title h1{font-size:clamp(30px,7.5vw,96px)}body.en #bM{font-size:10px!important;letter-spacing:0}body.en #bD{font-size:11px!important;letter-spacing:0}
+  #dlang{position:absolute;right:14px;top:14px;margin:0;font:inherit;font-size:13px;padding:5px 14px;border-radius:16px;letter-spacing:0;background:rgba(20,20,30,.6);border:1px solid rgba(255,255,255,.5);color:#fff;cursor:pointer}@media (max-height:420px){#dlang{top:30px}}
   #pick .fbtn.pickme{animation:dnetpulse 1s infinite}
   @keyframes dnetpulse{0%,100%{box-shadow:0 0 0 2px #ffe08a}50%{box-shadow:0 0 16px 5px #ffe08a}}`;
   document.head.appendChild(css);
   const hud = document.createElement('div'); hud.id = 'dhud'; hud.hidden = true;
   hud.innerHTML = `<div class="p1"><div class="nm"><span id="dn1">趙雲</span><span id="dh1"></span></div><div class="bar"><i id="db1"></i></div><div class="ms" id="dm1"><i></i></div></div>
     <div><div class="clk" id="dclk">60</div><div class="dots" id="ddots"></div></div>
-    <div class="p2"><div class="nm"><span id="dn2">張郃</span><span id="dh2"></span></div><div class="bar"><i id="db2"></i></div><div class="ms" id="dm2" hidden><i></i></div><div class="hint" id="dk2" hidden>P2：方向鍵 移動 · 1 攻擊 · 2 突進 · 3 閃避 · 0 絕招</div></div>`;
+    <div class="p2"><div class="nm"><span id="dn2">張郃</span><span id="dh2"></span></div><div class="bar"><i id="db2"></i></div><div class="ms" id="dm2" hidden><i></i></div><div class="hint" id="dk2" hidden>${T('P2：方向鍵 移動 · 1 攻擊 · 2 突進 · 3 閃避 · 0 絕招', 'P2: arrows move · 1 attack · 2 dash · 3 dodge · 0 special')}</div></div>`;
   document.body.appendChild(hud);
   const rb = document.createElement('div'); rb.id = 'dround'; document.body.appendChild(rb);
   const $ = (id) => document.getElementById(id);
@@ -36,14 +39,14 @@
 
   // ===== 四個名人（私人版）。換 Meshy 模型時只需改 rig；絕招邏輯喺下面 cast() =====
   const FIGHTERS = {
-    rocket: { name: '火箭商人', short: '火箭', rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: '火鳳凰降臨', specHint: '射火箭上天再炸落嚟', mGain: .5 },
-    tariff: { name: '關稅大帝', short: '關稅', rig: 'zy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: '關稅牆！', specHint: '火牆封住對手 5 秒' },
-    chip:   { name: '晶片教主', short: '晶片', rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: '晶片生成', specHint: '28 塊晶片追蹤' },
+    rocket: { name: T('火箭商人', 'Rocket Tycoon'), short: T('火箭', 'Rocket'), rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: T('火鳳凰降臨', 'Phoenix Rocket'), specHint: T('射火箭上天再炸落嚟', 'Rocket strike from the sky'), mGain: .5 },
+    tariff: { name: T('關稅大帝', 'Tariff Emperor'), short: T('關稅', 'Tariff'), rig: 'zy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: T('關稅牆！', 'Tariff Wall!'), specHint: T('火牆封住對手 5 秒', 'Fire wall trap, 5 seconds') },
+    chip:   { name: T('晶片教主', 'Chip Guru'), short: T('晶片', 'Chip'), rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: T('晶片生成', 'Chip Storm'), specHint: T('28 塊晶片追蹤', '28 homing chips') },
   };
   const HEADLINE = {
-    rocket: (w) => `【突發】火箭商人嘅火箭落返自己頭上；${w}：「唔關我事」`,
-    tariff: (w) => `【突發】關稅大帝敗陣，宣布對${w}加徵 300% 關稅，市場冇反應`,
-    chip:   (w) => `【突發】晶片教主敗陣，宣布下季推新卡——即日售罄；${w}冇買到`,
+    rocket: (w) => T(`【突發】火箭商人嘅火箭落返自己頭上；${w}：「唔關我事」`, `BREAKING: Rocket Tycoon's rocket lands on his own head. ${w}: "Not my problem."`),
+    tariff: (w) => T(`【突發】關稅大帝敗陣，宣布對${w}加徵 300% 關稅，市場冇反應`, `BREAKING: Tariff Emperor loses and announces a 300% tariff on ${w}. Markets do not react.`),
+    chip:   (w) => T(`【突發】晶片教主敗陣，宣布下季推新卡——即日售罄；${w}冇買到`, `BREAKING: Chip Guru loses and announces a new card for next quarter. Sold out the same day. ${w} did not get one.`),
   };
   // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
   const MESH = { rocket: 'musk', tariff: 'trump', chip: 'jensen' };   // 鬥士 → Meshy 模型（冇載到就用返趙雲／張郃）
@@ -295,7 +298,7 @@
   const cast = (who) => {
     const F = who === 'p1' ? F1() : F2(); if (!F) return;
     const [x, z] = posOf(who), [tx, tz] = posOf(other(who)), a = Math.atan2(tx - x, tz - z);
-    banner(`${F.name}：${F.specName}`, F.col, who === 'p2'); if (who === 'p1') flash(.35);
+    banner(`${F.name}${T('：', ': ')}${F.specName}`, F.col, who === 'p2'); if (who === 'p1') flash(.35);
     if (D.net === 'host') netSend({ t: 'fx', k: 'cast', who });
     switch (F.spec) {
       case 'rocket': castPhx(who); break;
@@ -332,10 +335,10 @@
   }
   document.body.appendChild(dz);
   // ---- 返回主頁（角色選擇畫面）：對戰中喺縮放掣隔籬；完場畫面喺「再戰」隔籬 ----
-  const goHome = (ask) => { if (ask && !confirm('返回主頁？')) return; try { netDisconnect(); } catch (e) {} location.reload(); };
+  const goHome = (ask) => { if (ask && !confirm(T('返回主頁？', 'Back to the main page?'))) return; try { netDisconnect(); } catch (e) {} location.reload(); };
   { const st = document.createElement('style'); st.textContent = '#dhome{display:none;position:fixed;right:56px;top:168px;z-index:6;width:36px;height:36px;border-radius:50%;border:1px solid rgba(255,255,255,.5);background:rgba(20,20,30,.55);color:#fff;font-size:17px;cursor:pointer;padding:0;touch-action:manipulation}body.playing #dhome{display:block}'; document.head.appendChild(st);
-    const b = document.createElement('button'); b.id = 'dhome'; b.textContent = '🏠'; b.title = '返回主頁'; b.setAttribute('aria-label', '返回主頁'); b.onclick = () => goHome(true); document.body.appendChild(b);
-    const o = document.createElement('button'); o.id = 'dhome2'; o.textContent = '返回主頁'; o.onclick = () => goHome(false); $('over').appendChild(o); }
+    const b = document.createElement('button'); b.id = 'dhome'; b.textContent = '🏠'; b.title = T('返回主頁', 'Main page'); b.setAttribute('aria-label', b.title); b.onclick = () => goHome(true); document.body.appendChild(b);
+    const o = document.createElement('button'); o.id = 'dhome2'; o.textContent = T('返回主頁', 'MAIN PAGE'); o.onclick = () => goHome(false); $('over').appendChild(o); }
   const NKEY = { atk: 'a', dash: 'd', dodge: 'o', spec: 's' };   // guest 數字鍵 → input counters
   addEventListener('keydown', (e) => {
     if (e.repeat) return; const k = e.key.toLowerCase();
@@ -384,7 +387,7 @@
     const ws = new WebSocket(u.href); NET.ws = ws; NET.role = role; NET.code = code; NET.peer = false; NET.retrying = false;
     ws.onopen = () => { if (NET.ws !== ws) return; NET.can = true; if (role === 'host') { NET.hostF = null; NET.guestF = null; } renderNetUI(); };
     ws.onmessage = e => { if (NET.ws !== ws) return; let m; try { m = JSON.parse(e.data); } catch (err) { return; } onNetMessage(m); };
-    ws.onerror = () => { if (NET.ws !== ws) return; if (!NET.retrying && !NET.peer && NET.role) showNetError('連線失敗，請檢查網絡後再試。'); };
+    ws.onerror = () => { if (NET.ws !== ws) return; if (!NET.retrying && !NET.peer && NET.role) showNetError(T('連線失敗，請檢查網絡後再試。', 'Connection failed. Check your network and try again.')); };
     ws.onclose = () => { if (NET.ws !== ws) return; NET.can = false; if (NET.retrying) return; if (NET.role && NET.peer && GAME.state === 'play') showDisconnect(); else if (NET.role && !NET.peer) netDisconnect(); };
     return ws;
   };
@@ -415,19 +418,19 @@
   }
   function onNetMessage(m) {
     if (m.t === 'err') {
-      const texts = { taken: '呢個房間碼已有人用，重新開一個…', noroom: '搵唔到呢個房間，請檢查房間碼。', full: '呢個房間已滿。', busy: '而家房間太多，請遲啲再試。', bad: '房間資料無效。' };
-      if (m.e === 'taken' && NET.role === 'host') { const code = String(1000 + Math.floor(Math.random() * 9000)); NET.code = code; NET.retrying = true; setNetStatus(texts.taken + ` 新碼 ${code}`); if (NET.ws) NET.ws.close(); setTimeout(() => netSocket('host', code), 150); }
-      else { showNetError(texts[m.e] || '連線失敗，請再試。'); netDisconnect(); }
+      const texts = { taken: T('呢個房間碼已有人用，重新開一個…', 'That room code is taken. Opening a new one…'), noroom: T('搵唔到呢個房間，請檢查房間碼。', 'Room not found. Check the room code.'), full: T('呢個房間已滿。', 'That room is full.'), busy: T('而家房間太多，請遲啲再試。', 'Too many rooms right now. Try again later.'), bad: T('房間資料無效。', 'Invalid room data.') };
+      if (m.e === 'taken' && NET.role === 'host') { const code = String(1000 + Math.floor(Math.random() * 9000)); NET.code = code; NET.retrying = true; setNetStatus(texts.taken + T(` 新碼 ${code}`, ` New code ${code}`)); if (NET.ws) NET.ws.close(); setTimeout(() => netSocket('host', code), 150); }
+      else { showNetError(texts[m.e] || T('連線失敗，請再試。', 'Connection failed. Try again.')); netDisconnect(); }
     } else if (m.t === 'peer') {
       NET.peer = !!m.on; renderNetUI();
-      if (!m.on && NET.role) { if (GAME.state === 'play') showDisconnect(); else setNetStatus('對手離開咗房間。'); }
+      if (!m.on && NET.role) { if (GAME.state === 'play') showDisconnect(); else setNetStatus(T('對手離開咗房間。', 'Your opponent left the room.')); }
     } else if (m.t === 'hello' && NET.role === 'host') {
       if (m.f in FIGHTERS) { NET.guestF = m.f; renderNetUI(); startNetMatch(); }
     } else if (m.t === 'start' && NET.role === 'guest') {
       if (!(m.f1 in FIGHTERS) || !(m.f2 in FIGHTERS)) return;
       D.net = 'guest'; D.two = true; D.f1 = m.f1; D.f2 = m.f2; NET.hostF = m.f1; NET.guestF = m.f2;
-      $('again').disabled = false; $('again').textContent = '再戰';
-      GAME.start(m.rig || FIGHTERS[m.f1].rig); setNetStatus('網上對戰'); bgStart();
+      $('again').disabled = false; $('again').textContent = TX.again;
+      GAME.start(m.rig || FIGHTERS[m.f1].rig); setNetStatus(T('網上對戰', 'Online match')); bgStart();
     } else if (m.t === 'in' && NET.role === 'host') {
       const names = { a: 'atk', d: 'dash', o: 'dodge', s: 'spec' };
       for (const k of ['a', 'd', 'o', 's']) { const v = Number(m[k]); if (Number.isInteger(v) && v >= 0) { const diff = Math.min(8, Math.max(0, v - NET.c[k])); NET.queue[names[k]] = Math.min(10, NET.queue[names[k]] + diff); NET.c[k] = Math.max(NET.c[k], v); } }
@@ -440,7 +443,7 @@
       D.on = false; D.ending = 0; D.p1 = Number(m.p1) || 0; D.p2 = Number(m.p2) || 0;
       const win = !!m.win; over0(win); setOverText(win);
     } else if (m.t === 'fx' && NET.role === 'guest' && m.k === 'cast') {
-      const F = m.who === 'p1' ? F1() : F2(); if (F) { banner(`${F.name}：${F.specName}`, F.col, m.who === 'p2'); if (m.who === 'p1') flash(.35); }
+      const F = m.who === 'p1' ? F1() : F2(); if (F) { banner(`${F.name}${T('：', ': ')}${F.specName}`, F.col, m.who === 'p2'); if (m.who === 'p1') flash(.35); }
     } else if (m.t === 'fx' && NET.role === 'guest' && m.k === 'phx') {
       if (m.ph === 0) { if (NET.phxRing) scene.remove(NET.phxRing); NET.phxRing = mkWarnRing(); NET.phxWho = m.who; scene.add(NET.phxRing); }
       else if (m.ph === 1) { if (NET.phxRing) { scene.remove(NET.phxRing); NET.phxRing = null; } phxBoom(m.x, m.z); }
@@ -452,20 +455,20 @@
   function renderNetUI() {
     if (!netUI) return;
     const active = !!NET.role; netUI.hidden = false;
-    if (netCode) netCode.textContent = !NET.code ? '' : (NET.role === 'guest' ? `已入房間 ${NET.code}` : `房間碼：${NET.code}`);
+    if (netCode) netCode.textContent = !NET.code ? '' : (NET.role === 'guest' ? T(`已入房間 ${NET.code}`, `In room ${NET.code}`) : T(`房間碼：${NET.code}`, `Room code: ${NET.code}`));
     if (netStatus && NET.role) {
       let s = '';
       if (NET.role === 'host') {
-        if (!NET.peer) s = `叫朋友喺佢部機撳「入房」，輸入 ${NET.code}。等緊朋友入房…`;
-        else if (!NET.hostF && !NET.guestF) s = '朋友已入房 ✓ 兩邊各自揀一個角色，揀齊就自動開打。';
-        else if (!NET.hostF) s = `朋友揀咗 ${FIGHTERS[NET.guestF].name} ✓ 輪到你揀角色！`;
-        else if (!NET.guestF) s = `你揀咗 ${FIGHTERS[NET.hostF].name} ✓ 等朋友揀角色…`;
-        else s = '開打！';
+        if (!NET.peer) s = T(`叫朋友喺佢部機撳「入房」，輸入 ${NET.code}。等緊朋友入房…`, `Ask your friend to press "Join room" and enter ${NET.code}. Waiting for your friend…`);
+        else if (!NET.hostF && !NET.guestF) s = T('朋友已入房 ✓ 兩邊各自揀一個角色，揀齊就自動開打。', 'Friend joined ✓ Each side picks a fighter. The match starts when both have picked.');
+        else if (!NET.hostF) s = T(`朋友揀咗 ${FIGHTERS[NET.guestF].name} ✓ 輪到你揀角色！`, `Friend picked ${FIGHTERS[NET.guestF].name} ✓ Your turn to pick!`);
+        else if (!NET.guestF) s = T(`你揀咗 ${FIGHTERS[NET.hostF].name} ✓ 等朋友揀角色…`, `You picked ${FIGHTERS[NET.hostF].name} ✓ Waiting for your friend…`);
+        else s = T('開打！', 'Fight!');
       } else if (NET.role === 'guest') {
-        if (!NET.peer) s = '等緊房主…';
-        else if (!NET.guestF) s = '已入房 ✓ 揀你嘅角色（揀齊就自動開打）';
-        else if (!NET.hostF) s = `你揀咗 ${FIGHTERS[NET.guestF].name} ✓ 等房主揀角色…`;
-        else s = '開打！';
+        if (!NET.peer) s = T('等緊房主…', 'Waiting for the host…');
+        else if (!NET.guestF) s = T('已入房 ✓ 揀你嘅角色（揀齊就自動開打）', 'Joined ✓ Pick your fighter (the match starts when both have picked)');
+        else if (!NET.hostF) s = T(`你揀咗 ${FIGHTERS[NET.guestF].name} ✓ 等房主揀角色…`, `You picked ${FIGHTERS[NET.guestF].name} ✓ Waiting for the host…`);
+        else s = T('開打！', 'Fight!');
       }
       if (s) netStatus.textContent = s;
     }
@@ -479,26 +482,26 @@
     const allowed = Q.get('net') === '1' || !(host.endsWith('github.io') || host === 'raw.githack.com');
     if (!allowed) return;
     const row = document.createElement('div'); row.id = 'dnet'; row.style.cssText = 'flex-basis:100%;display:flex;flex-wrap:wrap;gap:7px;align-items:center;justify-content:center;margin:5px 0';
-    const open = document.createElement('button'); open.dataset.netAction = 'host'; open.textContent = '開房（網上對戰）';
-    const join = document.createElement('button'); join.dataset.netAction = 'join'; join.textContent = '入房';
-    const code = document.createElement('input'); code.placeholder = '4 位房間碼'; code.inputMode = 'numeric'; code.maxLength = 4; code.style.cssText = 'width:90px;padding:7px;border-radius:7px;border:1px solid #c9953b;text-align:center';
+    const open = document.createElement('button'); open.dataset.netAction = 'host'; open.textContent = T('開房（網上對戰）', 'Open room (online)');
+    const join = document.createElement('button'); join.dataset.netAction = 'join'; join.textContent = T('入房', 'Join room');
+    const code = document.createElement('input'); code.placeholder = T('4 位房間碼', '4-digit code'); code.setAttribute('aria-label', code.placeholder); code.inputMode = 'numeric'; code.maxLength = 4; code.style.cssText = 'width:90px;padding:7px;border-radius:7px;border:1px solid #c9953b;text-align:center';
     const st = document.createElement('span'); st.id = 'dnetstatus'; st.style.cssText = 'flex-basis:100%;font-size:13px';
     const codeText = document.createElement('div'); codeText.id = 'dnetcode'; codeText.style.cssText = 'flex-basis:100%;font-weight:900;color:#ffe08a';
     const err = document.createElement('div'); err.id = 'dneterr'; err.hidden = true; err.style.cssText = 'flex-basis:100%;color:#ff8a7a;font-size:13px';
-    const cancel = document.createElement('button'); cancel.dataset.netAction = 'cancel'; cancel.textContent = '取消'; cancel.hidden = true;
+    const cancel = document.createElement('button'); cancel.dataset.netAction = 'cancel'; cancel.textContent = T('取消', 'Cancel'); cancel.hidden = true;
     row.append(open, join, code, cancel, codeText, st, err); sel.after(row); netUI = row; netStatus = st; netCode = codeText; netInput = code; netErr = err;
-    open.onclick = () => { if (netErr) netErr.hidden = true; D.net = 'host'; D.two = false; d2p.checked = false; const c = String(1000 + Math.floor(Math.random() * 9000)); netSocket('host', c); setNetStatus('連線中…'); renderNetUI(); };
-    join.onclick = () => { const c = code.value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\s+/g, '').trim(); code.value = c; if (!/^\d{4}$/.test(c)) { showNetError('請輸入 4 位數房間碼。'); return; } if (netErr) netErr.hidden = true; D.net = 'guest'; D.two = true; netSocket('guest', c); setNetStatus('連線中…'); renderNetUI(); };
-    cancel.onclick = () => { netDisconnect(); D.two = d2p.checked; setNetStatus('已取消。'); };
+    open.onclick = () => { if (netErr) netErr.hidden = true; D.net = 'host'; D.two = false; d2p.checked = false; const c = String(1000 + Math.floor(Math.random() * 9000)); netSocket('host', c); setNetStatus(T('連線中…', 'Connecting…')); renderNetUI(); };
+    join.onclick = () => { const c = code.value.replace(/[０-９]/g, d => String.fromCharCode(d.charCodeAt(0) - 0xFEE0)).replace(/\s+/g, '').trim(); code.value = c; if (!/^\d{4}$/.test(c)) { showNetError(T('請輸入 4 位數房間碼。', 'Enter the 4-digit room code.')); return; } if (netErr) netErr.hidden = true; D.net = 'guest'; D.two = true; netSocket('guest', c); setNetStatus(T('連線中…', 'Connecting…')); renderNetUI(); };
+    cancel.onclick = () => { netDisconnect(); D.two = d2p.checked; setNetStatus(T('已取消。', 'Cancelled.')); };
     if (Q.get('net') === '1') { row.hidden = false; }
-    const again = $('again'); again.onclick = () => { if (NET.role === 'guest') { netSend({ t: 'rematch' }); again.disabled = true; again.textContent = '等房主重新開始…'; } else GAME.start(); };
+    const again = $('again'); again.onclick = () => { if (NET.role === 'guest') { netSend({ t: 'rematch' }); again.disabled = true; again.textContent = T('等房主重新開始…', 'Waiting for the host to restart…'); } else GAME.start(); };
     pingEl = document.createElement('div'); pingEl.id = 'dnetping'; pingEl.hidden = true; pingEl.style.cssText = 'position:fixed;top:64px;left:50%;transform:translateX(-50%);z-index:25;color:#fff3dc;background:#180b08aa;border-radius:8px;padding:3px 9px;font:12px monospace;pointer-events:none'; document.body.appendChild(pingEl);
   }
   function updatePing() { if (pingEl) { pingEl.hidden = !NET.role || GAME.state !== 'play'; pingEl.textContent = `ping ${Math.round(NET.ping)}ms`; } }
   function showDisconnect() {
     if (NET.lost) return;
     NET.lost = document.createElement('div'); NET.lost.id = 'dnetlost'; NET.lost.style.cssText = 'position:fixed;inset:0;z-index:100;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px;background:#080402eF;color:#fff3dc;font-size:24px;font-weight:900;text-align:center';
-    const msg = document.createElement('div'); msg.textContent = '對手斷咗線'; const btn = document.createElement('button'); btn.textContent = '返回標題'; btn.onclick = () => { netDisconnect(); location.reload(); }; NET.lost.append(msg, btn); document.body.appendChild(NET.lost);
+    const msg = document.createElement('div'); msg.textContent = T('對手斷咗線', 'Your opponent disconnected'); const btn = document.createElement('button'); btn.textContent = T('返回標題', 'Back to title'); btn.onclick = () => { netDisconnect(); location.reload(); }; NET.lost.append(msg, btn); document.body.appendChild(NET.lost);
   }
   let prevPR = null;
   function applySnapshot(dt) {
@@ -548,7 +551,7 @@
       $('dm2').firstElementChild.style.width = D.m2 + '%'; $('dm2').classList.toggle('full', D.m2 >= 100);
       $('ddots').textContent = '●'.repeat(D.p1) + '○'.repeat(WINS - D.p1) + '  ' + '○'.repeat(WINS - D.p2) + '●'.repeat(D.p2);
     }
-    if (NET.lastSnap && Date.now() - NET.lastSnap > 1500) showNetError('連線訊號中斷，等候重連…');
+    if (NET.lastSnap && Date.now() - NET.lastSnap > 1500) showNetError(T('連線訊號中斷，等候重連…', 'Connection interrupted. Waiting to reconnect…'));
     IN.atk = IN.chg = IN.jump = IN.dodge = IN.musou = 0;
     updatePing();
   }
@@ -688,7 +691,7 @@
     Object.assign(boss, { alive: true, spawned: true, hp: OPP_HP, max: OPP_HP, st: 0, t: 0, cd: 1.2, x: 0, z: -7, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0, poise: 60, dashHit: 0 });
     bossG.visible = true; $('boss').hidden = true; D.lastBossHp = boss.hp; D.lastPHp = player.hp;
     D.t = ROUND_T; D.ending = 0; D.on = true;
-    say(`第 ${D.round} 回合`);
+    say(T(`第 ${D.round} 回合`, `ROUND ${D.round}`));
   };
 
   const start0 = GAME.start.bind(GAME);
@@ -699,7 +702,7 @@
     hero.scale.setScalar(1.12 * F1().scale); bossG.scale.setScalar(1.3 * F2().scale);
     applyRigs();
     D.round = 1; D.p1 = D.p2 = 0;
-    $('dn1').textContent = F1().name; $('dn2').textContent = F2().name; $('face').textContent = F1().short;
+    const nm = (F) => EN && isTouch() ? F.short : F.name; $('dn1').textContent = nm(F1()); $('dn2').textContent = nm(F2()); $('face').textContent = F1().short;
     hud.hidden = false; $('ko').hidden = true; $('dm2').hidden = $('dk2').hidden = !(D.two || D.net);
     resetRound();
     if (D.net === 'host') netSend({ t: 'start', f1: D.f1, f2: D.f2, rig: F1().rig });
@@ -712,7 +715,7 @@
     if (by === 'time') w = player.hp / player.max >= boss.hp / boss.max ? 'p1' : 'p2';
     D[w]++;
     const done = D[w] >= WINS;
-    say(by === 'time' ? '時間到' : (w === 'p1' ? 'K.O.' : '敗北'), done ? 1600 : 1300);
+    say(by === 'time' ? T('時間到', 'TIME UP') : (w === 'p1' ? 'K.O.' : T('敗北', 'YOU LOSE')), done ? 1600 : 1300);
     if (done) { setTimeout(() => { GAME.winT = 0; finish(w === 'p1'); }, 1400); return; }
     D.round++;
     setTimeout(resetRound, 1500);
@@ -727,7 +730,7 @@
   };
   const setOverText = (win) => {
     const Wn = win ? F1() : F2();
-    $('otitle').textContent = `${Wn.name} 勝出`;
+    $('otitle').textContent = T(`${Wn.name} 勝出`, `${Wn.name} WINS`);
     $('ostats').innerHTML = `<div style="font-size:.9em;line-height:1.5;margin:6px 0 10px">${HEADLINE[win ? D.f2 : D.f1](Wn.name)}</div><div>${D.p1} : ${D.p2}</div>`;
   };
   const finish = (win) => {
@@ -782,17 +785,19 @@
   // 玩家死：hurtPlayer 叫 GAME.over(false) → 上面 endRound；但 player.hp 停 0 要補血先繼續（resetRound 做）
   // 標題文字
   const t = document.getElementById('title');
-  if (t) { const h = t.querySelector('h1'); if (h) h.textContent = '名人亂鬥'; const p = t.querySelector('p'); if (p) p.textContent = '揀你嘅鬥士，一對一，三局兩勝，每局 60 秒。氣滿撳「絕招」。'; }
-  try { TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！'; TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL')]); TX.keys.push(['↑ ↓ ← →', 'P2 移動（雙人同機）'], ['1 / 2 / 3 / 0', 'P2 攻擊／突進／閃避／絕招']); if (TX.keysTouch) TX.keysTouch = TX.keysTouch.map(([k, v]) => [k.replace('龍怒', '絕招').replace('DRAGON RAGE', 'SPECIAL'), v]); if (isTouch()) TX.goal = '目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳「絕招」掣！'; } catch (e) {}
-  const bm = $('bM'); if (bm) bm.textContent = '絕招';
-  const lbls = document.querySelectorAll('#me .lbl'); if (lbls[1]) lbls[1].textContent = '絕招';
+  if (t) { const h = t.querySelector('h1'); if (h) h.textContent = T('名人亂鬥', 'CELEBRITY BRAWL'); document.title = T('名人亂鬥', 'Celebrity Brawl'); const p = t.querySelector('p'); if (p) p.textContent = T('揀你嘅鬥士，一對一，三局兩勝，每局 60 秒。氣滿撳「絕招」。', 'Pick your fighter. One on one, best of 3 rounds, 60 seconds each. Press SPECIAL when the bar is full.'); }
+  try { TX.goal = T('目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！', 'GOAL: win 2 of 3 rounds, 60 seconds each. Hitting fills your bar. Press I or C for your SPECIAL!'); TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace(/dragon rage/i, 'Special')]); TX.keys.push(['↑ ↓ ← →', T('P2 移動（雙人同機）', 'P2 move (two players, one keyboard)')], ['1 / 2 / 3 / 0', T('P2 攻擊／突進／閃避／絕招', 'P2 attack / dash / dodge / special')]); if (TX.keysTouch) TX.keysTouch = TX.keysTouch.map(([k, v]) => [k.replace('龍怒', '絕招').replace('RAGE', 'SPECIAL'), v]); if (isTouch()) TX.goal = T('目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳「絕招」掣！', 'GOAL: win 2 of 3 rounds, 60 seconds each. Hitting fills your bar. Tap SPECIAL when it is full!'); } catch (e) {}
+  const bm = $('bM'); if (bm) bm.textContent = T('絕招', 'SPECIAL');
+  const lbls = document.querySelectorAll('#me .lbl'); if (lbls[1]) lbls[1].textContent = T('絕招', 'SPECIAL');
   // 揀角：用 4 個名人掣取代趙雲／關羽掣（模型暫用趙雲／關羽頂住，等 Meshy 角色到）
   const pick = $('pick'), s0 = $('start'), sg = $('startGY');
   if (pick && s0 && sg) {
     s0.hidden = sg.hidden = true;
     const sel = document.createElement('div'); sel.style.cssText = 'flex-basis:100%;font-size:14px;opacity:.85;margin-bottom:4px';
-    sel.innerHTML = `對手：<select id="dp2" style="font:inherit;padding:4px 8px;border-radius:6px"><option value="">隨機</option>${Object.entries(FIGHTERS).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join('')}</select>
-      &nbsp; <label id="d2pl" style="cursor:pointer"><input type="checkbox" id="d2p"${D.two ? ' checked' : ''}> 雙人同機（P2 方向鍵 + 1/2/3/0）</label>`;
+    sel.innerHTML = `${T('對手：', 'Opponent: ')}<select id="dp2" style="font:inherit;padding:4px 8px;border-radius:6px"><option value="">${T('隨機', 'Random')}</option>${Object.entries(FIGHTERS).map(([k, f]) => `<option value="${k}">${f.name}</option>`).join('')}</select>
+      &nbsp; <label id="d2pl" style="cursor:pointer"><input type="checkbox" id="d2p"${D.two ? ' checked' : ''}> ${T('雙人同機（P2 方向鍵 + 1/2/3/0）', '2 players, one keyboard (P2: arrows + 1/2/3/0)')}</label>`;
+    const lb = document.createElement('button'); lb.id = 'dlang'; lb.type = 'button'; lb.textContent = T('English', '中文'); $('title').appendChild(lb);
+    lb.onclick = () => { const u = new URL(location.href), h = new URLSearchParams(u.hash.slice(1)); u.searchParams.delete('lang'); h.set('lang', EN ? 'zh' : 'en'); u.hash = h.toString(); history.replaceState(null, '', u.href); location.reload(); };
     pick.prepend(sel); const dp2 = sel.querySelector('select'); if (D.f2) dp2.value = D.f2;
     const d2p = sel.querySelector('#d2p');
     for (const [k, f] of Object.entries(FIGHTERS)) {
@@ -804,7 +809,7 @@
       };
       pick.appendChild(b);
     }
-    const sync = () => { for (const b of pick.querySelectorAll('.fbtn')) { b.disabled = FIGHTERS[b.dataset.f].rig === 'gy' && sg.disabled || (b.dataset.f === 'rocket' && !(window.MRIG && window.MRIG.musk)) || (NET.role && !NET.peer); b.title = b.disabled ? '載入中…' : ''; } if (sg.disabled || (NET.role && !NET.peer)) setTimeout(sync, 200); };
+    const sync = () => { for (const b of pick.querySelectorAll('.fbtn')) { b.disabled = FIGHTERS[b.dataset.f].rig === 'gy' && sg.disabled || (b.dataset.f === 'rocket' && !(window.MRIG && window.MRIG.musk)) || (NET.role && !NET.peer); b.title = b.disabled ? T('載入中…', 'Loading…') : ''; } if (sg.disabled || (NET.role && !NET.peer)) setTimeout(sync, 200); };
     pick.addEventListener('muskloaded', sync);
     sync();
     // ===== 網上對戰 UI（只喺非 GitHub Pages host 或 #net=1 先顯示） =====

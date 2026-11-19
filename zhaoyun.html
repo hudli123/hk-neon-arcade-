@@ -2355,7 +2355,8 @@ window.ZY_ASSETS.then(() => { $('loading').hidden = true; $('pick').hidden = fal
 <script>// 自動產生（tools/make_bgm.py）：戰鬥背景音樂 + 播放器。唔好手改。來源 / 授權：assets/audio_battle/SOURCES.md
 
 (() => {
-  const CREDIT = "音樂：「Blackmoor Ninjas」Matthew Pablo（CC BY 3.0，opengameart.org）・「JRPG Epic Rock Battle Theme #1」HydroGene（CC0）・「Battle Theme A」cynicmusic（CC0）・音效：StarNinjas、Kenney（CC0）";
+  const CREDIT = LANG === 'zh' ? "音樂：「Blackmoor Ninjas」Matthew Pablo（CC BY 3.0，opengameart.org）・「JRPG Epic Rock Battle Theme #1」HydroGene（CC0）・「Battle Theme A」cynicmusic（CC0）・音效：StarNinjas、Kenney（CC0）"
+    : 'Music: "Blackmoor Ninjas" by Matthew Pablo (CC BY 3.0, opengameart.org) · "JRPG Epic Rock Battle Theme #1" by HydroGene (CC0) · "Battle Theme A" by cynicmusic (CC0) · Sound: StarNinjas, Kenney (CC0)';
   const FIGHT = ['ninjas', 'rock'], BOSS = 'epic', el = {};
   let D = null, cur = null, run = 0, ready = false, loadSt = 0;   // loadSt：0 未載 / 1 載緊 / 2 好咗 / -1 失敗
   const onLoad = [];
