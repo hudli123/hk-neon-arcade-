@@ -83,11 +83,92 @@
     window.MUSOU_GAIN = use !== 'zy' && F1() ? F1().mGain || 1 : 1;   // musk 氣慢啲（mGain）
     return true;
   }
+  // ===== 舞台：跟對手換場景（火箭發射台／金色大堂／伺服器房），全部程式砌，冇額外檔案 =====
+  ARENA = 15;   // 單挑：30 米擂台（原本城池 124 米）
+  const SC = window.ZY_SCENERY, STG = {}; let stageNow = null;
+  if (SC) { for (const o of SC.objs) if (!o.isLight || o.isPointLight) o.visible = false; SC.fires.length = 0; window.NO_EMBERS = true; }
+  const hemi = SC && SC.objs.find((o) => o.isHemisphereLight);
+  const ctex = (w, h, draw, rx = 1, ry = 1) => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const tx = new THREE.CanvasTexture(c); tx.wrapS = tx.wrapT = THREE.RepeatWrapping; tx.repeat.set(rx, ry); tx.anisotropy = 4; return tx; };
+  const lam = (o) => new THREE.MeshLambertMaterial(o), bas = (o) => new THREE.MeshBasicMaterial(o);
+  const put = (g, geo, mat, x, y, z, ry = 0) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); m.rotation.y = ry; g.add(m); return m; };
+  const flat = (g, geo, mat, y, up = true) => { const m = new THREE.Mesh(geo, mat); m.rotation.x = up ? -Math.PI / 2 : Math.PI / 2; m.position.y = y; g.add(m); return m; };
+  const walls4 = (g, mat, R, H) => { for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; put(g, new THREE.PlaneGeometry(R * 2, H), mat, Math.sin(a) * R, H / 2, Math.cos(a) * R, a + Math.PI); } };
+  const glow = (g, x, y, z, s, col) => { const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: GLOW, color: col, blending: THREE.AdditiveBlending, depthWrite: false, transparent: true, opacity: .75 })); sp.scale.setScalar(s); sp.position.set(x, y, z); g.add(sp); };
+  STG.rocket = () => {   // 夜晚火箭發射台
+    const g = new THREE.Group(), R = 19;
+    flat(g, new THREE.PlaneGeometry(260, 260), lam({ map: ctex(512, 512, (x, w, h) => { x.fillStyle = '#5b6068'; x.fillRect(0, 0, w, h);
+      for (let i = 0; i < 5000; i++) { x.fillStyle = `rgba(${Math.random() < .5 ? '20,22,26' : '150,155,165'},${Math.random() * .12})`; x.fillRect(Math.random() * w, Math.random() * h, 3, 3); }
+      x.strokeStyle = 'rgba(20,22,26,.5)'; x.lineWidth = 3; for (let i = 0; i <= 4; i++) { x.beginPath(); x.moveTo(i * 128, 0); x.lineTo(i * 128, h); x.moveTo(0, i * 128); x.lineTo(w, i * 128); x.stroke(); } }, 30, 30) }), 0);
+    flat(g, new THREE.RingGeometry(13.2, 13.8, 64), bas({ color: 0xffd21a }), .02);
+    const hz = lam({ map: ctex(128, 32, (x, w, h) => { x.fillStyle = '#ffd21a'; x.fillRect(0, 0, w, h); x.fillStyle = '#16181c'; for (let i = -1; i < 5; i++) { x.beginPath(); x.moveTo(i * 32, h); x.lineTo(i * 32 + 16, h); x.lineTo(i * 32 + 32, 0); x.lineTo(i * 32 + 16, 0); x.fill(); } }, 12, 1) });
+    for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; put(g, new THREE.BoxGeometry(R * 2, 1.1, .5), hz, Math.sin(a) * R, .55, Math.cos(a) * R, a); }
+    const white = lam({ color: 0xe8ecf2 }), dark = lam({ color: 0x23262c }), red = lam({ color: 0xb8322a }), steel = lam({ color: 0x7c848e });
+    for (const [rx, rz] of [[0, -36], [0, 36]]) {   // 兩邊各一支火箭 + 發射塔（鏡頭轉去邊都見到）
+      put(g, new THREE.CylinderGeometry(2.6, 2.6, 34, 20), white, rx, 19, rz); put(g, new THREE.ConeGeometry(2.6, 7, 20), white, rx, 39.5, rz); put(g, new THREE.CylinderGeometry(2.65, 2.65, 2, 20), dark, rx, 26, rz);
+      for (const s of [-1, 1]) put(g, new THREE.BoxGeometry(.3, 6, 3), dark, rx + s * 3.2, 5, rz);
+      put(g, new THREE.BoxGeometry(12, 2, 12), steel, rx, 1, rz);
+      for (let y = 2; y < 40; y += 4) put(g, new THREE.BoxGeometry(5, .3, 5), red, rx - 8, y, rz);
+      for (const [dx, dz] of [[-2.5, -2.5], [2.5, -2.5], [-2.5, 2.5], [2.5, 2.5]]) put(g, new THREE.BoxGeometry(.4, 40, .4), red, rx - 8 + dx, 20, rz + dz);
+      put(g, new THREE.BoxGeometry(5, .5, 1.2), steel, rx - 4.5, 30, rz); glow(g, rx, 2.5, rz + (rz < 0 ? 7 : -7), 14, 0xffb060);
+    }
+    const win = bas({ map: ctex(256, 64, (x, w, h) => { x.fillStyle = '#1a1f28'; x.fillRect(0, 0, w, h); for (let i = 0; i < 16; i++) for (let j = 0; j < 3; j++) { x.fillStyle = Math.random() < .7 ? '#ffe6a0' : '#2a3140'; x.fillRect(6 + i * 16, 8 + j * 18, 10, 11); } }, 2, 1) });
+    for (const s of [-1, 1]) {   // 東西：控制樓 + 燃料缸
+      put(g, new THREE.BoxGeometry(8, 9, 30), win, s * 40, 4.5, 0, 0);
+      for (const z of [-24, 24]) { put(g, new THREE.CylinderGeometry(4, 4, 12, 18), white, s * 34, 6, z); put(g, new THREE.CylinderGeometry(4.05, 4.05, 1.2, 18), red, s * 34, 9, z); }
+    }
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) { put(g, new THREE.BoxGeometry(.5, 16, .5), steel, sx * 23, 8, sz * 23); put(g, new THREE.BoxGeometry(2.4, 1.2, 1), bas({ color: 0xf4f8ff }), sx * 23, 16, sz * 23, Math.atan2(sx, sz)); glow(g, sx * 23, 16, sz * 23, 10, 0xdfe8ff); }
+    const sg = new THREE.BufferGeometry(), sp = new Float32Array(900); for (let i = 0; i < 300; i++) { const a = Math.random() * 6.283, e = .08 + Math.random() * 1.4, r = 400; sp[i * 3] = Math.cos(a) * Math.cos(e) * r; sp[i * 3 + 1] = Math.sin(e) * r; sp[i * 3 + 2] = Math.sin(a) * Math.cos(e) * r; }
+    sg.setAttribute('position', new THREE.BufferAttribute(sp, 3)); const st = new THREE.Points(sg, new THREE.PointsMaterial({ color: 0xffffff, size: 1.6, sizeAttenuation: false, fog: false })); st.frustumCulled = false; g.add(st);
+    return { g, fog: [0x0b1226, 70, 330], hemi: [0x7f96d8, 0x30343c, .85], sun: [0xdfe8ff, 1.0], rim: [0xff9a50, .5] };
+  };
+  STG.tariff = () => {   // 金色大堂
+    const g = new THREE.Group(), R = 24, H = 16;
+    flat(g, new THREE.PlaneGeometry(R * 2, R * 2), lam({ map: ctex(256, 256, (x, w, h) => { for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) { x.fillStyle = (i + j) % 2 ? '#b9b2a2' : '#2a2622'; x.fillRect(i * 64, j * 64, 64, 64); }
+      for (let i = 0; i < 260; i++) { x.strokeStyle = `rgba(130,120,105,${Math.random() * .25})`; x.lineWidth = 1; x.beginPath(); const px = Math.random() * w, py = Math.random() * h; x.moveTo(px, py); x.lineTo(px + rand(-30, 30), py + rand(-30, 30)); x.stroke(); }
+      x.strokeStyle = '#c9a23c'; x.lineWidth = 3; for (let i = 0; i <= 4; i++) { x.beginPath(); x.moveTo(i * 64, 0); x.lineTo(i * 64, h); x.moveTo(0, i * 64); x.lineTo(w, i * 64); x.stroke(); } }, 6, 6) }), 0);
+    flat(g, new THREE.PlaneGeometry(6, R * 2), lam({ color: 0x7a1018 }), .02);
+    const wallT = ctex(256, 256, (x, w, h) => { const gr = x.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, '#8a6a1e'); gr.addColorStop(.5, '#e8c860'); gr.addColorStop(1, '#8a6a1e'); x.fillStyle = gr; x.fillRect(0, 0, w, h);
+      x.strokeStyle = '#5a4210'; x.lineWidth = 6; x.strokeRect(14, 14, w - 28, h - 28); x.strokeStyle = '#fff0b0'; x.lineWidth = 2; x.strokeRect(24, 24, w - 48, h - 48); }, 8, 3);
+    walls4(g, lam({ map: wallT, emissive: 0x2a1e04 }), R, H);
+    const gold = lam({ color: 0xe0b848, emissive: 0x3a2a08 }), cur = lam({ color: 0x8a1020 });
+    for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2;
+      for (const u of [-16, -8, 8, 16]) { const x0 = Math.sin(a) * (R - 1.4) + Math.cos(a) * u, z0 = Math.cos(a) * (R - 1.4) - Math.sin(a) * u; put(g, new THREE.CylinderGeometry(.8, .9, H, 14), gold, x0, H / 2, z0); put(g, new THREE.BoxGeometry(2.4, .8, 2.4), gold, x0, .4, z0); }
+      put(g, new THREE.BoxGeometry(6, H - 3, .4), cur, Math.sin(a) * (R - .4), (H - 3) / 2, Math.cos(a) * (R - .4), a); }
+    flat(g, new THREE.PlaneGeometry(R * 2, R * 2), lam({ color: 0x4a3814, emissive: 0x1a1204 }), H, false);
+    for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283; put(g, new THREE.SphereGeometry(.28, 8, 6), bas({ color: 0xfff2c0 }), Math.cos(a) * 3, H - 3, Math.sin(a) * 3); }
+    put(g, new THREE.CylinderGeometry(3.2, 2, .5, 20), gold, 0, H - 2.4, 0); put(g, new THREE.CylinderGeometry(.12, .12, 2.4, 6), gold, 0, H - 1.2, 0); glow(g, 0, H - 3, 0, 16, 0xffd98a);
+    return { g, fog: [0x2a1e0c, 60, 220], hemi: [0xfff0c8, 0x6a4a20, .7], sun: [0xffe2a0, .8], rim: [0xffc060, .45] };
+  };
+  STG.chip = () => {   // 伺服器房
+    const g = new THREE.Group(), R = 24, H = 11;
+    flat(g, new THREE.PlaneGeometry(R * 2, R * 2), lam({ map: ctex(256, 256, (x, w, h) => { x.fillStyle = '#18221e'; x.fillRect(0, 0, w, h); x.strokeStyle = '#1c5a34'; x.lineWidth = 2; x.strokeRect(1, 1, w - 2, h - 2); x.fillStyle = '#24362d'; for (let i = 0; i < 6; i++) for (let j = 0; j < 6; j++) x.fillRect(20 + i * 38, 20 + j * 38, 5, 5); }, 16, 16) }), 0);
+    const rackT = () => ctex(256, 512, (x, w, h) => { x.fillStyle = '#0a0d10'; x.fillRect(0, 0, w, h);
+      for (let c = 0; c < 2; c++) { x.fillStyle = '#161c22'; x.fillRect(8 + c * 124, 8, 116, h - 16);
+        for (let r = 0; r < 24; r++) { const y = 16 + r * 20; x.fillStyle = '#222b33'; x.fillRect(14 + c * 124, y, 104, 15);
+          for (let k = 0; k < 9; k++) { const v = Math.random(); x.fillStyle = v < .55 ? '#39ff14' : v < .75 ? '#19c8ff' : v < .82 ? '#ffb020' : '#0c1a10'; x.fillRect(20 + c * 124 + k * 10, y + 5, 5, 4); } } } }, 10, 1);
+    walls4(g, bas({ map: rackT() }), R, H); const g2 = new THREE.Group(); walls4(g2, bas({ map: rackT() }), R - .02, H); g.add(g2);
+    g.userData.tick = (tm) => { g2.visible = Math.floor(tm * 2.5) % 2 === 0; };   // LED 閃
+    flat(g, new THREE.RingGeometry(14.4, 14.7, 64), bas({ color: 0x39ff14 }), .02);
+    flat(g, new THREE.PlaneGeometry(R * 2, R * 2), bas({ map: ctex(128, 128, (x, w, h) => { x.fillStyle = '#0a100d'; x.fillRect(0, 0, w, h); x.fillStyle = '#d8ffe6'; x.fillRect(20, 56, 88, 16); }, 6, 6) }), H, false);
+    for (const [sx, sz] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) glow(g, sx * 18, 5, sz * 18, 14, 0x39ff14);
+    return { g, fog: [0x06180f, 50, 170], hemi: [0xb8ffd4, 0x143024, .9], sun: [0xd8ffe8, .9], rim: [0x39ff14, .5] };
+  };
+  const setStage = (id) => {
+    if (!SC || !STG[id] || stageNow === id) return; stageNow = id;
+    const S = STG[id].built || (STG[id].built = STG[id]()); if (!S.g.parent) scene.add(S.g);
+    for (const k in STG) if (STG[k].built) STG[k].built.g.visible = k === id;
+    SC.FOG.setHex(S.fog[0]); scene.fog.color.setHex(S.fog[0]); scene.fog.near = S.fog[1]; scene.fog.far = S.fog[2];
+    if (hemi) { hemi.color.setHex(S.hemi[0]); hemi.groundColor.setHex(S.hemi[1]); hemi.intensity = S.hemi[2]; }
+    SC.sun.color.setHex(S.sun[0]); SC.sun.intensity = S.sun[1]; SC.rim.color.setHex(S.rim[0]); SC.rim.intensity = S.rim[1];
+  };
+  const stageTick = () => { const S = stageNow && STG[stageNow].built; if (S && S.g.userData.tick) S.g.userData.tick(performance.now() / 1000); };
+  D.setStage = setStage; setStage('rocket');
   function applyRigs() {
     const have = (f) => MESH[f] && window.MRIG && window.MRIG[MESH[f]] ? MESH[f] : null;
     window.NO_SUZAKU = !!D.f2;   // 對手係名人鬥士：唔放張郃嘅朱雀，只用自己嘅絕招
     setHeroMesh(have(D.f1) || 'zy');
     if (window.setBossRig) window.setBossRig(have(D.f2) || 'zhanghe');
+    setStage(D.f2 in STG ? D.f2 : 'rocket');
   }
   muskReady.then(() => { applyRigs(); const s = document.getElementById('pick'); if (s) s.dispatchEvent(new Event('muskloaded')); });
 
@@ -676,7 +757,7 @@
     elec.pB = boss.hp; elec.pP = player.hp;
   };
   const svE = syncVisuals;
-  syncVisuals = function (dt, rdt) { svE(dt, rdt); stepElec(rdt); };
+  syncVisuals = function (dt, rdt) { svE(dt, rdt); stepElec(rdt); stageTick(); };
   D.p2in = P2IN;
 
   // 冇雜兵：唔再生兵，開波時清場

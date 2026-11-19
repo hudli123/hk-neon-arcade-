@@ -278,7 +278,7 @@ const GLOW = canvasTex(64, 64, (x) => { const g = x.createRadialGradient(32, 32,
 const SHADOW = canvasTex(64, 64, (x) => { const g = x.createRadialGradient(32, 32, 0, 32, 32, 32); g.addColorStop(0, 'rgba(0,0,0,.55)'); g.addColorStop(1, 'rgba(0,0,0,0)'); x.fillStyle = g; x.fillRect(0, 0, 64, 64); });
 
 // ============ 場景：黃昏城池 ============
-const ARENA = 62; // 城牆內半闊
+let ARENA = 62; // 城牆內半闊（名人亂鬥會縮細）
 // 天空：漸變 + 低太陽
 {
   const sky = new THREE.Mesh(new THREE.SphereGeometry(500, 32, 16), new THREE.ShaderMaterial({
@@ -447,13 +447,14 @@ const FIRES = [];
   // 幾盞真燈（其餘靠 bloom 同粒子）
   for (let i = 0; i < 4; i++) { const f = FIRES[i * 3]; const l = new THREE.PointLight(0xff7a2a, 1.4, 26, 1.6); l.position.set(f[0], 3, f[2]); scene.add(l); }
 }
+window.ZY_SCENERY = { objs: scene.children.filter((o) => o !== points), fires: FIRES, FOG, sun, rim };   // 名人亂鬥換舞台用
 function stepFires(dt) {
   for (const f of FIRES) {
     if (Math.random() < dt * 22) emit(f[0] + rand(-.3, .3), f[1], f[2] + rand(-.3, .3), rand(-.3, .3), rand(2, 3.4), rand(-.3, .3), rand(.4, .7), rand(1.2, 1.9), Math.random() < .5 ? 0xff6a1a : 0xffb030, -1, .5);
     if (Math.random() < dt * 3) emit(f[0], f[1] + 1, f[2], rand(-.6, .6), rand(2, 4), rand(-.6, .6), rand(1.5, 3), 0.25, 0xffa040, -0.2, 0.2);
   }
   // 戰場飄火星
-  if (Math.random() < dt * 14) emit(player.x + rand(-40, 40), rand(0.5, 6), player.z + rand(-40, 40), rand(-.5, .5), rand(.3, 1.2), rand(-.5, .5), rand(2, 4), 0.22, 0xff8a30, -0.1, 0);
+  if (!window.NO_EMBERS && Math.random() < dt * 14) emit(player.x + rand(-40, 40), rand(0.5, 6), player.z + rand(-40, 40), rand(-.5, .5), rand(.3, 1.2), rand(-.5, .5), rand(2, 4), 0.22, 0xff8a30, -0.1, 0);
 }
 
 // ============ 方塊碎片（instanced voxel chunks）============
