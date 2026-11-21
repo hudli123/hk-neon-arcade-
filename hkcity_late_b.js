@@ -1207,30 +1207,14 @@ window.IND = (() => {
         perf.unitDoorsCacheHits++;
         return unitDoorCache.get(unit);
       }
-      const doors = g.doors.filter((door) => linesOf(door[2]).some(([a, b]) => {
+      const doors = doorSegments.filter(([a, b]) => {
         const x = (a[0] + b[0]) * 0.5, z = (a[1] + b[1]) * 0.5;
         return shapeDistance(x, z, unit.rings) < 0.45;
-      }));
+      });
       unitDoorCache.set(unit, doors);
       return doors;
     };
-    const freeFrontage = (unit, frame) => {
-      const ux = (frame.B[0] - frame.A[0]) / frame.length, uz = (frame.B[1] - frame.A[1]) / frame.length, blocked = [];
-      for (const d of unitDoors(unit)) {
-        const p = point(d[2]); if (p.length < 2) continue;
-        const vals = p.map((q) => (q[0] - frame.A[0]) * ux + (q[1] - frame.A[1]) * uz);
-        const lo = Math.max(0, Math.min(...vals) - 0.3), hi = Math.min(frame.length, Math.max(...vals) + 0.3);
-        if (hi > lo) blocked.push([lo, hi]);
-      }
-      blocked.sort((a, b) => a[0] - b[0]);
-      let cursor = 0, best = [0, frame.length];
-      for (const [lo, hi] of blocked) {
-        if (lo - cursor > best[1] - best[0]) best = [cursor, lo];
-        cursor = Math.max(cursor, hi);
-      }
-      if (frame.length - cursor > best[1] - best[0]) best = [cursor, frame.length];
-      return { ...frame, ux, uz, span: best, spanLength: Math.max(0, best[1] - best[0]) };
-    };
+    const freeFrontage = (unit, frame) => CityGeometry.freeFrontage(frame, unitDoors(unit));
     const pointOnFrame = (frame, s, normalOffset = 0) => ({
       x: frame.A[0] + frame.ux * s + frame.nx * normalOffset,
       z: frame.A[1] + frame.uz * s + frame.nz * normalOffset
@@ -1368,7 +1352,7 @@ window.IND = (() => {
       poiKinds[type]++;
       const unit = unitPoints.find((q) => q.shop && insideShape(q.rings, poi[3], poi[4]));
       if (!unit) continue;
-      const frame = unitFrame(unit); if (!frame) continue;
+      const frame = unitFrame(unit, 0.9, true); if (!frame) continue;
       const frontage = freeFrontage(unit, frame), spanLength = Number.isFinite(frontage.spanLength) ? frontage.spanLength : frame.length;
       const spanStart = Number.isFinite(frontage.span[0]) ? frontage.span[0] : 0;
       const spanWidth = Math.min(spanLength - 0.18, 2.55);
@@ -1397,7 +1381,7 @@ window.IND = (() => {
         }
         stat.shopFixtures += built ? 1 : 0;
       } else if (type === 'foodservice' && noDoorRoom) {
-        const center = { x: front.x + inward[0] * 1.3, z: front.z + inward[1] * 1.3 }, width = Math.max(1.0, Math.min(2.25, spanWidth));
+        const center = { x: front.x + inward[0] * 1.3, z: front.z + inward[1] * 1.3 }, width = Math.min(2.25, spanWidth);
         if (addSolid([center.x, 0.46, center.z], [width, 0.88, 0.68], axis, '#765a45', unit, true)) {
           addSolid([center.x, 0.94, center.z], [width + 0.05, 0.09, 0.72], axis, '#e6e1d8', unit, false);
           addSolid([center.x, 1.32, center.z], [width * 0.88, 0.62, 0.035], axis, '#9ad6dd', unit, false, glass);
