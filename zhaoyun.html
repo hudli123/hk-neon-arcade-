@@ -174,6 +174,9 @@ body.playing #dhud{top:12px;width:min(780px,calc(100vw - 238px));gap:12px;grid-t
 #photoPrint{position:fixed;left:19px;bottom:62px;z-index:8;display:flex;align-items:center;background:var(--pf-paper);color:var(--pf-ink);border:2px solid var(--pf-ink);box-shadow:4px 5px var(--pf-ink);padding:5px;gap:9px;max-width:260px;transform:rotate(-2deg);pointer-events:none}
 .pf-printimage{width:77px;height:80px;position:relative;overflow:hidden;background:radial-gradient(#7869a5 1px,transparent 1.3px) 0 0/5px 5px,#cabcf1;border:1px solid var(--pf-ink);flex:none}
 .pf-printimage img{position:absolute;bottom:0;height:82%;width:100%;object-fit:cover}
+#photoPrint.pf-real .pf-printimage{width:104px;height:78px}#photoPrint.pf-real .pf-printimage img{height:100%}#photoPrint.pf-real .pf-printimage canvas{display:none}
+.pf-resultstrip.pf-real img{width:176px;height:132px}
+#over #pfSave{display:block;margin:10px auto 0;padding:7px 16px;font-size:12px}
 .pf-printimage canvas{position:absolute;top:-9px;left:50%;transform:translateX(-50%) rotate(6deg);width:42px;height:34px}
 .pf-printcopy{display:flex;flex-direction:column;gap:4px;line-height:1.05}
 .pf-printcopy small{font-size:8px;color:#6c525c}.pf-printcopy b{font:italic 900 19px/1 var(--pf-display)}.pf-printcopy span{font-size:10px;line-height:1.2}
@@ -211,6 +214,7 @@ body.touch #photoPrint{bottom:auto;top:72px;left:12px}
  body.touch #photoPrint{top:auto;bottom:12px;left:10px;max-width:160px}.pf-printimage{width:40px;height:42px}.pf-printimage canvas{width:26px;height:23px;top:-5px}.pf-printcopy b{font-size:13px}.pf-printcopy span{font-size:8px}
  #pause #pkeys{font-size:11px;gap:2px 8px}#pause #pkeys kbd{font-size:9px}#pause h1{font-size:25px}#pause button{margin-top:4px}
  .pf-resultstrip{margin:9px auto 5px}.pf-resultstrip img{width:85px;height:80px}
+ #photoPrint.pf-real .pf-printimage{width:64px;height:48px}.pf-resultstrip.pf-real img{width:128px;height:96px}#over #pfSave{margin-top:5px;padding:5px 12px}
 }
 @media(prefers-reduced-motion:reduce){.pf-ready *,#dhud *,#banner,#dround,#photoPrint{animation-duration:.01ms!important;transition-duration:.01ms!important}#flash{display:none}.fbtn:hover:enabled .pf-art img{transform:none}}
 #banner.pf-special{width:fit-content;max-width:min(92vw,670px);left:50%;right:auto;translate:-50% 0;box-sizing:border-box;background:#211d2bf0;border:2px solid #fff1d3;border-left:9px solid #c5aff7;box-shadow:4px 4px #111015;color:#fff1d3!important;padding:7px 22px 10px;text-shadow:2px 2px #17121d;top:21%;letter-spacing:-.055em;font-size:clamp(20px,3.4vw,43px)}
@@ -1950,7 +1954,7 @@ function stepCamera(rdt) {
   // 打緊嘅時候鏡頭慢慢轉去趙雲背後，唔會畀士兵遮住
   if (camId === null && (p.st === 'attack' || p.st === 'charge') && Math.abs(angDiff(p.yaw, camYaw)) > 0.9) camYaw += angDiff(p.yaw, camYaw) * Math.min(1, rdt * 1.6);
   const portrait = innerWidth < innerHeight;
-  const dist = (p.st === 'musou' ? 14 : 9) * (portrait ? 1.35 : 1) * (window.CAM_ZOOM_ON ? window.CAM_ZOOM : 1), height = (p.st === 'musou' ? 8.5 : 6.4) * (window.CAM_ZOOM_ON ? window.CAM_ZOOM : 1);
+  const dist = (p.st === 'musou' ? 14 : 9) * (portrait ? 1.35 : 1) * (window.CAM_ZOOM_ON ? window.CAM_ZOOM : 1), height = (p.st === 'musou' ? 8.5 : 6.4) * (window.CAM_ZOOM_ON ? window.CAM_ZOOM : 1) * (window.CAM_LOW || 1);
   const [fx, fz] = fwd(camYaw);
   const tx = p.x - fx * dist, tz = p.z - fz * dist, ty = height + p.y * 0.5;
   camera.position.x = lerp(camera.position.x, tx, Math.min(1, rdt * 8)); camera.position.z = lerp(camera.position.z, tz, Math.min(1, rdt * 8)); camera.position.y = lerp(camera.position.y, ty, Math.min(1, rdt * 6));
@@ -2069,6 +2073,7 @@ function frame(now) {
   const dt = Math.max(0, Math.min((now - lastT) / 1000, 0.05)); lastT = now;
   if (GAME.state === 'title' && $('title').classList.contains('pf-ready')) return;
   if (!paused) GAME.step(dt);
+  if (window.PRE_RENDER) window.PRE_RENDER();
   renderFrame();
   // 手機慢就關景深、降解像度
   fpsAcc += dt; fpsN++; fpsCheck += dt;

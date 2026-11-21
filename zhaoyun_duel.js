@@ -129,15 +129,15 @@
     flat(g, new THREE.PlaneGeometry(6, R * 2), lam({ color: 0x7a1018 }), .02);
     const wallT = ctex(256, 256, (x, w, h) => { const gr = x.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, '#8a6a1e'); gr.addColorStop(.5, '#e8c860'); gr.addColorStop(1, '#8a6a1e'); x.fillStyle = gr; x.fillRect(0, 0, w, h);
       x.strokeStyle = '#5a4210'; x.lineWidth = 6; x.strokeRect(14, 14, w - 28, h - 28); x.strokeStyle = '#fff0b0'; x.lineWidth = 2; x.strokeRect(24, 24, w - 48, h - 48); }, 8, 3);
-    walls4(g, lam({ map: wallT, emissive: 0x2a1e04 }), R, H);
-    const gold = lam({ color: 0xe0b848, emissive: 0x3a2a08 }), cur = lam({ color: 0x8a1020 });
+    walls4(g, lam({ map: wallT, color: 0xb8b8b8 }), R, H);
+    const gold = lam({ color: 0xb8922e }), cur = lam({ color: 0x8a1020 });
     for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2;
       for (const u of [-16, -8, 8, 16]) { const x0 = Math.sin(a) * (R - 1.4) + Math.cos(a) * u, z0 = Math.cos(a) * (R - 1.4) - Math.sin(a) * u; put(g, new THREE.CylinderGeometry(.8, .9, H, 14), gold, x0, H / 2, z0); put(g, new THREE.BoxGeometry(2.4, .8, 2.4), gold, x0, .4, z0); }
       put(g, new THREE.BoxGeometry(6, H - 3, .4), cur, Math.sin(a) * (R - .4), (H - 3) / 2, Math.cos(a) * (R - .4), a); }
     flat(g, new THREE.PlaneGeometry(R * 2, R * 2), lam({ color: 0x4a3814, emissive: 0x1a1204 }), H, false);
     for (let i = 0; i < 12; i++) { const a = i / 12 * 6.283; put(g, new THREE.SphereGeometry(.28, 8, 6), bas({ color: 0xfff2c0 }), Math.cos(a) * 3, H - 3, Math.sin(a) * 3); }
     put(g, new THREE.CylinderGeometry(3.2, 2, .5, 20), gold, 0, H - 2.4, 0); put(g, new THREE.CylinderGeometry(.12, .12, 2.4, 6), gold, 0, H - 1.2, 0); glow(g, 0, H - 3, 0, 16, 0xffd98a);
-    return { g, fog: [0x2a1e0c, 60, 220], hemi: [0xfff0c8, 0x6a4a20, .7], sun: [0xffe2a0, .8], rim: [0xffc060, .45] };
+    return { g, fog: [0x2a1e0c, 60, 220], hemi: [0xfff0c8, 0x6a4a20, .5], sun: [0xffe2a0, .55], rim: [0xffc060, .3] };
   };
   STG.chip = () => {   // 伺服器房
     const g = new THREE.Group(), R = 24, H = 11;
@@ -174,7 +174,7 @@
 
 // Photo Finish. The round owner advances the contest. Guests draw the replicated state.
 const photoShow = (() => {
-  const HOLD = .65, RADIUS = 2.15, HEAL = 35;
+  const HAT = .5, HOLD = .65, RADIUS = 2.15, HEAL = 35, ENERGY = 35;
   const WINDOWS = [4, 23, 42];
   const ink = '#191621', cream = '#fff5d6';
   const reduced = matchMedia('(prefers-reduced-motion: reduce)');
@@ -230,7 +230,7 @@ const photoShow = (() => {
 
   // Each souvenir is created once and follows its winner for the photo.
   const hats = new THREE.Group(); scene.add(hats); hats.visible = false;
-  const mat = color => new THREE.MeshLambertMaterial({color, emissive: color, emissiveIntensity: .12});
+  const mat = color => new THREE.MeshLambertMaterial({color: new THREE.Color(color).multiplyScalar(.62)});
   const yellow = mat(0xffd233), orange = mat(0xfe7035), black = mat(0x241b2b);
   function shape(g, geom, material, x, y, z, sx=1, sy=1, sz=1) {
     const m = new THREE.Mesh(geom, material); m.position.set(x,y,z); m.scale.set(sx,sy,sz); g.add(m); return m;
@@ -258,6 +258,35 @@ const photoShow = (() => {
   }
   const souvenirs={duck, toast, crown};
   for(const g of Object.values(souvenirs)) hats.add(g);
+  hats.scale.setScalar(HAT);
+  // Where the top of the head is, in Head-bone space, read once per rig from the bind pose.
+  const crowns=new WeakMap();
+  function crownOf(rig){
+    if(crowns.has(rig))return crowns.get(rig);
+    let out=null, m=null;
+    rig.mesh.traverse(o=>{if(o.isSkinnedMesh&&!m)m=o;});
+    const head=rig.bones.Head, hips=rig.bones.Hips;
+    if(m&&head&&hips){
+      const sk=m.skeleton, hi=sk.bones.indexOf(head), pi=sk.bones.indexOf(hips);
+      const g=m.geometry.attributes, pos=g.position, si=g.skinIndex, sw=g.skinWeight;
+      if(hi>=0&&pi>=0&&si&&sw){
+        const inHead=sk.bones.map(b=>{for(let q=b;q;q=q.parent)if(q===head)return true;return false;});
+        const at=i=>new THREE.Vector3().setFromMatrixPosition(new THREE.Matrix4().copy(sk.boneInverses[i]).invert());
+        const up=at(hi).sub(at(pi)).normalize(), v=new THREE.Vector3(), pts=[];
+        let top=-Infinity;
+        for(let i=0;i<pos.count;i++){
+          let w=0;for(let k=0;k<4;k++)if(inHead[si.array[i*4+k]])w+=sw.array[i*4+k];
+          if(w<.8)continue;
+          v.fromBufferAttribute(pos,i).applyMatrix4(m.bindMatrix);
+          const h=v.dot(up);pts.push([v.x,v.y,v.z,h]);if(h>top)top=h;
+        }
+        const sum=new THREE.Vector3();let n=0;
+        for(const q of pts)if(q[3]>top-.03){sum.x+=q[0];sum.y+=q[1];sum.z+=q[2];n++;}
+        if(n)out=sum.multiplyScalar(1/n).applyMatrix4(sk.boneInverses[hi]);
+      }
+    }
+    crowns.set(rig,out);return out;
+  }
 
   const badge=document.createElement('div'); badge.id='photoObjective'; badge.hidden=true;
   badge.innerHTML='<i class="pf-camera" aria-hidden="true"></i><div><b></b><small></small><i class="hold-track"><i></i></i></div><strong></strong>';
@@ -281,7 +310,7 @@ const photoShow = (() => {
   const vec=new THREE.Vector3();
   const inside=(f,zone)=>Math.hypot(f.x-zone.x,f.z-zone.z)<=RADIUS && f.y<1.8;
   function resetMatch(){
-    state={zone:null, wins:[0,0], best:[0,0], shot:null, serial:0};
+    state={zone:null, wins:[0,0], best:[0,0], shot:null, serial:0};shots.length=0;
     lastPhoto=0;elapsed=0;clearPresentation();
   }
   function clearPresentation(){
@@ -306,7 +335,13 @@ const photoShow = (() => {
     const f=who===0?player:boss, before=f.hp, prop=state.zone.prop;
     f.hp=Math.min(f.max,f.hp+HEAL);
     state.wins[who]++;
-    state.shot={id:++state.serial,who,prop,gain:Math.ceil(f.hp-before)};
+    const gain=Math.ceil(f.hp-before), meter=Math.round(ENERGY*(1-gain/HEAL));
+    if(meter>0){
+      if(who===0)player.musou=Math.min(100,player.musou+meter);
+      else if(D.two)D.m2=Math.min(100,D.m2+meter);
+      else D.aiCd*=1-meter/100;   // CPU specials run on a timer
+    }
+    state.shot={id:++state.serial,who,prop,gain,meter};
     state.zone=null;
   }
   function advance(dt){
@@ -367,11 +402,44 @@ const photoShow = (() => {
     const colors=['#ffcf4c','#ff6486','#77e8de','#fff4ca','#b9ed69'];
     for(let i=0;i<43;i++)confetti.push({x:px,y:py,vx:rand(-235,235),vy:rand(-310,-55),spin:rand(-8,8),a:rand(0,6),s:rand(3,6),life:rand(.70,1.3),col:colors[i%5]});
   }
+  // The print is a real picture: one extra render from in front of the winner, taken before the normal frame so it never reaches the screen.
+  const film=document.createElement('canvas');film.width=640;film.height=480;
+  const shots=[];let shootIn=0;
+  function shoot(){
+    const s=state.shot;if(!s||!hats.visible||!window.__render)return;
+    const f=s.who===0?player:boss, el=renderer.domElement, pos=camera.position.clone(), quat=camera.quaternion.clone();
+    const a=f.yaw+.5, hx=hats.position.x, hy=hats.position.y, hz=hats.position.z;
+    camera.position.set(hx+Math.sin(a)*2.6,hy-.2,hz+Math.cos(a)*2.6);camera.lookAt(hx,hy-.55,hz);camera.updateMatrixWorld();
+    try{
+      window.__render();
+      const h=el.height, w=Math.min(el.width,h*4/3), c=film.getContext('2d');
+      c.filter='brightness(1.2)';c.drawImage(el,(el.width-w)/2,0,w,h,0,0,640,480);
+      const url=film.toDataURL('image/jpeg',.86);
+      shots.push({who:s.who,prop:s.prop,fighter:s.who===0?D.f1:D.f2,url});cardImg.src=url;card.classList.add('pf-real');
+    }catch(_){}
+    camera.position.copy(pos);camera.quaternion.copy(quat);camera.updateMatrixWorld();
+  }
+  window.PRE_RENDER=()=>{if(shootIn>0&&GAME.state==='play'&&performance.now()>=shootIn){shootIn=0;shoot();}};
+  // Result screen: the match winner's latest photo, else the latest one.
+  function bestShot(winner){
+    for(let i=shots.length-1;i>=0;i--)if(shots[i].who===winner)return shots[i];
+    return shots[shots.length-1]||null;
+  }
+  function savePhoto(shot){
+    const c=document.createElement('canvas');c.width=700;c.height=640;const x=c.getContext('2d'),img=new Image();
+    img.onload=()=>{
+      x.fillStyle=cream;x.fillRect(0,0,700,640);x.drawImage(img,30,30,640,480);
+      x.fillStyle=ink;x.textBaseline='middle';x.font='italic 900 40px BrawlDisplay, Impact, "Microsoft JhengHei", sans-serif';x.fillText(names[shot.prop],30,556);
+      x.font='700 20px Arial, "Microsoft JhengHei", sans-serif';x.fillText(FIGHTERS[shot.fighter].name+'  ·  '+T('名人亂鬥','Celebrity Brawl'),30,604);
+      const a=document.createElement('a');a.download='celebrity-brawl-photo.png';a.href=c.toDataURL('image/png');document.body.append(a);a.click();a.remove();
+    };
+    img.src=shot.url;
+  }
   function showPhoto(s){
-    lastPhoto=s.id; printLife=3.8;card.hidden=false;card.dataset.side=s.who;
+    lastPhoto=s.id; printLife=3.8;card.hidden=false;card.dataset.side=s.who;card.classList.remove('pf-real');shootIn=performance.now()+350;
     const id=s.who===0?D.f1:D.f2, fighter=FIGHTERS[id];
     cardImg.src=portraits[id];cardTitle.textContent=names[s.prop];cardLine.textContent=captions[s.prop];
-    cardTop.textContent=fighter.short+'   /   '+(s.gain?'+'+s.gain+' HP':T('滿血','FULL HP'));
+    cardTop.textContent=fighter.short+'   /   '+[s.gain?'+'+s.gain+' HP':'',s.meter?'+'+s.meter+T(' 絕招',' SPECIAL'):''].filter(Boolean).join('  ');
     drawSticker(s.prop); for(const k in souvenirs)souvenirs[k].visible=k===s.prop;
     if(card.getAnimations)card.getAnimations().forEach(a=>a.cancel());
     if(!reduced.matches&&card.animate)card.animate([{transform:'rotate(-9deg) scale(.76)',opacity:0},{transform:'rotate(2deg) scale(1.04)',opacity:1,offset:.65},{transform:'rotate(-2deg) scale(1)'}],{duration:290,easing:'ease-out'});
@@ -383,17 +451,20 @@ const photoShow = (() => {
     tariff:[T('蓋印！','STAMP!'),T('加價！','MARKUP!'),T('埋單！','PAY UP!')],
     chip:[T('叮！','PING!'),T('超頻！','OVERCLOCK!'),T('窒機！','BUFFERING!')]
   };
+  const small=[0,0];
   function hit(target,delta){
-    if(delta<=0)return;
+    // Chips and the wall burn are 3-damage ticks, not punches.
+    delta-=small[target];small[target]=0;
+    if(delta<=(D.net==='guest'?4:0))return;
     const f=target===0?player:boss,id=target===0?D.f2:D.f1;
     streak[target]=elapsed-lastHitAt[target]<1.5?streak[target]+1:1;lastHitAt[target]=elapsed;
     if(D.net!=='guest')state.best[1-target]=Math.max(state.best[1-target],streak[target]);
-    if(elapsed-lastPopAt[target]<.30)return;lastPopAt[target]=elapsed;
+    if(elapsed-lastPopAt[target]<.45)return;lastPopAt[target]=elapsed;
     const count=streak[target], big=count>=3 || delta>=32, words=hitWords[id];
     if(!words)return;
-    if(popups.length>=4)popups.shift();
+    if(popups.length>=2)popups.shift();
     popups.push({x:f.x,y:f.y+1.85,z:f.z,t:0,life:big?.80:.58,side:target?1:-1,
-      label:count>=3?count+' '+T('連擊！','HITS!'):words[delta>=32?2:(count-1)%words.length],
+      label:words[delta>=32?2:(count-1)%2],
       col:big?'#ffdf61':target?'#bcf5f3':'#ff96ac',big});
   }
   function paintFX(dt){
@@ -432,7 +503,7 @@ const photoShow = (() => {
     const p=z.hold,contested=inside(player,z)&&inside(boss,z),capturing=p[0]>0||p[1]>0;
     const pct=Math.round(clamp(Math.max(p[0],p[1])/HOLD,0,1)*100);
     const message=contested?T('逼爆鏡頭！要自己一個先影到。','Crowded shot! Get the ring to yourself.'):
-      capturing?T('望鏡頭！','Hold that pose!'):T('企入金圈，獨佔鏡頭可回 35 HP','Stand alone in the gold ring for +35 HP');
+      capturing?T('望鏡頭！','Hold that pose!'):T('獨佔金圈：+35 HP，滿血加絕招','Alone in the gold ring: +35 HP, or special energy');
     if(hint.textContent!==message)hint.textContent=message;
     const width=pct+'%';if(fill.style.width!==width)fill.style.width=width;
     // The original minimap uses the same arena-to-pixel conversion for both fighters.
@@ -449,10 +520,11 @@ const photoShow = (() => {
     if(hats.visible){
       const f=state.shot.who===0?player:boss;
       const rig=state.shot.who===0?ACT.mrig:window.__bossRig&&window.__bossRig.R;
-      if(rig&&rig.bones.Head){rig.bones.Head.getWorldPosition(hats.position);hats.position.y+=.30;}
+      const crown=rig&&rig.bones.Head&&crownOf(rig);
+      if(crown){hats.position.copy(crown);rig.bones.Head.localToWorld(hats.position);hats.position.y-=.05;}
+      else if(rig&&rig.bones.Head){rig.bones.Head.getWorldPosition(hats.position);hats.position.y+=.3;}
       else hats.position.set(f.x,f.y+(state.shot.who===0?2.08:2.42),f.z);
-      if(!reduced.matches)hats.position.y+=.045*Math.sin(elapsed*4);
-      hats.rotation.y=Math.atan2(camera.position.x-f.x,camera.position.z-f.z);
+      hats.rotation.y=f.yaw;
       hats.rotation.z=reduced.matches?0:.10*Math.sin(elapsed*4.5);
     }
     showZone(dt);paintFX(dt);
@@ -461,7 +533,7 @@ const photoShow = (() => {
     return state.wins.map((n,i)=>FIGHTERS[i?D.f2:D.f1].short+' '+n).join('  /  ');
   }
   return {portraits,resetMatch,resetRound,advance,steerAI,receive,present,clearPresentation,endSummary,
-    packet:()=>state, get best(){return state.best;}, cap:HEAL};
+    packet:()=>state, get best(){return state.best;}, cap:HEAL, small:(i,d)=>{small[i]+=d;}, bestShot, savePhoto};
 })();
 
 // Lobby and ringside graphics reuse the playable fighters and the existing bindings.
@@ -510,7 +582,7 @@ function dressStudio(){
   const tip=document.createElement('div');tip.className='pf-lobbytip';
   const icon=document.createElement('i');icon.className='pf-camera';icon.setAttribute('aria-hidden','true');
   const body=document.createElement('span');const lead=document.createElement('b');lead.textContent=T('搶鏡位','Photo Op');
-  body.append(lead,document.createTextNode(T('　企定喺金圈入面，獨佔鏡頭可回 35 HP。','  Stand alone in the gold ring to pose for a photo and recover up to 35 HP.')));
+  body.append(lead,document.createTextNode(T('　企定喺金圈入面獨佔鏡頭：回 35 HP，滿血就加絕招。','  Stand alone in the gold ring for a photo: +35 HP, or special energy at full HP.')));
   tip.append(icon,body);panel.append(tip);
   const credit=host.querySelector('.bgm-credit');if(credit)panel.append(credit);
   const bar=document.createElement('div');bar.id='pfControls';
@@ -544,7 +616,8 @@ function roundLabel(){
 function makeResults(win){
   const name=win?D.f1:D.f2;const stats=$('ostats');stats.replaceChildren();
   const strip=document.createElement('div');strip.className='pf-resultstrip';
-  const img=document.createElement('img');img.src=photoShow.portraits[name];img.alt='';strip.dataset.f=name;
+  const shot=photoShow.bestShot(win?0:1);
+  const img=document.createElement('img');img.src=shot?shot.url:photoShow.portraits[name];img.alt='';strip.dataset.f=name;strip.classList.toggle('pf-real',!!shot);
   const body=document.createElement('div');
   const score=document.createElement('strong');score.textContent=D.p1+' — '+D.p2;
   const report=document.createElement('p');
@@ -555,6 +628,11 @@ function makeResults(win){
   const combo=document.createElement('div');combo.className='pf-tally';
   combo.textContent=T('最長連擊　','Best combo   ')+Math.max(...photoShow.best);
   stats.append(tally,combo);
+  const old=$('pfSave');if(old)old.remove();
+  if(shot){
+    const save=document.createElement('button');save.id='pfSave';save.textContent=T('儲存相片','Save photo');
+    save.onclick=()=>photoShow.savePhoto(shot);$('dhome2').before(save);
+  }
 }
 
   const Q = new URLSearchParams(location.search.slice(1) + '&' + location.hash.slice(1));
@@ -572,7 +650,7 @@ function makeResults(win){
   const chipDmg = (who, dmg, fx, fz) => {   // 細傷害：唔硬直、唔擊退；會打死先行正常 dmgTo
     const F = who === 'p2' ? boss : player;
     if (F.hp - dmg <= 0) return dmgTo(who, dmg, fx, fz, false);
-    F.hp -= dmg; if (who === 'p2') boss.flash = Math.max(boss.flash || 0, .06);
+    F.hp -= dmg; photoShow.small(who === 'p2' ? 1 : 0, dmg); if (who === 'p2') boss.flash = Math.max(boss.flash || 0, .06);
   };
   const boom = (x, y, z, col, n = 40) => { for (let k = 0; k < n; k++) { const a = Math.random() * TAU, s = rand(3, 12); emit(x, y, z, Math.cos(a) * s, rand(1, 9), Math.sin(a) * s, rand(.3, .8), rand(.8, 1.8), Math.random() < .5 ? col : 0xffffff, 10, 1.5); } ring(x, z, 5, col, 0.5); };
 
@@ -790,7 +868,7 @@ function makeResults(win){
   const P2IN = { atk: 0, dash: 0, dodge: 0, spec: 0 };
 
   // ===== 鏡頭縮放（單挑先開）：wheel / = - 鍵 / 右上 ＋－ 掣 =====
-  window.CAM_ZOOM = 1; window.CAM_ZOOM_ON = true;
+  window.CAM_ZOOM = 1; window.CAM_ZOOM_ON = true; window.CAM_LOW = .6;
   let camZoomT = 1;
   const zoomTo = (f) => { camZoomT = clamp(camZoomT * f, .55, 1.8); };
   addEventListener('wheel', (e) => { if (window.CAM_ZOOM_ON && GAME.state === 'play') zoomTo(e.deltaY > 0 ? 1.1 : 1 / 1.1); }, { passive: false });
