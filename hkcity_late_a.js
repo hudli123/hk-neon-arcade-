@@ -994,9 +994,8 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
     return { x: r.x, z: r.z, road: r.name };
   }
   // 海：唔可以行 / 揸落海（WAT 多邊形，先用包圍盒篩）
-  const WBOX = WAT.map((w) => { let a = 1e9, b = -1e9, c = 1e9, d = -1e9; for (const [x, z] of w.rings[0]) { a = Math.min(a, x); b = Math.max(b, x); c = Math.min(c, z); d = Math.max(d, z); } return [a, b, c, d]; });
-  const inWater = (x, z) => WAT.some((w, i) => { const B = WBOX[i]; return x > B[0] && x < B[1] && z > B[2] && z < B[3] && inside(w.rings[0], x, z) && !w.rings.slice(1).some((h) => inside(h, x, z)); });
-  let EXS = [];   // 港鐵出口（下面整）
+  const inWater = streetWater;
+  const EXS = getStreetMetro().exits;
   const inExit = (x, z) => EXS.some((o) => { const dx = x - o.x, dz = z - o.z; if (dx * dx + dz * dz > 64) return false; const c = Math.cos(o.yaw), s = Math.sin(o.yaw), lx = dx * c - dz * s, lz = dx * s + dz * c; return Math.abs(lx) < 1.75 && lz < -1.2 && lz > -5.8; });
   const solid = (x, z) => blocked(x, z) || inWater(x, z) || inExit(x, z) || !!(window.HARB && HARB.near(x, z)) || !!(window.VEND && VEND.hit(x, z));   // v44：自動售賣機（vending.js）   // v42：海旁欄杆（harbour.js；主角、揸車、打鬥嘅人都企唔埋）
   // 有名大廈（目的地）：地政總署有名嘅樓 + 真 3D 地標
@@ -1011,47 +1010,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   // 標誌：BG 2026-09-28 揀用真港鐵標誌（註冊商標，風險佢拍板）；圖形 = Wikipedia「HK MTR logo.svg」，紅色 #AC2E44 同相片對過
   const MTR = CITY.mtr || { lines: [], st: [], ex: [] }, stCol = (k) => MTR.lines[MTR.st[k][4][0]][3];
   const w2 = (o, lx, lz) => [o.x + lx * Math.cos(o.yaw) + lz * Math.sin(o.yaw), o.z - lx * Math.sin(o.yaw) + lz * Math.cos(o.yaw)];   // 本地（+z = 出口向街）→ 世界
-  const ROADG = new Map(), RG = 40;   // 車路多邊形（路政署 type 0）格仔索引：出口唔好擺出馬路
-  if (MTR.ex.length) for (const p of PAV) {
-    if (p.h[0] !== 0) continue; let a = 1e9, b = -1e9, c = 1e9, d = -1e9;
-    for (const [x, z] of p.rings[0]) { a = Math.min(a, x); b = Math.max(b, x); c = Math.min(c, z); d = Math.max(d, z); }
-    for (let i = Math.floor(a / RG); i <= Math.floor(b / RG); i++) for (let j = Math.floor(c / RG); j <= Math.floor(d / RG); j++) { const k = i * 100000 + j; if (!ROADG.has(k)) ROADG.set(k, []); ROADG.get(k).push(p); }
-  }
-  const onRoad = (x, z) => (ROADG.get(Math.floor(x / RG) * 100000 + Math.floor(z / RG)) || []).some((p) => inside(p.rings[0], x, z) && !p.rings.slice(1).some((h) => inside(h, x, z)));
-  EXS = MTR.ex.map((e) => {
-    const free = (x, z) => !blocked(x, z) && !inWater(x, z);
-    const rd = nearestRoad(e[2], e[3]) || { x: e[2], z: e[3] + 1 };
-    const fit = (o) => {   // 樓梯口 + 入口前面一定要空（唔喺樓入面、唔出馬路）；後半截可以入樓（好多真出口都係咁）
-      let sc = 0, front = 0;
-      for (const [lx, lz, wt] of [[0, 2.2, 3], [0, 0.8, 3], [0, 1.6, 1], [-1.4, 0.2, 3], [1.4, 0.2, 3], [-1.7, -1.3, 3], [1.7, -1.3, 3], [-1.7, -3.5, 1], [1.7, -3.5, 1], [-1.7, -5.7, 1], [1.7, -5.7, 1]]) {
-        const [qx, qz] = w2(o, lx, lz), road = onRoad(qx, qz), bad = road ? 3 : !free(qx, qz) ? wt : 0;   // v54：成個出口 + 出站落腳位都唔可以喺車路（BG「一定在行人路上」）
-        sc += bad; if (road || (bad && wt === 3)) front++;
-      }
-      return [sc, front];
-    };
-    let best = null;   // 由 OSM 出口位開始，一圈圈（每 2 米，最遠 16 米）搵樓梯口空嘅位；同一圈揀最啱方向
-    for (let r = 0; r <= 16 && !(best && best.front === 0); r += 2)
-      for (let a = 0; a < (r ? 12 : 1); a++) {
-        const x = e[2] + Math.cos(a * 0.524) * r, z = e[3] + Math.sin(a * 0.524) * r; if (!free(x, z) || onRoad(x, z)) continue;
-        const base = Math.atan2(rd.x - x, rd.z - z);
-        for (const [dy, pen] of [[0, 0], [Math.PI / 2, 0.5], [-Math.PI / 2, 0.5], [Math.PI, 1]]) {   // 首選樓梯口向街
-          const o = { x, z, yaw: base + dy }, [sc, front] = fit(o); o.s = sc + pen + r * 0.3; o.front = front;
-          if (!best || front < best.front || (front === best.front && o.s < best.s)) best = o;
-        }
-      }
-    for (let r = 20; r <= 120 && !(best && best.front === 0); r += 4)   // v53：九龍站等出口喺大平台底（成片 footprint 都係實心），16 米內冇空位就向外搵到平台邊
-      for (let a = 0; a < 36; a++) {
-        const x = e[2] + Math.cos(a * 0.1745) * r, z = e[3] + Math.sin(a * 0.1745) * r; if (!free(x, z) || onRoad(x, z)) continue;
-        const base = Math.atan2(rd.x - x, rd.z - z);
-        for (const dy of [0, Math.PI / 2, -Math.PI / 2, Math.PI]) {
-          const o = { x, z, yaw: base + dy, far: true }, [sc, front] = fit(o); o.s = sc + r * 0.3; o.front = front;
-          if (!best || front < best.front || (front === best.front && o.s < best.s)) best = o;
-        }
-      }
-    if (!best) return null;   // 搵唔到街面位就唔放呢個出口（以前會擺喺樓入面，一出站就卡死）
-    const [fx, fz] = w2(best, 0, 0.8), [ax, az] = w2(best, 0, 2.2);
-    return { e, x: best.x, z: best.z, yaw: best.yaw, fx, fz, ax, az, front: best.front, far: !!best.far };
-  }).filter((o, i, A) => o && !(o.far && A.slice(0, i).some((q) => q && (q.x - o.x) ** 2 + (q.z - o.z) ** 2 < 100)));   // 搬出嚟嘅出口如果撞埋同一個位就只留一個
+  const onRoad = getStreetMetro().onRoad;
   if (EXS.length) {
     // 出口本體：一個 InstancedMesh（頂點顏色）
     const P = [], C = [], c3 = new THREE.Color(), m4 = new THREE.Matrix4();
@@ -1364,7 +1323,7 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
   };
 
   // ---------- 每格 ----------
-  const _v = new THREE.Vector3(), HERO_R = 0.3;
+  const _v = new THREE.Vector3();
   function step(dt) {
     drvTick();
     const L = window.LIB, I = window.IND; if (L) L.step(dt); if (I) I.step(dt);
@@ -1380,20 +1339,15 @@ body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);tex
         const fx = -Math.sin(camYaw), fz = -Math.cos(camYaw), rx = -fz, rz = fx, dx = fx * my + rx * mx, dz = fz * my + rz * mx, l = Math.hypot(dx, dz) || 1;
         hero.h += wrapA(Math.atan2(dx / l, dz / l) - hero.h) * Math.min(1, 12 * dt);
         const nx = hero.x + Math.sin(hero.h) * sp * dt, nz = hero.z + Math.cos(hero.h) * sp * dt;
-        const base = (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');
-        const blk = iin ? I.walk : lin ? L.walk : base;
-        let moveBlk = iin ? I.canMove : blk;
-        if (!iin && !lin) {
-          const wide = (x, z) => {
-            if (base(x, z)) return true;
-            for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; if (base(x + Math.cos(a) * HERO_R, z + Math.sin(a) * HERO_R)) return true; }
-            return false;
-          };
-          moveBlk = wide(hero.x, hero.z) ? base : wide;
+        if (int) {
+          const moveBlocked = iin ? I.canMove : L.walk;
+          if (!moveBlocked(nx, hero.z)) hero.x = nx;
+          if (!moveBlocked(hero.x, nz)) hero.z = nz;
+        } else {
+          const obstacle = (x, z) => (L ? L.foot(x, z) : solid(x, z)) || ELEV.edge(x, z, hero.y, 0.7, 'rfs');
+          [hero.x, hero.z] = moveStreetPlayer(hero.x, hero.z, nx, nz, obstacle, hero.y, L?.solidBuilding);
         }
-        if (!moveBlk(nx, hero.z)) hero.x = nx; if (!moveBlk(hero.x, nz)) hero.z = nz;
       }
-      if (!int) { const q = SHOPF.pushOut(hero.x, hero.z); if (q && !solid(q[0], q[1])) { hero.x = q[0]; hero.z = q[1]; } }
       const gy = int ? 0 : Math.max(ELEV.surf(hero.x, hero.z, hero.y, 0.7, 'rfs'), window.__peds && __peds.onFoot(hero.x, hero.z) ? 0.16 : 0);
       if (jump && !iin && hero.y <= gy + 0.01) { hero.vy = 5.2; play('jump', 0.1); }
       if (iin) { hero.y = 0; hero.vy = 0; }
@@ -1937,8 +1891,12 @@ function putSoldier(name, m) {
   else e.mesh.setColorAt(e.n, curFlash ? _col.setRGB(2, 2, 2) : _col.set(soldierCol(name, e.col)));
   e.n++;
 }
-function keepIn(x, z, px, pz, m) {   // 圓形場地 + 唔可以入樓：入咗就退返上一步（逐條軸試）
+function keepIn(x, z, px, pz, m, playerMove = false) {   // 圓形場地 + 唔可以入樓：入咗就退返上一步（逐條軸試）
   const dx = x - CX, dz = z - CZ, d = Math.hypot(dx, dz), R = ARENA - m; if (d > R) { x = CX + dx / d * R; z = CZ + dz / d * R; }
+  if (playerMove && !window.IND?.inside && !window.LIB?.inside) {
+    const obstacle = HOOK.solid || (window.HARB ? HARB.solidB : blocked);
+    return moveStreetPlayer(px, pz, x, z, obstacle, HOOK.gy ? HOOK.gy(px, pz) : 0, HOOK.free ? window.LIB?.solidBuilding : groundWall);
+  }
   { const q = window.SHOPF && SHOPF.pushOut(x, z); if (q) { x = q[0]; z = q[1]; } }   // v40：唔好企入鋪頭相後面
   const blk = HOOK.solid || (window.HARB ? HARB.solidB : blocked);   // 自由行：同 open.js 一樣（海、地鐵出口、理大平台）；v42 任務：樓 + 海旁欄杆 + 海
   if (!blk(x, z)) return [x, z]; if (!blk(x, pz)) return [x, pz]; if (!blk(px, z)) return [px, z]; return [px, pz];
@@ -2744,7 +2702,7 @@ function stepPlayer(dt) {
     if (p.y > 0 || p.vy > 0) { p.vy -= (p.st === 'charge' ? 26 : 32) * dt; p.y += p.vy * dt; if (p.y <= 0) { p.y = 0; p.vy = 0; if (p.st === 'idle' || p.st === 'run') SND.tone(80, 0.1, 'sine', 0.2, 0.5); } }
   } else { p.y = lerp(p.y, 0.4 + Math.sin(p.t * 3) * 0.2, dt * 4); }
   // 邊界
-  { const q = keepIn(p.x, p.z, p.px === undefined ? p.x : p.px, p.pz === undefined ? p.z : p.pz, 1.5); p.x = q[0]; p.z = q[1]; p.px = p.x; p.pz = p.z; }
+  { const q = keepIn(p.x, p.z, p.px === undefined ? p.x : p.px, p.pz === undefined ? p.z : p.pz, 1.5, true); p.x = q[0]; p.z = q[1]; p.px = p.x; p.pz = p.z; }
   // 道具
   for (const it of items) {
     it.t += dt; it.m.position.y = 0.6 + Math.sin(it.t * 4) * 0.15; it.m.rotation.y += dt * 2;
@@ -4148,10 +4106,12 @@ window.LIB = (() => {
     } else console.warn('LIB: campus podium not found, library door unreachable on foot');
   }
   const inPod = (x, z) => POD && x > PB[0] && x < PB[1] && z > PB[2] && z < PB[3] && inside(POD.rings[0], x, z);
+  const campusRings = new Set(CAMP.map(c => c.r));
+  const solidBuilding = building => building !== POD && (groundWall(building) || campusRings.has(building.rings[0]));
   function foot(x, z) {   // 出面行路用：校園平台上面 = 平地，擋校園啲樓 + 其他牆
     if (!inPod(x, z)) return OPEN.solid(x, z);
-    for (const c of CAMP) if (x > c.bb[0] && x < c.bb[1] && z > c.bb[2] && z < c.bb[3] && inside(c.r, x, z)) return true;
-    const list = RINGS.get(gkey(x, z)); if (list) for (const r of list) if (r !== POD.rings[0] && inside(r, x, z)) return true;
+    for (const c of CAMP) if (x > c.bb[0] && x < c.bb[1] && z > c.bb[2] && z < c.bb[3] && insideFootprint(c.r, x, z)) return true;
+    const list = RINGS.get(gkey(x, z)); if (list) for (const r of list) if (r !== POD.rings[0] && insideFootprint(r, x, z)) return true;
     return OPEN.inWater(x, z);
   }
   let CH = null;   // 校園高度格（2 米）：鏡頭避樓用，唔計平台方盒
@@ -4522,7 +4482,7 @@ window.LIB = (() => {
     x.fillStyle = '#3cff8a'; for (const l of F.lifts) { const [a, b] = P([l.x, l.z]); x.fillRect(a - 5, b - 5, 10, 10); }
     if (S.floor === P_FLOOR) { const [a, b] = P([DR.x, DR.z]); x.fillStyle = '#e8b44a'; x.beginPath(); x.arc(a, b, 9, 0, 7); x.fill(); }
   }
-  return { walk, foot, clear, prompt, act, leave, step, camera: camera3, label, hint, map,
+  return { walk, foot, solidBuilding, clear, prompt, act, leave, step, camera: camera3, label, hint, map,
     get inside() { return S.inside; }, get busy() { return S.busy; }, get menu() { return S.menu; }, get floor() { return S.floor; },
     // 測試用：直接去某層（唔使行）
     _goto(k) { if (!S.inside) { doEnter(); } if (k !== S.floor) doLift(k); }, _lifts: () => (FL[S.floor] || { lifts: [] }).lifts, _toW: toW, door: doorOut, floors: D.floors.length };
