@@ -890,7 +890,7 @@ body.touch.open .ob{display:flex}
 #omtr .me{display:inline-block;min-width:30px;margin:6px 6px 0 0;padding:5px 7px;border-radius:8px;background:rgba(255,255,255,.14);text-align:center;cursor:pointer;font-weight:900}#omtr .me.here{outline:2px solid #ffd23f}
 #ofade{position:fixed;inset:0;background:#000;opacity:0;transition:opacity .45s;pointer-events:none}
 body.open #modes,body.open #time,body.open #help{display:none}
-body.open #hud{top:auto;bottom:10px;left:12px}
+body.open #hud{top:auto;bottom:36px;left:12px}
 body.touch.open #hud{bottom:8px;top:auto;left:50%;transform:translateX(-50%);text-align:center}
 </style>`);
   document.body.insertAdjacentHTML('beforeend', `<div id="oui" hidden><div id="omoney"></div><div id="ospd" hidden><canvas id="ospdc" width="220" height="220"></canvas></div><div id="omis" hidden></div><div id="oprompt" hidden></div>

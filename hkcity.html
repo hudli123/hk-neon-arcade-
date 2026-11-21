@@ -12,7 +12,7 @@ canvas{display:block}
 #modes{position:fixed;right:12px;top:10px;display:flex;gap:8px}
 #compass{position:fixed;right:14px;top:96px;width:46px;height:46px;border-radius:50%;background:rgba(20,30,50,.72);border:1px solid rgba(160,210,255,.5);pointer-events:none;z-index:5}#compass i{position:absolute;inset:0;display:block}#compass b{position:absolute;left:50%;top:1px;transform:translateX(-50%);color:#ff5a5a;font:900 13px sans-serif}#compass s{position:absolute;left:50%;top:15px;width:0;height:0;margin-left:-5px;border:5px solid transparent;border-bottom:9px solid #ff5a5a;border-top:0}body.open #compass,body.agent-on #compass{display:none}   /* 開放世界有小地圖（北向上 + N） */
 #modes button,#time button{font:bold 14px inherit;font-family:inherit;color:#fff;background:rgba(20,30,50,.7);border:1px solid rgba(160,210,255,.5);border-radius:18px;padding:7px 14px;cursor:pointer}
-#modes button.on{background:linear-gradient(90deg,#1f5f9b,#1fb5a8)}
+#modes button.on,#time button.on{background:linear-gradient(90deg,#1f5f9b,#1fb5a8)}
 @media (max-width:480px){#modes{gap:5px}#modes button{padding:7px 9px;white-space:nowrap}}
 #time{position:fixed;right:12px;top:52px;display:flex;gap:8px}
 #helpbox{position:fixed;inset:0;z-index:50;background:rgba(4,6,14,.7);display:flex;align-items:center;justify-content:center;padding:14px}
@@ -1298,6 +1298,8 @@ function grassDirt(mat, wood) {
   const bg = new THREE.PlaneGeometry(24000, 24000, 64, 64); bg.rotateX(-Math.PI / 2);   // v74：切細（375 米一格）——得兩個 24 公里大三角形嘅話，部分繪圖器深度計唔準，成塊底板會蓋過路面同行人路
   const buv = bg.attributes.uv; for (let i = 0; i < buv.count; i++) buv.setXY(i, buv.getX(i) * 24000 / 12, buv.getY(i) * 24000 / 12);   // 空地：粗混凝土
   const base = new THREE.Mesh(bg, new THREE.MeshLambertMaterial({ color: 0x4a4b50, map: GTEX.asph })); base.position.y = -0.05; scene.add(base); PAVM.push(base);
+  base.material.onBeforeCompile = (sh) => {   // 夜晚霧推到好遠（燈光睇得遠），地圖外嘅底板會係一條黑邊：底板自己喺 2.5–7 公里淡出去地平線色
+    sh.uniforms.night = U.night; sh.fragmentShader = 'uniform float night;\n' + sh.fragmentShader.replace('#include <fog_fragment>', '#include <fog_fragment>\n#ifdef USE_FOG\n gl_FragColor.rgb = mix(gl_FragColor.rgb, fogColor, night * smoothstep(2500., 7000., fogDepth));\n#endif'); };
 }
 
 // ---------- 運輸署數碼輔助交通設備：路面標記（白 / 黃）、過路線、黃格、路邊欄杆 ----------
@@ -2221,7 +2223,7 @@ const HYDP = (() => {
   } };
 })();
 const lamps = (() => { const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(lampPts, 3));
-  const m = new THREE.Points(g, new THREE.PointsMaterial({ map: GLOW, color: 0xffd9a0, size: 14, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(m); return m; })();
+  const m = new THREE.Points(g, new THREE.PointsMaterial({ map: GLOW, color: 0xffd9a0, size: 5, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })); scene.add(m); return m; })();
 
 // ---------- 車流：私家車、的士、巴士（香港靠左行）----------
 const TRAFFIC = (() => {
@@ -3110,7 +3112,8 @@ function nearestRoad(x, z) {   // 最近馬路中線上嘅一點 + 路名 + 方�
 }
 let night = 1, nightTarget = 1;
 const _cmpV = new THREE.Vector3(); let _cmpA = 1e9;
-$('tNight').onclick = () => { nightTarget = 1; }; $('tDay').onclick = () => { nightTarget = 0; };
+const syncTime = () => { $('tNight').classList.toggle('on', nightTarget > 0.5); $('tDay').classList.toggle('on', nightTarget <= 0.5); };
+$('tNight').onclick = () => { nightTarget = 1; syncTime(); }; $('tDay').onclick = () => { nightTarget = 0; syncTime(); }; syncTime();
 scene.fog = new THREE.Fog(0x0c1224, 300, 6500);
 
 window.WEATHER = (() => {
@@ -3123,7 +3126,7 @@ window.WEATHER = (() => {
   const fogRain = new THREE.Color(0x5a6577);
   function syncUI() {
     const on = manual || autoLeft > 0, t = $('tRain'), o = $('orain');
-    if (t) { const label = on ? '☀️ 停雨' : '🌧 落雨'; if (t.textContent !== label) t.textContent = label; t.hidden = cam.mode !== 'fly' && cam.mode !== 'walk'; }
+    if (t) { const label = on ? '☀️ 停雨' : '🌧 落雨'; if (t.textContent !== label) t.textContent = label; t.classList.toggle('on', on); t.hidden = cam.mode !== 'fly' && cam.mode !== 'walk'; }
     if (o) { const label = on ? '☀️' : '🌧'; if (o.textContent !== label) o.textContent = label; }
   }
   function set(on) {
@@ -3239,7 +3242,7 @@ const GAME = {
   },
 };
 window.nathan = () => { const r = ROADS.find((q) => q.name[1] === 'NATHAN ROAD' && q.pts.length > 1); const m = r.pts[Math.floor(r.pts.length / 2)], n = r.pts[Math.min(r.pts.length - 1, Math.floor(r.pts.length / 2) + 1)]; return { x: m[0], z: m[1], yaw: Math.atan2(n[0] - m[0], n[1] - m[1]) }; };
-window.GAME = GAME; window.__render = () => { CULL.update(); renderer.render(scene, camera); }; window.cam = cam; window.setMode = setMode; window.setNight = (v) => { night = nightTarget = v; };
+window.GAME = GAME; window.__render = () => { CULL.update(); renderer.render(scene, camera); }; window.cam = cam; window.setMode = setMode; window.setNight = (v) => { night = nightTarget = v; syncTime(); };
 setMode('fly');
 let last = performance.now();
 let prT = 0, prN = 0;
