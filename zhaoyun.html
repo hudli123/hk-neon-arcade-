@@ -103,10 +103,12 @@ body{font-family:var(--pf-body)}
 #title.pf-ready .pf-deck p{margin:0;font:800 clamp(15px,1.65vw,22px)/1.1 var(--pf-body);color:var(--pf-ink);opacity:1;letter-spacing:-.04em}
 .pf-format{letter-spacing:.12em;font-size:10px;text-align:right}
 #title.pf-ready #pick{display:flex;flex-wrap:wrap;gap:0;align-items:center;justify-content:space-between;width:100%}
-.pf-roster{order:-1;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));width:100%;gap:clamp(8px,1.7vw,22px);margin-bottom:14px}
+.pf-roster{order:-1;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));width:100%;gap:clamp(6px,1.1vw,16px);margin-bottom:14px}
 #pick .fbtn{--tint:#bcadf1;--deep:#795dc2;box-sizing:border-box;display:block;overflow:hidden;position:relative;margin:0;text-align:left;letter-spacing:0;border:2px solid var(--pf-ink)!important;border-radius:3px;color:var(--pf-ink);background:var(--pf-paper);box-shadow:4px 5px 0 var(--pf-ink);padding:0;font:inherit;transition:transform .14s ease-out,box-shadow .14s ease-out}
 #pick .fbtn[data-f=tariff]{--tint:#ffb56f;--deep:#d46a3c}
 #pick .fbtn[data-f=chip]{--tint:#9de3ba;--deep:#51a995}
+#pick .fbtn[data-f=tsar]{--tint:#b9dcf5;--deep:#5b8fc0}
+#pick .fbtn[data-f=drone]{--tint:#d3e29a;--deep:#7c9a3e}
 #pick .fbtn:hover:enabled,#pick .fbtn:focus-visible{transform:translate(-2px,-4px);box-shadow:6px 8px var(--pf-ink);outline:2px solid white;outline-offset:1px}
 #pick .fbtn:active:enabled{transform:translate(3px,3px);box-shadow:1px 2px var(--pf-ink)}
 #pick .fbtn.pickme{outline:3px solid var(--pf-red);outline-offset:3px}
@@ -117,7 +119,7 @@ body{font-family:var(--pf-body)}
 .fbtn:hover:enabled .pf-art img{transform:scale(1.045) rotate(-1deg);transform-origin:50% 100%}
 .pf-move{position:absolute;left:9px;bottom:8px;padding:4px 7px;color:white;background:#211b29;transform:rotate(-3deg);font-size:9px;letter-spacing:.09em}
 .pf-fightername{display:flex;align-items:center;justify-content:space-between;gap:5px;border-top:2px solid var(--pf-ink);padding:9px 11px 10px;min-height:25px;box-sizing:border-box}
-.pf-fightername b{font:italic 900 clamp(19px,2.45vw,32px)/1 var(--pf-display);letter-spacing:-.065em;text-transform:uppercase}
+.pf-fightername b{font:italic 900 clamp(13px,1.5vw,21px)/1 var(--pf-display);letter-spacing:-.065em;text-transform:uppercase}
 .pf-fightername i{background:var(--pf-ink);color:var(--pf-paper);border-radius:50%;width:24px;height:24px;flex:none;font:800 17px/24px Arial,sans-serif;text-align:center}
 #pick .pf-config{display:flex;align-items:center;gap:7px;flex:1 1 auto!important;font-size:11px!important;opacity:1!important;margin:0!important;letter-spacing:.045em}
 #dp2,#pick #dnet input{border:1px solid #7c746b!important;color:#25212b!important;background:var(--pf-paper)!important;font:700 12px/1.2 var(--pf-body)!important;padding:5px 10px!important;border-radius:3px!important}
@@ -199,13 +201,13 @@ body.touch #dzoom button{width:29px!important;height:29px!important}
 body.touch #mini{left:12px;top:10px;right:auto;width:52px;height:52px}
 body.touch #photoPrint{bottom:auto;top:72px;left:12px}
 #pause #pkeys{margin:9px auto;line-height:1.15}
-@media(max-width:720px){.pf-lobby{padding:14px 17px}.pf-art{height:clamp(100px,20vh,180px)}.pf-fightername{padding:7px 6px}.pf-fightername i{width:18px;height:18px;font-size:12px;line-height:18px}.pf-fightername b{font-size:clamp(12px,2.7vw,21px)}.pf-move{font-size:7px;left:4px;bottom:5px;padding:2px 4px}.pf-edition{padding:4px 7px}.pf-edition small{font-size:7px}.pf-format{font-size:8px}.pf-lobbytip{font-size:11px}.pf-roster{gap:8px}#photoPrint{max-width:190px}.pf-printimage{width:52px;height:54px}.pf-printimage canvas{width:32px;height:25px;top:-6px}}
+@media(max-width:720px){.pf-lobby{padding:14px 17px}.pf-art{height:clamp(100px,20vh,180px)}.pf-fightername{padding:7px 6px}.pf-fightername i{width:18px;height:18px;font-size:12px;line-height:18px}.pf-fightername b{font-size:clamp(9px,1.7vw,13px)}.pf-move{font-size:7px;left:4px;bottom:5px;padding:2px 4px}.pf-edition{padding:4px 7px}.pf-edition small{font-size:7px}.pf-format{font-size:8px}.pf-lobbytip{font-size:11px}.pf-roster{gap:8px}#photoPrint{max-width:190px}.pf-printimage{width:52px;height:54px}.pf-printimage canvas{width:32px;height:25px;top:-6px}}
 @media(max-width:520px) and (orientation:portrait){.pf-lobby{justify-content:flex-start;padding-top:20px}.pf-head{flex-wrap:wrap;gap:6px}.pf-roster{grid-template-columns:1fr;gap:8px}.pf-art{height:86px;width:39%;flex:none}.pf-art img{height:108%}#pick .fbtn{display:flex;flex-direction:row;width:100%;align-items:stretch}.pf-fightername{flex:1;border-top:0;border-left:2px solid var(--pf-ink);padding:8px 12px}.pf-fightername b{font-size:21px}.pf-config{flex-wrap:wrap}.pf-edition{margin:2px 0}.pf-head h1{font-size:43px}#photoObjective{max-width:178px}}
 @media(max-height:520px) and (orientation:landscape){
  .pf-lobby{max-width:900px;padding:8px clamp(17px,4vw,42px);justify-content:center}.pf-mast{padding-bottom:4px}.pf-brand{font-size:13px}.pf-signal{height:12px}#title #dlang{font-size:10px;padding:3px 9px}
  .pf-head{padding:6px 0}.pf-edition small{font-size:7px}.pf-edition b{font-size:16px}.pf-edition{padding:3px 7px}
  #title.pf-ready h1,body.en #title.pf-ready h1{font-size:clamp(31px,9.5vh,44px)}.pf-deck{padding:7px 0}.pf-deck p{font-size:14px!important}.pf-format{font-size:8px}
- .pf-roster{gap:10px;margin-bottom:8px}.pf-art{height:clamp(72px,24vh,120px)}.pf-fightername{padding:4px 7px}.pf-fightername b{font-size:17px}.pf-fightername i{height:16px;width:16px;font-size:12px;line-height:16px}
+ .pf-roster{gap:8px;margin-bottom:8px}.pf-art{height:clamp(72px,24vh,120px)}.pf-fightername{padding:4px 6px}.pf-fightername b{font-size:12px}.pf-fightername i{height:16px;width:16px;font-size:12px;line-height:16px}
  .pf-move{font-size:7px}.pf-lobbytip{font-size:10px;margin-top:5px;padding-top:5px;gap:7px}.pf-lobbytip .pf-camera{transform:scale(.72)}
  #pick .pf-config,.pf-rooms summary{font-size:9px!important}#d2pl{font-size:10px}#dp2{font-size:10px!important;padding:3px 5px!important}
  body.playing #dhud{width:min(610px,calc(100vw - 156px));top:6px;grid-template-columns:minmax(0,1fr) 44px minmax(0,1fr);gap:5px}
@@ -1231,7 +1233,7 @@ const scaleMove = (m, k) => ({ ...m, dur: m.dur * k.dur, range: m.range + k.rang
 const N_GY = [N[2], N[1], N[4], { ...N[0], anim: 'chop', arc: 120 }, N[4], N[5]].map((m) => scaleMove(m, { dur: 1.18, range: 1.2, arc: 170, dmg: 1.35 }));
 const CH_GY = CH.map((m) => scaleMove(m, { dur: 1.12, range: 1.4, arc: 0, dmg: 1.3 }));
 // 火箭商人：冇武器，拳腳為主 — 同傷同節奏，範圍細、弧窄、步幅短
-window.FIST_RIG = { musk: 1, trump: 1, jensen: 1 };   // 名人亂鬥冇武器嘅 Meshy 角色：用拳腳 bank
+window.FIST_RIG = { musk: 1, trump: 1, jensen: 1, putin: 1, zelen: 1 };   // 名人亂鬥冇武器嘅 Meshy 角色：用拳腳 bank
 window.HERO_MOVES = null;   // null|'fist'（名人亂鬥 musk 先會 set 'fist'）
 window.MUSOU_GAIN = 1;   // 名人亂鬥個別鬥士嘅氣速（預設 1，正常模式唔變）
 const N_FIST = [
