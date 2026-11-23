@@ -490,11 +490,11 @@ const photoShow = (() => {
     SND.noise(.075,.13,2900,700,'highpass');SND.tone(790,.08,'triangle',.09,.8,.08);SND.tone(1160,.12,'sine',.06,1,.19);
   }
   const hitWords={
-    rocket:[T('咻！','ZIP!'),T('升空！','LIFTOFF!'),T('有冇保養？','WARRANTY?!')],
-    tariff:[T('蓋印！','STAMP!'),T('加價！','MARKUP!'),T('埋單！','PAY UP!')],
-    chip:[T('叮！','PING!'),T('超頻！','OVERCLOCK!'),T('窒機！','BUFFERING!')],
-    tsar:[T('凍！','FREEZE!'),T('咬！','CHOMP!'),T('冇表情！','NO COMMENT!')],
-    drone:[T('嗡！','BZZT!'),T('鎖定！','LOCKED!'),T('落！','INCOMING!')]
+    rocket:[T('啪！','POW!'),T('嘭！','BAM!'),T('轟！','KA-POW!')],
+    tariff:[T('啪！','POW!'),T('嘭！','BAM!'),T('轟！','KA-POW!')],
+    chip:[T('啪！','POW!'),T('嘭！','BAM!'),T('轟！','KA-POW!')],
+    tsar:[T('啪！','POW!'),T('嘭！','BAM!'),T('主力盡出！','ALL IN!')],
+    drone:[T('啪！','POW!'),T('嘭！','BAM!'),T('轟！','KA-POW!')]
   };
   const small=[0,0];
   function hit(target,delta){
