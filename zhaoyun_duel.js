@@ -54,7 +54,7 @@
   };
   // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
   const MESH = { rocket: 'musk', tariff: 'trump', chip: 'jensen', tsar: 'putin', drone: 'zelen' };   // 鬥士 → Meshy 模型（冇載到就用返趙雲／張郃）
-  // ===== 音效：名人亂鬥冇刀劍。出拳 = 風聲（合成），打中 = 拳聲（Kenney impactPunch，本身已經係），每個角色加一個細聲 =====
+  // ===== 音效：名人亂鬥冇刀劍。全部用 zy_sfx_duel.js（Ho 逐個揀嘅 CC0 錄音）；未載到就用返原本嘅聲 =====
   const addSfx = (o) => {
     if (!o) return; window.SFX = Object.assign(window.SFX || {}, o);
     const c = SND.ctx; if (!c) return;   // SND.init() 已經行咗：補解碼
@@ -63,9 +63,15 @@
       c.decodeAudioData(u8.buffer, (b) => (SND.buf[name] = SND.buf[name] || []).push(b), () => {});
     }
   };
-  SND.swing = function (big) { if (!this.ok('sw', 0.05)) return; window.__sndLog && window.__sndLog.push('whoosh'); this.noise(big ? 0.24 : 0.15, big ? 0.3 : 0.2, big ? 260 : 340, big ? 1100 : 1500, 'bandpass', 0, null, 0.9); };
-  SND.musou = function () { if (!this.ctx) return; this.sample('fire', 0.8, 0.6); this.tone(60, 1.2, 'sawtooth', 0.2, 2.2); this.noise(1.4, 0.3, 300, 2600, 'lowpass'); };   // 火箭升空（唔再用鑼同龍吼）
-  SND.sting = function () { if (!this.ctx) return; window.__sndLog && window.__sndLog.push('sting'); this.sample('sting', 0.7); this.tone(196, 0.5, 'triangle', 0.14, 2); this.tone(294, 0.5, 'triangle', 0.1, 2, 0.06); this.noise(0.45, 0.16, 500, 5000, 'bandpass'); };
+  const sndLog = (n) => { window.__sndLog && window.__sndLog.push(n); };
+  const hit0 = SND.hit;
+  SND.swing = function (big) { if (!this.ok('sw', 0.05)) return; sndLog('whoosh'); if (this.sample('whoosh', big ? 0.8 : 0.55, big ? rand(0.75, 0.85) : rand(0.92, 1.1))) return; this.noise(big ? 0.24 : 0.15, big ? 0.3 : 0.2, big ? 260 : 340, big ? 1100 : 1500, 'bandpass', 0, null, 0.9); };
+  SND.hit = function (n, heavy) {
+    if (!(this.buf && this.buf[heavy ? 'heavyp' : 'punch'])) return hit0.call(this, n, heavy);
+    if (!this.ok('hit', 0.03)) return; sndLog(heavy ? 'heavyp' : 'punch'); this.sample(heavy ? 'heavyp' : 'punch', heavy ? 0.9 : 0.7, rand(0.9, 1.1));
+  };
+  SND.musou = function () { if (!this.ctx) return; sndLog('rocket'); if (this.sample('rocket', 0.8)) return; this.tone(60, 1.2, 'sawtooth', 0.2, 2.2); this.noise(1.4, 0.3, 300, 2600, 'lowpass'); };   // 火箭升空（唔再用鑼同龍吼）
+  SND.sting = function () { if (!this.ctx) return; sndLog('sting'); if (this.sample('sting', 0.8)) return; this.tone(196, 0.5, 'triangle', 0.14, 2); this.tone(294, 0.5, 'triangle', 0.1, 2, 0.06); this.noise(0.45, 0.16, 500, 5000, 'bandpass'); };
   const CSND = { elec: ['zap', .3], fire: ['fire', .4], smoke: ['puff', .5], frost: ['ice', .4], spark: ['buzz', .35] };   // 拳效 → 角色聲
   const charSnd = (fx) => { const c = CSND[fx]; if (c && SND.ok('c_' + fx, 0.22)) { window.__sndLog && window.__sndLog.push(c[0]); SND.sample(c[0], c[1], rand(.92, 1.1)); } };
   const muskReady = (async () => {
