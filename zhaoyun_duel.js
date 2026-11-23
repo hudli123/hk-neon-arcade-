@@ -39,11 +39,11 @@
 
   // ===== 四個名人（私人版）。換 Meshy 模型時只需改 rig；絕招邏輯喺下面 cast() =====
   const FIGHTERS = {
-    rocket: { name: T('火箭商人', 'Rocket Tycoon'), short: T('火箭', 'Rocket'), rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: T('火鳳凰降臨', 'Phoenix Rocket'), specHint: T('射火箭上天再炸落嚟', 'Rocket strike from the sky'), mGain: .5 },
-    tariff: { name: T('關稅大帝', 'Tariff Emperor'), short: T('關稅', 'Tariff'), rig: 'zy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: T('關稅牆！', 'Tariff Wall!'), specHint: T('火牆封住對手 5 秒', 'Fire wall trap, 5 seconds') },
-    chip:   { name: T('晶片教主', 'Chip Guru'), short: T('晶片', 'Chip'), rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: T('晶片生成', 'Chip Storm'), specHint: T('28 塊晶片追蹤', '28 homing chips') },
-    tsar:   { name: T('冰原沙皇', 'Tundra Tsar'), short: T('沙皇', 'Tsar'), rig: 'zy', col: '#9fd8ff', hp: 420, scale: 1, spec: 'bear', specName: T('熊出沒！', 'Bear Attack!'), specHint: T('隻熊追咬對手 5 秒', 'A bear chases and bites, 5 seconds') },
-    drone:  { name: T('澤連司機', 'Drone Driver'), short: T('司機', 'Driver'), rig: 'zy', col: '#8fc43a', hp: 380, scale: 1, spec: 'drones', specName: T('無人機群', 'Drone Swarm'), specHint: T('6 架無人機逐架俯衝', '6 drones dive one by one'), mGain: .5 },
+    rocket: { name: T('火箭商人', 'Rocket Tycoon'), short: T('火箭', 'Rocket'), rig: 'zy', col: '#ff5a3c', hp: 400, scale: 1, spec: 'rocket', specName: T('火箭降臨', 'Phoenix Rocket'), specHint: T('射火箭上天再炸落嚟', 'Rocket strike from the sky'), mGain: .5 },
+    tariff: { name: T('關稅大帝', 'Tariff Emperor'), short: T('關稅', 'Tariff'), rig: 'zy', col: '#ffd24a', hp: 440, scale: 1, spec: 'wall', specName: T('關稅護城牆', 'Tariff Wall!'), specHint: T('火牆封住對手 5 秒', 'Fire wall trap, 5 seconds') },
+    chip:   { name: T('晶片教主', 'Chip Guru'), short: T('晶片', 'Chip'), rig: 'zy', col: '#39ff14', hp: 400, scale: 1, spec: 'chips', specName: T('晶片集結', 'Chip Storm'), specHint: T('28 塊晶片追蹤', '28 homing chips') },
+    tsar:   { name: T('冰原沙皇', 'Tundra Tsar'), short: T('沙皇', 'Tsar'), rig: 'zy', col: '#9fd8ff', hp: 420, scale: 1, spec: 'bear', specName: T('鋼鐵「熊」流', 'Bear Attack!'), specHint: T('隻熊追咬對手 5 秒', 'A bear chases and bites, 5 seconds') },
+    drone:  { name: T('澤連司機', 'Drone Driver'), short: T('司機', 'Driver'), rig: 'zy', col: '#8fc43a', hp: 380, scale: 1, spec: 'drones', specName: T('無人機攻擊', 'Drone Swarm'), specHint: T('6 架無人機逐架俯衝', '6 drones dive one by one'), mGain: .5 },
   };
   const HEADLINE = {
     rocket: (w) => T(`【突發】火箭商人嘅火箭落返自己頭上；${w}：「唔關我事」`, `BREAKING: Rocket Tycoon's rocket lands on his own head. ${w}: "Not my problem."`),
@@ -599,7 +599,7 @@ function dressStudio(){
   const rule=document.createElement('div');rule.className='pf-format';rule.textContent=T('三局兩勝　/　每局 60 秒','BEST OF THREE   /   60 SEC ROUNDS');
   intro.textContent=T('揀一位鬥士開波','Pick a fighter to play');deck.append(intro,rule);panel.append(deck);
   const roster=document.createElement('div');roster.className='pf-roster';
-  const subtitles={rocket:T('火鳳凰火箭','Phoenix Rocket'),tariff:T('關稅火牆','Tariff Wall'),chip:T('追蹤晶片風暴','Chip Storm'),tsar:T('熊出沒','Bear Attack'),drone:T('無人機群','Drone Swarm')};
+  const subtitles={rocket:T('火箭降臨','Phoenix Rocket'),tariff:T('關稅護城牆','Tariff Wall'),chip:T('晶片集結','Chip Storm'),tsar:T('鋼鐵「熊」流','Bear Attack'),drone:T('無人機攻擊','Drone Swarm')};
   for(const button of Array.from(pick.querySelectorAll('.fbtn'))){
     const k=button.dataset.f, f=FIGHTERS[k];
     const art=document.createElement('span');art.className='pf-art';
@@ -860,7 +860,7 @@ function makeResults(win){
   };
   const clearRam = () => { if (RAM) { if (RAM.who === 'p1' && player.st === 'ram') player.st = 'idle'; if (RAM.who === 'p2' && boss.st === RAMST) boss.st = 0; RAM = null; } };
 
-  // ===== 火鳳凰降臨（火箭商人絕招）：0–0.55s 飛上天 → 0.55–1s 紅圈跟目標 → 1–1.3s 俯衝 → 7.5m 大爆炸 =====
+  // ===== 火箭降臨（火箭商人絕招）：0–0.55s 飛上天 → 0.55–1s 紅圈跟目標 → 1–1.3s 俯衝 → 7.5m 大爆炸 =====
   const PHXST = 24, PHX_R = 10;
   let PHX = null;
   const phxMat = (c, o = .95) => new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: o, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide, fog: false });
