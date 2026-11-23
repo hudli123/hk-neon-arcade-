@@ -223,6 +223,7 @@ body.touch #photoPrint{bottom:auto;top:72px;left:12px}
 #banner.pf-special[data-f=tariff]{border-left-color:#ffad6d}#banner.pf-special[data-f=chip]{border-left-color:#9bebb4}
 #banner.pf-special small{display:block;font:800 10px/1.5 var(--pf-body);letter-spacing:.10em;text-transform:uppercase}
 @media(max-height:500px){#banner.pf-special{padding:3px 10px 5px}#banner.pf-special small{font-size:8px}}
+#cine{position:fixed;inset:0;pointer-events:none;z-index:3;opacity:0;transition:opacity .12s;box-sizing:border-box;border-block:8vh solid #08060c;background:radial-gradient(ellipse at 50% 45%,transparent 40%,#0a0810b8 100%)}#cine.on{opacity:1}body.cine-on #banner.pf-special{animation:none;opacity:1;top:auto;bottom:17%}
 #title.pf-ready .bgm-credit{position:static;text-align:left;margin-top:10px;color:#493f49;font-size:9px;line-height:1.25;opacity:.75}
 #over .pf-tally+.pf-tally{margin-top:5px}
 #rotate{z-index:50}
@@ -2152,7 +2153,9 @@ requestAnimationFrame(frame);
       heroBody.rotation.x = 0; heroBody.position.y = 0;
       if (hidN < 3) { C.H.each((mm) => { mm.visible = false; }); hidN++; }   // 程式人形係第一次 pose 先整出嚟
       let a, mode = 'hand';
-      if (over && p.hp <= 0) { a = use('Dead'); loopT += rdt; at(a, Math.min(loopT, 2.9)); }
+      const cn = window.CINE;   // 名人亂鬥絕招特寫：舉手動作（zy_clips_cine.js）
+      if (cn && cn.who === 'p1' && R.actions[cn.clip]) { a = use(cn.clip); at(a, cn.at); mode = 'idle'; }
+      else if (over && p.hp <= 0) { a = use('Dead'); loopT += rdt; at(a, Math.min(loopT, 2.9)); }
       else if (over) { a = use('victory'); loopT += rdt; at(a, loopT % a.getClip().duration); }
       else if ((p.st === 'attack' || p.st === 'charge') && m && LOOP[m.anim]) {
         const [nm, t0, t1, hz] = LOOP[m.anim]; a = use(nm); loopT += rdt * hz; at(a, t0 + (t1 - t0) * (loopT % 1));
@@ -2206,6 +2209,7 @@ requestAnimationFrame(frame);
     R.group.visible = false; bossG.add(R.group); R.axis = R.handAxis(AX0);
     const fist = !!window.FIST_RIG[id];
     if (fist && window.MCLIPS_FIST && window.addClipBank) window.addClipBank(R, window.MCLIPS_FIST, window.MRIG[id]);
+    if (fist && window.MCLIPS_CINE && window.addClipBank) window.addClipBank(R, window.MCLIPS_CINE, window.MRIG[id]);
     BOSSRIGS[id] = { R, hipY: window.MRIG[id].bones[0].t[1], id, fist };
     return BOSSRIGS[id];
   }
@@ -2245,8 +2249,9 @@ requestAnimationFrame(frame);
       if (dt > 1e-4) mv += ((Math.hypot(b.x - lx, b.z - lz) / dt > 1 ? 1 : 0) - mv) * 0.3;
       lx = b.x; lz = b.z;
       bossG.rotation.x = 0;
-      let a;
-      if (st === 1) { a = use('Charged_Slash'); at(a, lin(b.t, 0, 0.85, 0.3, 1.0)); }
+      let a; const cn = window.CINE;
+      if (cn && cn.who === 'p2' && R.actions[cn.clip]) { a = use(cn.clip); at(a, cn.at); }   // 絕招特寫
+      else if (st === 1) { a = use('Charged_Slash'); at(a, lin(b.t, 0, 0.85, 0.3, 1.0)); }
       else if (st === 2) { a = use('Charged_Slash'); at(a, b.t < 0.18 ? lin(b.t, 0, 0.18, 1.0, 1.17) : lin(b.t, 0.18, 0.6, 1.17, 1.6)); }
       else if (st === 3) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.6, 0.3, 0.55)); }
       else if (st === 6) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.12, 0.55, 0.73)); }
@@ -2558,7 +2563,7 @@ window.ZY_ASSETS.then(() => { $('loading').hidden = true; $('pick').hidden = fal
   GAME.start = function (...a) { run++; const f = el[FIGHT[run % 2]]; if (f) f.currentTime = 0; return start0(...a); };
   if (typeof hitBoss === 'function') {   // 打中 boss：刀劍碰撞聲
     const hb0 = hitBoss;
-    hitBoss = function (...a) { if (SND.ok('clash', 0.12)) SND.sample('clash', 0.45, 0.9 + Math.random() * 0.2); return hb0.apply(this, a); };
+    hitBoss = function (...a) { if (MODE !== 'duel' && SND.ok('clash', 0.12)) SND.sample('clash', 0.45, 0.9 + Math.random() * 0.2); return hb0.apply(this, a); };
   }
   const st = document.createElement('style');
   st.textContent = '.bgm-credit{position:absolute;left:8px;right:8px;bottom:6px;font-size:10px;line-height:1.3;opacity:.55;text-align:center;pointer-events:none}'

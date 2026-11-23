@@ -54,13 +54,29 @@
   };
   // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
   const MESH = { rocket: 'musk', tariff: 'trump', chip: 'jensen', tsar: 'putin', drone: 'zelen' };   // 鬥士 → Meshy 模型（冇載到就用返趙雲／張郃）
+  // ===== 音效：名人亂鬥冇刀劍。出拳 = 風聲（合成），打中 = 拳聲（Kenney impactPunch，本身已經係），每個角色加一個細聲 =====
+  const addSfx = (o) => {
+    if (!o) return; window.SFX = Object.assign(window.SFX || {}, o);
+    const c = SND.ctx; if (!c) return;   // SND.init() 已經行咗：補解碼
+    for (const [name, list] of Object.entries(o)) for (const b64 of list) {
+      const bin = atob(b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      c.decodeAudioData(u8.buffer, (b) => (SND.buf[name] = SND.buf[name] || []).push(b), () => {});
+    }
+  };
+  SND.swing = function (big) { if (!this.ok('sw', 0.05)) return; window.__sndLog && window.__sndLog.push('whoosh'); this.noise(big ? 0.24 : 0.15, big ? 0.3 : 0.2, big ? 260 : 340, big ? 1100 : 1500, 'bandpass', 0, null, 0.9); };
+  SND.musou = function () { if (!this.ctx) return; this.sample('fire', 0.8, 0.6); this.tone(60, 1.2, 'sawtooth', 0.2, 2.2); this.noise(1.4, 0.3, 300, 2600, 'lowpass'); };   // 火箭升空（唔再用鑼同龍吼）
+  SND.sting = function () { if (!this.ctx) return; window.__sndLog && window.__sndLog.push('sting'); this.sample('sting', 0.7); this.tone(196, 0.5, 'triangle', 0.14, 2); this.tone(294, 0.5, 'triangle', 0.1, 2, 0.06); this.noise(0.45, 0.16, 500, 5000, 'bandpass'); };
+  const CSND = { elec: ['zap', .3], fire: ['fire', .4], smoke: ['puff', .5], frost: ['ice', .4], spark: ['buzz', .35] };   // 拳效 → 角色聲
+  const charSnd = (fx) => { const c = CSND[fx]; if (c && SND.ok('c_' + fx, 0.22)) { window.__sndLog && window.__sndLog.push(c[0]); SND.sample(c[0], c[1], rand(.92, 1.1)); } };
   const muskReady = (async () => {
     const get = (f) => fetch(f).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.arrayBuffer(); });
     const run = (b, f) => { const s = document.createElement('script'); s.text = new TextDecoder().decode(b) + '\n//# sourceURL=' + f; document.head.appendChild(s); };
     try { run(await get('zy_clips_fist.js'), 'zy_clips_fist.js'); } catch (e) { console.warn('fist clips load failed', e); return; }
+    const extra = [['zy_clips_cine.js', null], ['zy_sfx_duel.js', () => addSfx(window.SFX_DUEL)]].map(async ([f, then]) => {   // 絕招特寫動作 + 角色音效；載唔到照玩
+      try { run(await get(f), f); if (then) then(); } catch (e) { console.warn(f + ' load failed', e); } });
     await Promise.all(Object.values(MESH).map(async (id) => {
       try {
-        const [jb, tb] = await Promise.all([get('zy_rig_' + id + '.js'), get('zy_tex_' + id + '.webp')]);
+        const [jb, tb] = await Promise.all([get('zy_rig_' + id + '.js'), get('zy_tex_' + id + '.webp'), ...extra]);
         run(jb, 'zy_rig_' + id + '.js');
         if (window.MRIG && window.MRIG[id]) window.MRIG[id].tex = URL.createObjectURL(new Blob([tb], { type: 'image/webp' }));
       } catch (e) { console.warn(id + ' load failed', e); }
@@ -76,6 +92,7 @@
       if (!window.MRIG || !window.MRIG[id] || !window.MRIG_ATTACH) return false;
       window.MRIG_ATTACH(C, id, MUSK_SCALE);   // attach 會暫時將 C.mrig/rigUpdate 指向新 rig
       if (window.MCLIPS_FIST && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_FIST, window.MRIG[id]);
+      if (window.MCLIPS_CINE && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_CINE, window.MRIG[id]);
       heroRigs[id] = { mrig: C.mrig, rigUpdate: C.rigUpdate };
       C.mrig = heroRigs.zy.mrig; C.rigUpdate = heroRigs.zy.rigUpdate;
     }
@@ -912,7 +929,7 @@ function makeResults(win){
 
   // ---- 放絕招 ----
   D.FIGHTERS = FIGHTERS; D.state = () => ({ pr: PR.length, wall: W && W.who, wallBy: W && W.by, wallT: W && +W.t.toFixed(1), ram: RAM && RAM.who });
-  const busy = (who) => (RAM && RAM.who === who) || (W && W.by === who) || (PHX && PHX.who === who) || PR.some((o) => o.who === who);
+  const busy = (who) => !!CN || (RAM && RAM.who === who) || (W && W.by === who) || (PHX && PHX.who === who) || PR.some((o) => o.who === who);
   function specialCard(F, who) {
     const bar=$('banner');
     banner(F.specName, '#fff6dc', true);
@@ -920,10 +937,52 @@ function makeResults(win){
     const credit=document.createElement('small');credit.textContent=F.name+'   /   '+T('絕招','SPECIAL');bar.prepend(credit);
     if(who==='p1')flash(.16);
   }
+  // ===== 絕招特寫：定格 → 鏡頭飛去鬥士面前 → 舉手（Meshy「Chest_Pound_Taunt」）→ 先至出招 =====
+  const CINE_CLIP = 'Chest_Pound_Taunt', CINE_SEG = [3.45, 4.15];   // 動作入面由垂手到舉起右手嗰段（秒）
+  const cineEl = document.createElement('div'); cineEl.id = 'cine'; document.body.appendChild(cineEl);
+  let CN = null, cineCardAt = -1e9;
+  const _ch = new THREE.Vector3(), _cq = new THREE.Vector3();
+  const rigOf = (who) => who === 'p1' ? (heroRigs[MESH[D.f1]] && heroRigs[MESH[D.f1]].mrig) : (window.__bossRig && window.__bossRig.R);
+  const headOf = (who) => { const R = rigOf(who), f = who === 'p1' ? player : boss; if (R && R.bones && R.bones.Head && R.group.visible) R.bones.Head.getWorldPosition(_ch); else _ch.set(f.x, (f.y || 0) + 1.75, f.z); return _ch; };
+  const startCine = (who, dur, fire) => {
+    const F = who === 'p1' ? F1() : F2(), f = who === 'p1' ? player : boss, [fx, fz] = fwd(f.yaw);
+    const h = headOf(who), d0 = camera.position.distanceTo(h); camera.getWorldDirection(_cq);
+    const sx = -fz, sz = fx;   // 鏡頭企喺鬥士右手邊：個動作舉右手、上身轉右
+    boss.flash = 0;   // 定格嗰陣唔好停喺受擊白閃
+    CN = { who, t: 0, dur, fire, sx, sz, hid: null, from: [camera.position.x, camera.position.y, camera.position.z, camera.position.x + _cq.x * d0, camera.position.y + _cq.y * d0, camera.position.z + _cq.z * d0] };
+    window.CINE = { who, clip: CINE_CLIP, at: CINE_SEG[0] };
+    cineEl.classList.add('on'); document.body.classList.add('cine-on'); SND.sting(); if (F) { specialCard(F, who); cineCardAt = performance.now(); }
+    if (D.net === 'host') netSend({ t: 'fx', k: 'cine', who, dur });
+  };
+  const cineCam = () => {   // 喺 stepCamera 之前叫
+    const c = CN, f = c.who === 'p1' ? player : boss, o = c.who === 'p1' ? boss : player, [fx, fz] = fwd(f.yaw), h = headOf(c.who);
+    const k = 1 - Math.pow(1 - Math.min(1, c.t / .22), 3), dist = lerp(2.05, 1.75, Math.min(1, c.t / c.dur));
+    const dx = fx * .85 + c.sx * .53, dz = fz * .85 + c.sz * .53;
+    const to = [h.x + dx * dist, h.y - .25, h.z + dz * dist, h.x, h.y - .16, h.z];
+    window.__camOverride = to.map((v, i) => lerp(c.from[i], v, k));
+    if (!c.hid && Math.hypot(o.x - to[0], o.z - to[2]) < 2.6) { const R = rigOf(other(c.who)); if (R && R.group.visible) { R.group.visible = false; c.hid = R.group; } }   // 對手太近鏡頭會遮住塊面
+    const u = Math.min(1, c.t / (c.dur * .6)); window.CINE.at = lerp(CINE_SEG[0], CINE_SEG[1], u * (2 - u));   // 六成時間舉到最高，之後定住
+  };
+  const endCine = (fire) => {
+    const c = CN; if (!c) return; CN = null; window.CINE = null; cineEl.classList.remove('on'); document.body.classList.remove('cine-on');
+    if (c.hid) c.hid.visible = true; window.__camOverride = null;
+    if (fire && c.fire) c.fire();
+  };
+  const cineStep = (rdt) => {   // host／本機：成個遊戲定格，只畫畫面。true = 仲播緊
+    const c = CN; c.t += rdt;
+    const skip = c.t > .3 && (IN.musou || P2IN.spec);   // 再撳絕招掣 = 跳過
+    IN.atk = IN.chg = IN.jump = IN.dodge = IN.musou = 0; P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0;
+    if (c.t >= c.dur || skip) { endCine(true); return false; }
+    cineCam(); stepParticles(rdt * .1); syncVisuals(0, rdt); stepCamera(rdt); writeParticles(); SND.tick(); photoShow.present(rdt);
+    return true;
+  };
   const cast = (who) => {
+    const F = who === 'p1' ? F1() : F2(); if (!F || CN) return;
+    startCine(who, who === 'p2' && !D.two && !D.net ? .7 : 1.2, () => castNow(who));   // 電腦出招短啲
+  };
+  const castNow = (who) => {
     const F = who === 'p1' ? F1() : F2(); if (!F) return;
     const [x, z] = posOf(who), [tx, tz] = posOf(other(who)), a = Math.atan2(tx - x, tz - z);
-    specialCard(F,who);
     if (D.net === 'host') netSend({ t: 'fx', k: 'cast', who });
     switch (F.spec) {
       case 'rocket': castPhx(who); break;
@@ -936,7 +995,7 @@ function makeResults(win){
       case 'ram': castRam(who); break;
     }
   };
-  D.cast = cast;
+  D.cast = cast; D.cine = () => CN;
 
   // ===== 同機 2P（#2p=1 或標題剔「雙人同機」）：P2 用方向鍵 + 1/2/3/0（或 , . / Enter）操控對手 =====
   D.two = Q.get('2p') === '1'; D.m2 = 0; D.net = null;   // net: 'host' | 'guest'（網上對戰）
@@ -1071,7 +1130,9 @@ function makeResults(win){
       photoShow.receive(m.photo);
       const win = !!m.win; over0(win); setOverText(win);
     } else if (m.t === 'fx' && NET.role === 'guest' && m.k === 'cast') {
-      const F = m.who === 'p1' ? F1() : F2(); if (F) { specialCard(F,m.who); }
+      const F = m.who === 'p1' ? F1() : F2(); endCine(false); if (F && performance.now() - cineCardAt > 2500) { specialCard(F,m.who); }
+    } else if (m.t === 'fx' && NET.role === 'guest' && m.k === 'cine') {
+      endCine(false); if (m.who === 'p1' || m.who === 'p2') startCine(m.who, clamp(Number(m.dur) || 1.2, .3, 2), null);
     } else if (m.t === 'fx' && NET.role === 'guest' && m.k === 'phx') {
       if (m.ph === 0) { if (NET.phxRing) scene.remove(NET.phxRing); NET.phxRing = mkWarnRing(); NET.phxWho = m.who; scene.add(NET.phxRing); }
       else if (m.ph === 1) { if (NET.phxRing) { scene.remove(NET.phxRing); NET.phxRing = null; } phxBoom(m.x, m.z); }
@@ -1169,6 +1230,7 @@ function makeResults(win){
     if (Date.now() - NET.lastPing > 1000 && NET.ws && NET.ws.readyState === WebSocket.OPEN) { NET.lastPing = Date.now(); netSend({ t: 'ping', ts: Date.now(), rtt: NET.ping }); }
     applySnapshot(rdt); syncNetEffects(); stepPhx(rdt);   // PHX==null on guest，淨係走 stepPhxFx 爆炸效果
     if (D.two) cam2p(rdt);
+    if (CN) { CN.t += rdt; if (CN.t >= CN.dur + .5) endCine(false); else cineCam(); }   // host 出招（'cast'）就完；斷線就自己收
     stepParticles(rdt); stepChunks(rdt); stepRings(rdt); stepFires(rdt);
     syncVisuals(rdt, rdt); stepCamera(rdt); writeParticles();
     if (GAME.state === 'play' && !hud.hidden) {
@@ -1307,8 +1369,8 @@ function makeResults(win){
     const a2 = fx2 && boss.alive && [1, 2, 3, 6, 8, 9, 22].includes(boss.st);
     if (a1) handFx(heroRigs[MESH[D.f1]] && heroRigs[MESH[D.f1]].mrig, fx1, rdt);
     if (a2) handFx(window.__bossRig.R, fx2, rdt);
-    if (a1 && boss.hp < elec.pB) BURST[fx1](boss.x, boss.y, boss.z);
-    if (a2 && player.hp < elec.pP) BURST[fx2](player.x, player.y, player.z);
+    if (a1 && boss.hp < elec.pB) { BURST[fx1](boss.x, boss.y, boss.z); charSnd(fx1); }
+    if (a2 && player.hp < elec.pP) { BURST[fx2](player.x, player.y, player.z); charSnd(fx2); }
     elec.pB = boss.hp; elec.pP = player.hp;
   };
   const svE = syncVisuals;
@@ -1321,7 +1383,7 @@ function makeResults(win){
 
   const resetRound = () => {
     clearCrowd();
-    clearPR(); clearWall(); clearRam(); clearPhx(); D.aiCd = F2() && F2().spec === 'rocket' ? rand(12, 15) : rand(3.5, 5); D.specBuf = 0; D.m2 = 0; camP = camN = null; window.__camOverride = null;
+    endCine(false); clearPR(); clearWall(); clearRam(); clearPhx(); D.aiCd = F2() && F2().spec === 'rocket' ? rand(12, 15) : rand(3.5, 5); D.specBuf = 0; D.m2 = 0; camP = camN = null; window.__camOverride = null;
     if (D.net === 'host') { for (const k in NET.queue) NET.queue[k] = 0; NET.mv = null; NET.mvAt = 0; }
     Object.assign(player, { x: 0, z: 7, y: 0, vy: 0, yaw: Math.PI, hp: player.max, musou: 0, st: 'idle', t: 0, move: null, inv: 1 });
     const rivalHP = D.two ? F2().hp : OPP_HP;
@@ -1376,7 +1438,7 @@ function makeResults(win){
     makeResults(win);
   };
   const finish = (win) => {
-    over0(win); clearPR(); clearWall(); clearRam(); clearPhx(); window.__camOverride = null;
+    endCine(false); over0(win); clearPR(); clearWall(); clearRam(); clearPhx(); window.__camOverride = null;
     setOverText(win);
     if (D.net === 'host') netSend({ t: 'over', win: win ? 1 : 0, p1: D.p1, p2: D.p2, photo: photoShow.packet() });
   };
@@ -1387,6 +1449,7 @@ function makeResults(win){
       if (GAME.state === 'play') { guestTick(rdt); roundLabel(); photoShow.present(rdt); }
       return;
     }
+    if (CN) { if (GAME.state !== 'play') endCine(false); else if (cineStep(rdt)) return; }
     const live = GAME.state === 'play' && D.on;
     const guest = false;
     if (live) {
