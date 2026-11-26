@@ -4,7 +4,9 @@
   'use strict';
   const EN = typeof LANG !== 'undefined' && LANG === 'en', T = (zh, en) => EN ? en : zh;   // 英文版：#lang=en
   const ROUND_T = 60, WINS = 2, OPP_HP = 620;
-  const FRZ = 20, RAMST = 21;   // boss 自定狀態（7–9 已被 boss_ext 朱雀／三連斬／劈地用咗）
+  const FRZ = 20, RAMST = 21, BLKST = 26;   // boss 自定狀態（7–9 已被 boss_ext 朱雀／三連斬／劈地用咗；22/23/24 喺下面）
+  window.FIST_KO = 1;   // 名人亂鬥：敗方唔碎開，瞓低（Knock_Down）
+  let specHit = 0;   // 絕招傷害唔俾格擋
   const D = { round: 0, p1: 0, p2: 0, t: ROUND_T, on: false, ending: 0 };
   window.DUEL = D;
   const css = document.createElement('style');
@@ -78,7 +80,7 @@
     const get = (f) => fetch(f).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.arrayBuffer(); });
     const run = (b, f) => { const s = document.createElement('script'); s.text = new TextDecoder().decode(b) + '\n//# sourceURL=' + f; document.head.appendChild(s); };
     try { run(await get('zy_clips_fist.js'), 'zy_clips_fist.js'); } catch (e) { console.warn('fist clips load failed', e); return; }
-    const extra = [['zy_clips_cine.js', null], ['zy_sfx_duel.js', () => addSfx(window.SFX_DUEL)]].map(async ([f, then]) => {   // 絕招特寫動作 + 角色音效；載唔到照玩
+    const extra = [['zy_clips_cine.js', null], ['zy_clips_fight.js', null], ['zy_sfx_duel.js', () => addSfx(window.SFX_DUEL)]].map(async ([f, then]) => {   // 絕招特寫 + 格鬥動作 + 角色音效；載唔到照玩
       try { run(await get(f), f); if (then) then(); } catch (e) { console.warn(f + ' load failed', e); } });
     await Promise.all(Object.values(MESH).map(async (id) => {
       try {
@@ -99,6 +101,7 @@
       window.MRIG_ATTACH(C, id, MUSK_SCALE);   // attach 會暫時將 C.mrig/rigUpdate 指向新 rig
       if (window.MCLIPS_FIST && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_FIST, window.MRIG[id]);
       if (window.MCLIPS_CINE && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_CINE, window.MRIG[id]);
+      if (window.MCLIPS_FIGHT && window.addClipBank) window.addClipBank(C.mrig, window.MCLIPS_FIGHT, window.MRIG[id]);
       heroRigs[id] = { mrig: C.mrig, rigUpdate: C.rigUpdate };
       C.mrig = heroRigs.zy.mrig; C.rigUpdate = heroRigs.zy.rigUpdate;
     }
@@ -637,8 +640,8 @@ function dressStudio(){
   tip.append(icon,body);panel.append(tip);
   const credit=host.querySelector('.bgm-credit');if(credit)panel.append(credit);
   const bar=document.createElement('div');bar.id='pfControls';
-  const commands=isTouch()?[[T('拖左邊','Drag left'),T('移動','Move')],[T('攻','ATK'),T('連按出連招','Tap for combos')]]:
-    [['WASD',T('移動','Move')],['J',T('攻擊','Hit')],['K',T('蓄力','Heavy')],['L',T('閃','Dodge')],['I',T('絕招','Special')],['P',T('操作','Controls')]];
+  const commands=isTouch()?[[T('拖左邊','Drag left'),T('移動','Move')],[T('攻','ATK'),T('連按出連招','Tap for combos')],[T('擋','BLOCK'),T('格擋','Block')]]:
+    [['WASD',T('移動','Move')],['J',T('攻擊','Hit')],['K',T('蓄力','Heavy')],['L',T('閃','Dodge')],['H',T('擋','Block')],['I',T('絕招','Special')],['P',T('操作','Controls')]];
   for(const [k,v] of commands){const wrap=document.createElement('span');const key=document.createElement('kbd');key.textContent=k;wrap.append(key,document.createTextNode(' '+v));bar.append(wrap);}
   document.body.append(bar);
   $('pkeys').setAttribute('aria-label',T('操作','Controls'));
@@ -695,8 +698,8 @@ function makeResults(win){
   const posOf = (who) => who === 'p1' ? [player.x, player.z, player.yaw] : [boss.x, boss.z, boss.yaw];
   const aliveOf = (who) => who === 'p1' ? GAME.state === 'play' : boss.alive;
   const dmgTo = (who, dmg, fx, fz, big) => {
-    if (who === 'p2') { const dx = boss.x - fx, dz = boss.z - fz, d = Math.hypot(dx, dz) || 1; if (big) boss.poise = 0; boss.hitId = -1; hitBoss(dmg, big ? 12 : 5, big ? 9 : 0, dx / d, dz / d); }
-    else { const inv = player.inv; player.inv = 0; hurtPlayer(dmg, fx, fz, big); if (player.inv < inv) player.inv = inv; }
+    if (who === 'p2') { const dx = boss.x - fx, dz = boss.z - fz, d = Math.hypot(dx, dz) || 1; if (big) boss.poise = 0; boss.hitId = -1; specHit = 1; hitBoss(dmg, big ? 12 : 5, big ? 9 : 0, dx / d, dz / d); specHit = 0; }
+    else { const inv = player.inv; player.inv = 0; hurtPlayer(dmg, fx, fz, big, true); if (player.inv < inv) player.inv = inv; }
   };
   const chipDmg = (who, dmg, fx, fz) => {   // 細傷害：唔硬直、唔擊退；會打死先行正常 dmgTo
     const F = who === 'p2' ? boss : player;
@@ -1060,8 +1063,8 @@ function makeResults(win){
   const worldMove = () => { const mx = IN.mx || 0, my = IN.my || 0; if (!mx && !my) return null; const [cf, cz] = fwd(camYaw), wx = cf * my - cz * mx, wz = cz * my + cf * mx, n = Math.hypot(wx, wz) || 1; return [wx / n, wz / n]; };
   function sendIn(force = false) {
     if (NET.role !== 'guest' || GAME.state !== 'play') return;
-    const mv = worldMove(), key = JSON.stringify([mv && mv.map(v => +v.toFixed(2)), NET.c]);
-    if (force || key !== NET.lastIn || Date.now() - NET.lastInAt >= 100) { netSend({ t: 'in', mv, ...NET.c }); NET.lastIn = key; NET.lastInAt = Date.now(); }
+    const mv = worldMove(), bk = IN.block ? 1 : 0, key = JSON.stringify([mv && mv.map(v => +v.toFixed(2)), NET.c, bk]);
+    if (force || key !== NET.lastIn || Date.now() - NET.lastInAt >= 100) { netSend({ t: 'in', mv, bk, ...NET.c }); NET.lastIn = key; NET.lastInAt = Date.now(); }
   }
   const snapshot = () => ({
     t: 'snap', p: { x: player.x, y: player.y, z: player.z, yaw: player.yaw, st: player.st, tm: player.t, anim: player.move && player.move.anim, dur: player.move && player.move.dur, runT: player.runT, vy: player.vy, inv: player.inv, hp: player.hp, max: player.max, mus: player.musou, flash: player.flash, kx: player.kx, kz: player.kz, dodgeX: player.dodgeX, dodgeZ: player.dodgeZ },
@@ -1127,6 +1130,7 @@ function makeResults(win){
       const names = { a: 'atk', d: 'dash', o: 'dodge', s: 'spec' };
       for (const k of ['a', 'd', 'o', 's']) { const v = Number(m[k]); if (Number.isInteger(v) && v >= 0) { const diff = Math.min(8, Math.max(0, v - NET.c[k])); NET.queue[names[k]] = Math.min(10, NET.queue[names[k]] + diff); NET.c[k] = Math.max(NET.c[k], v); } }
       if (Array.isArray(m.mv) && m.mv.length === 2 && m.mv.every(v => Number.isFinite(v) && Math.abs(v) <= 1.01)) { NET.mv = Math.hypot(m.mv[0], m.mv[1]) > .05 ? m.mv : null; NET.mvAt = Date.now(); }
+      NET.blk = m.bk === 1;   // 格擋係按住嘅狀態，唔係逐下計
     } else if (m.t === 'snap' && NET.role === 'guest') { NET.snap = m; NET.lastSnap = Date.now(); }
     else if (m.t === 'ping' && NET.role === 'host') { netSend({ t: 'pong', ts: m.ts }); const r = Number(m.rtt); if (Number.isFinite(r) && r > 0) { NET.ping = r; updatePing(); } }
     else if (m.t === 'pong' && NET.role === 'guest') { NET.ping = Math.max(0, Date.now() - Number(m.ts)); updatePing(); }
@@ -1259,7 +1263,14 @@ function makeResults(win){
   const sb1 = stepBoss;
   stepBoss = function (dt) {
     if (photoShow.steerAI(dt)) return;
-    if (!D.two || !boss.alive) return sb1(dt);
+    if (!D.two || !boss.alive) {
+      if (boss.alive) {   // CPU 格擋：玩家近身出招時約 25% 機會擋 0.6 秒，之後 2 秒冷卻
+        const b = boss; b.blkCd = Math.max(0, (b.blkCd || 0) - dt); b.flash -= dt;
+        if (b.st === BLKST) { b.t += dt; b.blockHit = Math.max(0, (b.blockHit || 0) - dt); b.yaw += angDiff(Math.atan2(player.x - b.x, player.z - b.z), b.yaw) * Math.min(1, dt * 8); if (b.t > 0.6) { b.st = 0; b.cd = .35; } return; }
+        if (b.st === 0 && b.blkCd <= 0 && player.st === 'attack' && player.t < 0.1 && Math.hypot(player.x - b.x, player.z - b.z) < 4 && Math.random() < dt * 3.4) { b.st = BLKST; b.t = 0; b.blkCd = 2; return; }
+      }
+      return sb1(dt);
+    }
     const b = boss, hal = bossG.userData.hal;
     b2inv = Math.max(0, b2inv - dt);
     if (GAME.state !== 'play') { P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0; return; }
@@ -1268,8 +1279,11 @@ function makeResults(win){
       if (!D.on) { P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0; return; }
       for (const n in P2IN) P2IN[n] = NET.queue[n] > 0;
     }
-    if (b.st === 0 || b.st === LIGHT || b.st === DODGE || b.st === PHXST) {   // PHXST 期間 stepPhx 揸 fit
-      b.flash -= dt; b.t += dt; b.cd -= dt;
+    if (b.st === 0 || b.st === LIGHT || b.st === DODGE || b.st === PHXST || b.st === BLKST) {   // PHXST 期間 stepPhx 揸 fit；BLKST = 格擋
+      b.flash -= dt; b.t += dt; b.cd -= dt; b.blkCd = Math.max(0, (b.blkCd || 0) - dt);
+      const p2blk = D.net === 'host' ? !!NET.blk : !!keys['4'];   // P2 格擋掣：同一鍵盤撳住 4；網上對戰由 guest 送
+      if (b.st === BLKST) { b.blockHit = Math.max(0, (b.blockHit || 0) - dt); if (D.two || D.net ? !p2blk : b.t > 0.6) { b.st = 0; b.cd = 0.35; } }
+      else if (b.st === 0 && b.blkCd <= 0 && ((D.two || D.net) ? p2blk && b.cd <= 0 : (player.st === 'attack' && player.t < 0.1 && d < 4 && Math.random() < dt * 3.4))) { b.st = BLKST; b.t = 0; b.blkCd = 2; }   // 玩家近身出招：CPU 約 25% 機會擋 0.6 秒，之後 2 秒唔再擋
       b.x += b.vx * dt; b.z += b.vz * dt; b.vx *= Math.max(0, 1 - 4 * dt); b.vz *= Math.max(0, 1 - 4 * dt);
       if (b.y > 0 || b.vy > 0) { b.vy -= 22 * dt; b.y += b.vy * dt; if (b.y <= 0) { b.y = 0; b.vy = 0; } }
       if (b.st === 0) {
@@ -1300,7 +1314,17 @@ function makeResults(win){
     P2IN.atk = P2IN.dash = P2IN.dodge = P2IN.spec = 0;
   };
   const hb1 = hitBoss;
-  hitBoss = function (...a) { if ((D.two && b2inv > 0) || boss.st === PHXST) return; return hb1.apply(this, a); };   // 火鳳凰期間無敵
+  hitBoss = function (dmg, kb, launch, dx, dz) {
+    if ((D.two && b2inv > 0) || boss.st === PHXST) return;   // 火鳳凰期間無敵
+    if (boss.getUp && boss.st === 4) return;   // 起身嗰段無敵
+    if (boss.st === BLKST && launch <= 0 && !specHit && Math.abs(angDiff(Math.atan2(-dx, -dz), boss.yaw)) < 1.5) {   // 格擋：正面普通攻擊先擋到（絕招／大嘢擋唔住）
+      boss.hp -= Math.max(1, Math.round(dmg * 0.2)); boss.flash = 0.06; boss.blockHit = 0.4;
+      if (!(SND.sample && SND.sample('punch', 0.4, rand(0.9, 1.1)))) SND.hit(1, false);
+      if (boss.hp <= 0) hb1.call(this, Math.max(1, dmg * 0.05), 0, 0, dx, dz);
+      return;
+    }
+    return hb1.apply(this, arguments);
+  };
   // 2P 鏡頭：側面望住兩個人，距離跟兩人相隔
   let camN = null, camP = null;
   const cam2p = (rdt) => {
@@ -1393,7 +1417,7 @@ function makeResults(win){
     if (D.net === 'host') { for (const k in NET.queue) NET.queue[k] = 0; NET.mv = null; NET.mvAt = 0; }
     Object.assign(player, { x: 0, z: 7, y: 0, vy: 0, yaw: Math.PI, hp: player.max, musou: 0, st: 'idle', t: 0, move: null, inv: 1 });
     const rivalHP = D.two ? F2().hp : OPP_HP;
-    Object.assign(boss, { alive: true, spawned: true, hp: rivalHP, max: rivalHP, st: 0, t: 0, cd: 1.2, x: 0, z: -7, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0, poise: 60, dashHit: 0 });
+    Object.assign(boss, { alive: true, spawned: true, hp: rivalHP, max: rivalHP, st: 0, t: 0, cd: 1.2, x: 0, z: -7, y: 0, vx: 0, vz: 0, vy: 0, yaw: 0, poise: 60, dashHit: 0, getUp: 0, kd: 0, blockHit: 0, blkCd: 0 });
     bossG.visible = true; $('boss').hidden = true; D.lastBossHp = boss.hp; D.lastPHp = player.hp;
     D.t = ROUND_T; D.ending = 0; D.on = true;
     b2inv = 0; photoShow.resetRound(); roundLabel();
@@ -1502,8 +1526,12 @@ function makeResults(win){
   // 標題文字
   const t = document.getElementById('title');
   if (t) { const h = t.querySelector('h1'); if (h) h.textContent = T('名人亂鬥', 'CELEBRITY BRAWL'); document.title = T('名人亂鬥', 'Celebrity Brawl'); const p = t.querySelector('p'); if (p) p.textContent = T('揀你嘅鬥士，一對一，三局兩勝，每局 60 秒。氣滿撳「絕招」。', 'Pick your fighter. One on one, best of 3 rounds, 60 seconds each. Press SPECIAL when the bar is full.'); }
-  try { TX.goal = T('目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！', 'GOAL: win 2 of 3 rounds, 60 seconds each. Hitting fills your bar. Press I or C for your SPECIAL!'); TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace(/dragon rage/i, 'Special')]); TX.keys.push(['↑ ↓ ← →', T('P2 移動（雙人同機）', 'P2 move (two players, one keyboard)')], ['1 / 2 / 3 / 0', T('P2 攻擊／突進／閃避／絕招', 'P2 attack / dash / dodge / special')]); if (TX.keysTouch) TX.keysTouch = TX.keysTouch.map(([k, v]) => [k.replace('龍怒', '絕招').replace('RAGE', 'SPECIAL'), v]); if (isTouch()) TX.goal = T('目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳「絕招」掣！', 'GOAL: win 2 of 3 rounds, 60 seconds each. Hitting fills your bar. Tap SPECIAL when it is full!'); } catch (e) {}
+  try { TX.goal = T('目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳 I／C 放絕招！', 'GOAL: win 2 of 3 rounds, 60 seconds each. Hitting fills your bar. Press I or C for your SPECIAL!'); TX.bossDown = 'K.O.!'; TX.keys = TX.keys.map(([k, v]) => [k, v.replace('龍怒', '絕招').replace(/dragon rage/i, 'Special')]); TX.keys.push(['↑ ↓ ← →', T('P2 移動（雙人同機）', 'P2 move (two players, one keyboard)')], ['1 / 2 / 3 / 0', T('P2 攻擊／突進／閃避／絕招', 'P2 attack / dash / dodge / special')], ['H', T('格擋（正面普通攻擊）', 'Block (front normal hits)')], ['4', T('P2 格擋', 'P2 block')]); if (TX.keysTouch) TX.keysTouch = TX.keysTouch.map(([k, v]) => [k.replace('龍怒', '絕招').replace('RAGE', 'SPECIAL'), v]); if (isTouch()) TX.goal = T('目標：三局兩勝，每局 60 秒。打到對手氣就滿，撳「絕招」掣！', 'GOAL: win 2 of 3 rounds, 60 seconds each. Hitting fills your bar. Tap SPECIAL when it is full!'); } catch (e) {}
   const bm = $('bM'); if (bm) bm.textContent = T('絕招', 'SPECIAL');
+  { const bb = document.createElement('div'); bb.className = 'b'; bb.id = 'bB'; bb.dataset.k = 'block'; bb.textContent = T('擋', 'BLOCK'); bb.setAttribute('aria-label', T('格擋', 'Block')); bb.style.cssText = 'width:56px;height:56px;right:262px;bottom:16px;font-size:16px'; $('ctl').appendChild(bb);   // 名人亂鬥格擋掣
+    bb.addEventListener('pointerdown', (e) => { e.preventDefault(); e.stopPropagation(); touchHeld.block = true; bb.classList.add('on'); SND.init(); });
+    const bbUp = () => { touchHeld.block = false; bb.classList.remove('on'); };
+    bb.addEventListener('pointerup', bbUp); bb.addEventListener('pointercancel', bbUp); bb.addEventListener('pointerleave', bbUp); }
   const lbls = document.querySelectorAll('#me .lbl'); if (lbls[1]) lbls[1].textContent = T('絕招', 'SPECIAL');
   // 揀角：用 4 個名人掣取代趙雲／關羽掣（模型暫用趙雲／關羽頂住，等 Meshy 角色到）
   const pick = $('pick'), s0 = $('start'), sg = $('startGY');

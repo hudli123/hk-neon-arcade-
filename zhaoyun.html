@@ -1243,7 +1243,7 @@ const N_FIST = [
   { dur: .34, hits: [[.13, 11, 3, 0]], range: 2.6, arc: 100, lunge: 1.5, anim: 'hook' },
   { dur: .4, hits: [[.1, 9, 2, 0], [.24, 9, 3, 0]], range: 2.6, arc: 80, lunge: 1.5, anim: 'combo2' },
   { dur: .42, hits: [[.18, 14, 4.5, 0]], range: 2.8, arc: 110, lunge: 2, anim: 'elbow' },
-  { dur: .65, hits: [[.2, 12, 3, 0], [.34, 12, 3, 0], [.5, 16, 11, 5]], range: 2.8, arc: 140, lunge: 1.5, anim: 'bothfist', fin: 1 },
+  { dur: .65, hits: [[.2, 12, 3, 0], [.34, 12, 3, 0], [.5, 16, 11, 5]], range: 2.8, arc: 140, lunge: 1.5, anim: 'roundhouse', fin: 1 },
 ];
 const CH_FIST = [
   { dur: .56, hits: [[.26, 16, 2, 10]], range: 2.6, arc: 90, lunge: 2, anim: 'upper', name: 'C1' },
@@ -1341,6 +1341,7 @@ function readMove() {
   if (IN.bot) { mx = IN.bot[0]; my = IN.bot[1]; }
   IN.mx = mx; IN.my = my;
   IN.atkHeld = !!(keys.j || keys.z || touchHeld.atk || IN.botHold);
+  IN.block = !!(keys.h || touchHeld.block);   // 名人亂鬥格擋：撳住 H（fist 模式先有效）
 }
 
 // ============ 聲音（WebAudio 即時合成）============
@@ -1599,10 +1600,11 @@ function killSoldier(i, dx, dz, power) {
 function hitBoss(dmg, kb, launch, dx, dz) {
   boss.hp -= dmg; boss.flash = 0.08; boss.poise -= dmg;
   for (let k = 0; k < 10; k++) emit(boss.x, 2.2, boss.z, dx * rand(3, 9) + rand(-4, 4), rand(1, 7), dz * rand(3, 9) + rand(-4, 4), rand(.15, .35), rand(.6, 1.1), 0xffe0a0, 14, 3);
-  if (boss.poise <= 0 || launch > 8 && boss.poise < 25) { boss.poise = 90; boss.st = 4; boss.t = 0; boss.vx = dx * kb * 1.2; boss.vz = dz * kb * 1.2; if (launch) { boss.vy = launch * 0.8; boss.st = 5; } }
+  if (boss.poise <= 0 || launch > 8 && boss.poise < 25) { boss.poise = 90; boss.st = 4; boss.t = 0; boss.vx = dx * kb * 1.2; boss.vz = dz * kb * 1.2; if (launch) { boss.vy = launch * 0.8; boss.st = 5; if (window.__bossRig && window.__bossRig.fist) boss.getUp = 1; } }
   if (boss.hp <= 0) {
     boss.alive = false; bossG.visible = false; kos++; $('boss').hidden = true;
-    shatter(boss.x, 0, boss.z, dx, dz, 12, BOSS_PAL, 120, 1.6); ring(boss.x, boss.z, 16, 0xffc060, 0.8);
+    if (window.FIST_KO && window.__bossRig && window.__bossRig.fist) { boss.kd = 1; bossG.visible = true; }   // 名人亂鬥：唔碎開，瞓低
+    else { shatter(boss.x, 0, boss.z, dx, dz, 12, BOSS_PAL, 120, 1.6); ring(boss.x, boss.z, 16, 0xffc060, 0.8); }
     hitstop = 0.35; camShake = 1.2; flash(0.8); SND.bigboom(); SND.gong();
     banner(TX.bossDown, '#ffd24a');
     GAME.winT = 2.6;
@@ -1636,11 +1638,19 @@ function moveYaw() {
   const wx = cf * IN.my + rx * IN.mx, wz = cz * IN.my + rz * IN.mx;
   return Math.atan2(wx, wz);
 }
-function hurtPlayer(dmg, fromX, fromZ, big) {
+function hurtPlayer(dmg, fromX, fromZ, big, spec) {
   if (player.inv > 0 || player.st === 'musou' || GAME.state !== 'play') return;
+  const fist = window.HERO_MOVES === 'fist';
+  if (fist && player.st === 'block' && !big && !spec && Math.abs(angDiff(Math.atan2(fromX - player.x, fromZ - player.z), player.yaw)) < 1.4) {   // 格擋：正面普通攻擊先擋到（絕招／重擊擋唔住）
+    player.hp -= Math.max(1, Math.round(dmg * 0.2)); player.blockHit = 0.38; hurtFlash = 0.5; camShake = Math.max(camShake, 0.15);
+    if (!(SND.sample && SND.sample('punch', 0.4, rand(0.9, 1.1)))) SND.hit(1, false);
+    if (player.hp <= 0) { player.hp = 0; GAME.over(false); }
+    return;
+  }
   player.hp -= dmg; hurtFlash = 1; camShake = Math.max(camShake, big ? 0.6 : 0.25); SND.hurt(); gainMusou(dmg * 0.5);
   if (big || player.st === 'idle' || player.st === 'run' || player.st === 'attack') {
     player.st = 'hurt'; player.t = 0; player.move = null; player.inv = big ? 1.1 : 0.45;
+    if (fist && big) { player.bigHurt = 1; player.inv = Math.max(player.inv, 1.75); }   // 擊倒＋起身一共 1.7 秒，期間無敵
     const dx = player.x - fromX, dz = player.z - fromZ, d = Math.hypot(dx, dz) || 1; player.kx = dx / d * (big ? 12 : 5); player.kz = dz / d * (big ? 12 : 5);
     if (big) player.vy = 6;
   }
@@ -1669,6 +1679,7 @@ function stepPlayer(dt) {
       if (!grounded) { if (IN.atk) { p.st = 'dive'; p.t = 0; p.vy = -4; SND.swing(true); } break; }
       if (IN.jump) { p.vy = 12; p.y = 0.01; SND.jump(); break; }
       if (IN.dodge) { startDodge(); break; }
+      if (IN.block && window.HERO_MOVES === 'fist') { p.st = 'block'; p.t = 0; p.move = null; p.step = 0; break; }
       if (IN.atk || (IN.atkHeld && p.comboOpen < -0.15)) {
         const k = p.comboOpen > 0 ? p.step : 0; startMove(movesN()[k], 'attack', k); p.step = k + 1; break;
       }
@@ -1712,9 +1723,14 @@ function stepPlayer(dt) {
       if (p.t > 0.42) p.st = 'idle';
       break;
     }
+    case 'block': {   // 名人亂鬥格擋：唔郁唔出招，放開 H 先收
+      p.t += dt; p.blockHit = Math.max(0, (p.blockHit || 0) - dt);
+      if (!IN.block) { p.st = 'idle'; p.comboOpen = 0; }
+      break;
+    }
     case 'hurt': {
       p.t += dt; const k = Math.max(0, 1 - p.t / 0.4); p.x += p.kx * k * dt; p.z += p.kz * k * dt;
-      if (p.t > (p.vy > 0 || p.y > 0 ? 0.9 : 0.45) && grounded) p.st = 'idle';
+      if (p.t > (p.bigHurt ? 1.7 : (p.vy > 0 || p.y > 0 ? 0.9 : 0.45)) && grounded) { p.st = 'idle'; p.bigHurt = 0; }
       break;
     }
     case 'musou': {
@@ -1886,7 +1902,7 @@ function stepBoss(dt) {
       if (b.t > 0.5) { b.st = 0; b.cd = rand(1.5, 2.5); b.dashHit = 0; }
       break;
     }
-    case 4: if (b.t > 0.55) { b.st = 0; b.cd = 0.6; } break;
+    case 4: if (b.t > (b.getUp ? 1.3 : 0.55)) { b.st = 0; b.cd = 0.6; b.getUp = 0; } break;
     case 5: break;
   }
   b.x = clamp(b.x, -ARENA + 2, ARENA - 2); b.z = clamp(b.z, -ARENA + 2, ARENA - 2);
@@ -2120,6 +2136,7 @@ requestAnimationFrame(frame);
     spartan: ['Spartan_Kick', 0.3, 0.75, 1.2],
     combo3: ['Punch_Combo', 0.3, 0.6, 1.15, 1.7, 2.25],
     slamJump: ['Jumping_Punch', 0.5, 1.55, 2.3],
+    roundhouse: ['Roundhouse_Kick', 0.5, 1.1, 1.45, 1.8, 2.55],   // 名人亂鬥第 6 下連招收尾迴旋踢（zy_clips_fight.js）
   };
   const LOOP = { flurry: ['Triple_Combo_Attack', 0.55, 0.95, 3], tornado: ['Double_Blade_Spin', 0.6, 1.6, 1.4], flurryF: ['Punch_Combo', 0.5, 1.9, 2.2], tornadoF: ['Elbow_Strike', 0.5, 2.0, 1.6] };   // [動作, 由, 到, 每秒幾轉]
   const LOCKY = { Basic_Jump: 1, '360_Power_Spin_Jump': 1, Charged_Ground_Slam: 1, BeHit_FlyUp: 1, Jumping_Punch: 1, Jump_and_Slam_Back_Down: 1 };   // 跳高由遊戲（p.y / hop）話事
@@ -2133,7 +2150,7 @@ requestAnimationFrame(frame);
     R.axis = R.handAxis(AX0); R.hipY = window.MRIG[id].bones[0].t[1];
     if (C.model) C.model.mesh.visible = false;
     C.model = null; C.H.each((m) => { m.visible = false; });
-    let cur = null, prev = null, prevW = 0, loopT = 0, carryW = 1, carryDir = CARRY.idle.clone(), hidN = 0;
+    let cur = null, prev = null, prevW = 0, loopT = 0, carryW = 1, carryDir = CARRY.idle.clone(), hidN = 0, hurtFlip = 0, lastSt = '';
     function use(name) {
       let a = R.actions[name];
       if (!a) a = R.actions.Combat_Stance;   // 冇呢個 action（例如 boss 用拳腳 bank 揀唔到張郃啲斬擊）就用企定
@@ -2153,9 +2170,11 @@ requestAnimationFrame(frame);
       heroBody.rotation.x = 0; heroBody.position.y = 0;
       if (hidN < 3) { C.H.each((mm) => { mm.visible = false; }); hidN++; }   // 程式人形係第一次 pose 先整出嚟
       let a, mode = 'hand';
+      if (p.st !== lastSt && p.st === 'hurt') hurtFlip ^= 1; lastSt = p.st;   // 名人亂鬥：中身／中面輪流
       const cn = window.CINE;   // 名人亂鬥絕招特寫：舉手動作（zy_clips_cine.js）
       if (cn && cn.who === 'p1' && R.actions[cn.clip]) { a = use(cn.clip); at(a, cn.at); mode = 'idle'; }
-      else if (over && p.hp <= 0) { a = use('Dead'); loopT += rdt; at(a, Math.min(loopT, 2.9)); }
+      else if (over && p.hp <= 0) { a = use(R.actions.Knock_Down ? 'Knock_Down' : 'Dead'); loopT += rdt; at(a, Math.min(loopT, a.getClip().duration - 0.01)); }   // 敗方瞓低唔彈返起
+      else if (over && R.actions.Victory_Fist_Pump) { loopT += rdt; if (loopT < 1.53) { a = use('Victory_Fist_Pump'); at(a, loopT); } else { a = use('victory'); at(a, loopT % a.getClip().duration); } }
       else if (over) { a = use('victory'); loopT += rdt; at(a, loopT % a.getClip().duration); }
       else if ((p.st === 'attack' || p.st === 'charge') && m && LOOP[m.anim]) {
         const [nm, t0, t1, hz] = LOOP[m.anim]; a = use(nm); loopT += rdt * hz; at(a, t0 + (t1 - t0) * (loopT % 1));
@@ -2167,6 +2186,9 @@ requestAnimationFrame(frame);
       } else if (p.st === 'phoenix') { a = use('Right_Uppercut_from_Guard'); at(a, THREE.MathUtils.clamp(p.t / 0.5, 0, 1) * a.getClip().duration); }   // 升箭手勢
       else if (p.st === 'dive') { a = use('Heavy_Hammer_Swing'); at(a, 1.25 + Math.min(1, p.t / 0.3) * 0.28); }
       else if (p.st === 'dodge') { a = use('Roll_Dodge'); at(a, 0.1 + Math.min(1, p.t / 0.42) * 1.2); }
+      else if (p.st === 'block') { a = use(p.blockHit > 0 ? 'Block2' : 'Block1'); if (p.blockHit > 0) at(a, Math.min(1, (0.38 - p.blockHit) / 0.38) * 1.4); else { loopT += rdt; at(a, Math.min(loopT, 1.2)); } }   // 擋住：Block1 定住；擋到嘢彈一下 Block2
+      else if (p.st === 'hurt' && R.actions.Knock_Down && p.bigHurt) { if (p.t < 0.85) { a = use('Knock_Down'); at(a, p.t / 0.85 * 2.0); } else { a = use('Stand_Up2'); at(a, (p.t - 0.85) / 0.85 * 2.8); } }
+      else if (p.st === 'hurt' && R.actions.Face_Punch_Reaction) { a = use(hurtFlip ? 'Face_Punch_Reaction' : 'Hit_Reaction_to_Waist'); at(a, Math.min(1, p.t / 0.45) * 0.8); }
       else if (p.st === 'hurt') { a = use('Hit_Reaction'); at(a, Math.min(1, p.t / 0.45) * 0.8); }
       else if (p.y > 0.25) { a = use('Basic_Jump'); at(a, 1.75 + THREE.MathUtils.clamp(0.5 - p.vy / 24, 0, 1) * 0.7); }
       else if (p.st === 'run') { a = use('Run_02'); loopT += rdt * (ACT.speed / 8.5); at(a, loopT % a.getClip().duration); mode = 'run'; }
@@ -2210,6 +2232,7 @@ requestAnimationFrame(frame);
     const fist = !!window.FIST_RIG[id];
     if (fist && window.MCLIPS_FIST && window.addClipBank) window.addClipBank(R, window.MCLIPS_FIST, window.MRIG[id]);
     if (fist && window.MCLIPS_CINE && window.addClipBank) window.addClipBank(R, window.MCLIPS_CINE, window.MRIG[id]);
+    if (fist && window.MCLIPS_FIGHT && window.addClipBank) window.addClipBank(R, window.MCLIPS_FIGHT, window.MRIG[id]);
     BOSSRIGS[id] = { R, hipY: window.MRIG[id].bones[0].t[1], id, fist };
     return BOSSRIGS[id];
   }
@@ -2233,7 +2256,7 @@ requestAnimationFrame(frame);
       const guard = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.06, 0.05), gold); guard.position.z = 0.14; hal.add(guard);
       const grip = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 0.3, 8).rotateX(Math.PI / 2), wrap); grip.position.z = 0; hal.add(grip);
       const pom = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.015, 6, 12), gold); pom.position.z = -0.17; hal.add(pom); }
-    let cur = null, prev = null, prevW = 0, loopT = 0, lx = 0, lz = 0, mv = 0, hidN = 0;
+    let cur = null, prev = null, prevW = 0, loopT = 0, lx = 0, lz = 0, mv = 0, hidN = 0, bHurtFlip = 0, lastBst = -1;
     // musk（火箭商人）冇刀：張郃斬擊動作 → 拳腳 bank 嘅對應動作
     const BFIST = { Charged_Slash: 'Punch_Combo', Thrust_Slash: 'Right_Jab_from_Guard', Sword_Shout: 'Elbow_Strike', Triple_Combo_Attack: 'Punch_Combo', Charged_Ground_Slam: 'Jump_and_Slam_Back_Down', Heavy_Hammer_Swing: 'Jumping_Punch', Reaping_Swing: 'Left_Hook_from_Guard', Double_Blade_Spin: 'Elbow_Strike' };
     const use = (name) => { let a = window.__bossRig.R.actions[name]; if (!a && window.__bossRig.fist) a = window.__bossRig.R.actions[BFIST[name] || name] || window.__bossRig.R.actions.Combat_Stance; if (!a) a = window.__bossRig.R.actions.Combat_Stance; if (cur !== a) { if (prev) prev.stop(); prev = cur; prevW = prev ? 1 : 0; cur = a; cur.reset(); cur.play(); loopT = 0; } return a; };
@@ -2243,20 +2266,24 @@ requestAnimationFrame(frame);
     const sv0 = syncVisuals;
     syncVisuals = function (dt, rdt) {
       sv0(dt, rdt);
-      if (!boss.alive) return;
+      if (!boss.alive && !boss.kd) return;
       if (hidN < 3 || BOSS.parts.torso && BOSS.parts.torso[0].visible) { BOSS.each((o) => { o.visible = false; }); hidN++; }
-      const R = window.__bossRig.R, hipY = window.__bossRig.hipY, b = boss, st = b.st;
+      const R = window.__bossRig.R, hipY = window.__bossRig.hipY, b = boss, st = b.st, fist = window.__bossRig.fist;
+      if (st !== lastBst && st === 4) bHurtFlip ^= 1; lastBst = st;   // 名人亂鬥：中身／中面輪流
       if (dt > 1e-4) mv += ((Math.hypot(b.x - lx, b.z - lz) / dt > 1 ? 1 : 0) - mv) * 0.3;
       lx = b.x; lz = b.z;
       bossG.rotation.x = 0;
       let a; const cn = window.CINE;
-      if (cn && cn.who === 'p2' && R.actions[cn.clip]) { a = use(cn.clip); at(a, cn.at); }   // 絕招特寫
-      else if (st === 1) { a = use('Charged_Slash'); at(a, lin(b.t, 0, 0.85, 0.3, 1.0)); }
-      else if (st === 2) { a = use('Charged_Slash'); at(a, b.t < 0.18 ? lin(b.t, 0, 0.18, 1.0, 1.17) : lin(b.t, 0.18, 0.6, 1.17, 1.6)); }
+      if (!boss.alive) { a = use('Knock_Down'); loopT += rdt; at(a, Math.min(loopT, a.getClip().duration - 0.01)); }   // 敗方瞓低
+      else if (GAME.state === 'over' && fist && R.actions.Victory_Fist_Pump) { loopT += rdt; if (loopT < 1.53) { a = use('Victory_Fist_Pump'); at(a, loopT); } else { a = use('victory'); at(a, loopT % a.getClip().duration); } }   // 名人亂鬥勝利
+      else if (cn && cn.who === 'p2' && R.actions[cn.clip]) { a = use(cn.clip); at(a, cn.at); }   // 絕招特寫
+      else if (st === 1) { a = use(fist && R.actions.High_Kick ? 'High_Kick' : 'Charged_Slash'); at(a, fist ? lin(b.t, 0, 0.85, 0.15, 0.85) : lin(b.t, 0, 0.85, 0.3, 1.0)); }   // 名人亂鬥：蓄力重擊 = 高踢
+      else if (st === 2) { a = use(fist && R.actions.High_Kick ? 'High_Kick' : 'Charged_Slash'); at(a, fist ? (b.t < 0.18 ? lin(b.t, 0, 0.18, 0.85, 1.05) : lin(b.t, 0.18, 0.6, 1.05, 1.95)) : (b.t < 0.18 ? lin(b.t, 0, 0.18, 1.0, 1.17) : lin(b.t, 0.18, 0.6, 1.17, 1.6))); }
       else if (st === 3) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.6, 0.3, 0.55)); }
       else if (st === 6) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.12, 0.55, 0.73)); }
-      else if (st === 4) { a = use('Hit_Reaction'); at(a, lin(b.t, 0, 0.55, 0, 0.9)); }
-      else if (st === 5) { a = use('BeHit_FlyUp'); at(a, 0.2); }
+      else if (st === 4) { a = use(fist ? (b.getUp && R.actions.Stand_Up2 ? 'Stand_Up2' : R.actions.Face_Punch_Reaction ? (bHurtFlip ? 'Face_Punch_Reaction' : 'Hit_Reaction_to_Waist') : 'Hit_Reaction') : 'Hit_Reaction'); at(a, b.getUp ? lin(b.t, 0, 1.3, 0, 2.9) : lin(b.t, 0, 0.55, 0, 0.9)); }   // 擊倒後起身 / 普通中拳輪流
+      else if (st === 5) { a = use(fist && R.actions.Knock_Down ? 'Knock_Down' : 'BeHit_FlyUp'); at(a, fist ? lin(b.t, 0, 0.9, 0, 2.3) : 0.2); }
+      else if (st === 26) { a = use(b.blockHit > 0 && R.actions.Block2 ? 'Block2' : 'Block1'); if (b.blockHit > 0) at(a, Math.min(1, (0.4 - b.blockHit) / 0.4) * 1.4); else { loopT += rdt; at(a, Math.min(loopT, 1.2)); } }   // 名人亂鬥格擋
       else if (st === 22) { a = use('Right_Jab_from_Guard'); at(a, lin(b.t, 0, 0.42, 0.15, 1.1)); }   // 名人亂鬥 2P 輕擊（musk 拳打）
       else if (st === 24) { a = use('Right_Uppercut_from_Guard'); at(a, THREE.MathUtils.clamp(b.t / 0.5, 0, 1) * a.getClip().duration); }   // 火鳳凰升箭手勢
       else if (st === 7) { a = use('Sword_Shout'); at(a, b.t < 1 ? lin(b.t, 0, 1, 0.8, 1.3) : 1.3); }   // 朱雀：舉刀（boss_ext.js）
