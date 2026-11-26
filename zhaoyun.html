@@ -1934,7 +1934,7 @@ function syncVisuals(dt, rdt) {
   if (ACT.rigUpdate) ACT.rigUpdate(rdt); else if (ACT.model) { if (ACT.procHide) { ACT.H.each((m) => { m.visible = false; }); ACT.wi.children.forEach((c) => { c.visible = false; }); ACT.procHide = false; } ACT.model.update(); }
   ACT.H.setFace(p.st === 'hurt' ? 2 : acting || p.st === 'dodge' ? 1 : 0);
   // 閃光（受傷無敵時閃爍）
-  hero.visible = !(p.inv > 0 && p.st === 'hurt' && ((GAME.t * 20) | 0) % 2);
+  hero.visible = !(p.inv > 0 && p.st === 'hurt' && !p.bigHurt && ((GAME.t * 20) | 0) % 2);   // 名人亂鬥：大 hit 瞓地起身 1.7s 無敵唔閃 —— 閃會令起身動作成段消失
   // 拖光
   _tipW.set(0, 0, ACT.tip); ACT.wi.localToWorld(_tipW); _midW.set(0, 0, 1.2); ACT.wi.localToWorld(_midW);
   if (ACT.model) { _tipW.copy(ACT.tipModel); heroBody.localToWorld(_tipW); _midW.copy(ACT.gripModel); heroBody.localToWorld(_midW); _midW.lerp(_tipW, 0.45); }
@@ -2277,8 +2277,8 @@ requestAnimationFrame(frame);
       if (!boss.alive) { a = use('Knock_Down'); loopT += rdt; at(a, Math.min(loopT, a.getClip().duration - 0.01)); }   // 敗方瞓低
       else if (GAME.state === 'over' && fist && R.actions.Victory_Fist_Pump) { loopT += rdt; if (loopT < 1.53) { a = use('Victory_Fist_Pump'); at(a, loopT); } else { a = use('victory'); at(a, loopT % a.getClip().duration); } }   // 名人亂鬥勝利
       else if (cn && cn.who === 'p2' && R.actions[cn.clip]) { a = use(cn.clip); at(a, cn.at); }   // 絕招特寫
-      else if (st === 1) { a = use(fist && R.actions.High_Kick ? 'High_Kick' : 'Charged_Slash'); at(a, fist ? lin(b.t, 0, 0.85, 0.15, 0.85) : lin(b.t, 0, 0.85, 0.3, 1.0)); }   // 名人亂鬥：蓄力重擊 = 高踢
-      else if (st === 2) { a = use(fist && R.actions.High_Kick ? 'High_Kick' : 'Charged_Slash'); at(a, fist ? (b.t < 0.18 ? lin(b.t, 0, 0.18, 0.85, 1.05) : lin(b.t, 0.18, 0.6, 1.05, 1.95)) : (b.t < 0.18 ? lin(b.t, 0, 0.18, 1.0, 1.17) : lin(b.t, 0.18, 0.6, 1.17, 1.6))); }
+      else if (st === 1) { a = use(fist && R.actions.High_Kick ? 'High_Kick' : 'Charged_Slash'); at(a, fist ? lin(b.t, 0, 0.85, 0.15, 0.9) : lin(b.t, 0, 0.85, 0.3, 1.0)); }   // 名人亂鬥：蓄力重擊 = 高踢
+      else if (st === 2) { a = use(fist && R.actions.High_Kick ? 'High_Kick' : 'Charged_Slash'); at(a, fist ? (b.t < 0.18 ? lin(b.t, 0, 0.18, 1.2, 1.4) : lin(b.t, 0.18, 0.6, 1.4, 2.0)) : (b.t < 0.18 ? lin(b.t, 0, 0.18, 1.0, 1.17) : lin(b.t, 0.18, 0.6, 1.17, 1.6))); }   // 高踢：中嗰刻腳伸直到盡（clip ~1.3s）
       else if (st === 3) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.6, 0.3, 0.55)); }
       else if (st === 6) { a = use('Thrust_Slash'); at(a, lin(b.t, 0, 0.12, 0.55, 0.73)); }
       else if (st === 4) { a = use(fist ? (b.getUp && R.actions.Stand_Up2 ? 'Stand_Up2' : R.actions.Face_Punch_Reaction ? (bHurtFlip ? 'Face_Punch_Reaction' : 'Hit_Reaction_to_Waist') : 'Hit_Reaction') : 'Hit_Reaction'); at(a, b.getUp ? lin(b.t, 0, 1.3, 0, 2.9) : lin(b.t, 0, 0.55, 0, 0.9)); }   // 擊倒後起身 / 普通中拳輪流
