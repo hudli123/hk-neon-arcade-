@@ -80,7 +80,7 @@
     const get = (f) => fetch(f).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.arrayBuffer(); });
     const run = (b, f) => { const s = document.createElement('script'); s.text = new TextDecoder().decode(b) + '\n//# sourceURL=' + f; document.head.appendChild(s); };
     try { run(await get('zy_clips_fist.js'), 'zy_clips_fist.js'); } catch (e) { console.warn('fist clips load failed', e); return; }
-    const extra = [['zy_clips_cine.js', null], ['zy_clips_fight.js', null], ['zy_sfx_duel.js', () => addSfx(window.SFX_DUEL)]].map(async ([f, then]) => {   // 絕招特寫 + 格鬥動作 + 角色音效；載唔到照玩
+    const extra = [['zy_clips_cine.js', null], ['zy_clips_fight.js', null], ['zy_sfx_duel.js', () => addSfx(window.SFX_DUEL)], ['zy_prop_bear.js', null], ['zy_prop_drone.js', null]].map(async ([f, then]) => {   // 絕招特寫 + 格鬥動作 + 角色音效；載唔到照玩
       try { run(await get(f), f); if (then) then(); } catch (e) { console.warn(f + ' load failed', e); } });
     await Promise.all(Object.values(MESH).map(async (id) => {
       try {
@@ -746,20 +746,46 @@ function makeResults(win){
   const mkChip = () => { const g = new THREE.Group(); const m = new THREE.Mesh(chipGeo, chipMats); m.rotation.x = Math.PI / 2; g.add(m); return g; };   // 面向飛行方向，轉起上嚟見到晶片面
   const droneMat = new THREE.MeshLambertMaterial({ color: 0x23262b }), rotorMat = new THREE.MeshBasicMaterial({ color: 0xe8eef5, transparent: true, opacity: .3, depthWrite: false });
   const warnMat = new THREE.MeshBasicMaterial({ color: 0xff2a1a, transparent: true, opacity: .5, depthWrite: false });
+  // Meshy 道具模型（zy_prop_*.js → window.MPROP）：靜態 mesh，冇就跌返方塊砌版本
+  const propMesh = (id) => {
+    const R = window.MPROP && window.MPROP[id]; if (!R) return null;
+    const d = (s, T) => { const b = atob(s), u = new Uint8Array(b.length); for (let i = 0; i < b.length; i++) u[i] = b.charCodeAt(i); return new T(u.buffer); };
+    const p = d(R.pos, Int16Array), n = d(R.nrm, Int8Array), u = d(R.uv, Uint16Array), P = new Float32Array(p.length);
+    for (let i = 0; i < p.length; i++) P[i] = p[i] / R.Q;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(P, 3));
+    g.setAttribute('normal', new THREE.BufferAttribute(Float32Array.from(n, (v) => v / 127), 3)); g.setAttribute('uv', new THREE.BufferAttribute(Float32Array.from(u, (v) => v / 65535), 2));
+    g.setIndex(new THREE.BufferAttribute(d(R.idx, Uint16Array), 1));
+    const t = new THREE.TextureLoader().load(R.tex); t.flipY = false;
+    const proto = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ map: t }));
+    return () => proto.clone();   // 每隻 clone 一次
+  };
+  const propCache = {};   // prop js 係 muskReady 入面 async 載，mk 嗰陣先讀（lazy）
+  const lazyProp = (id) => (id in propCache) ? propCache[id] : (propCache[id] = propMesh(id));
   const mkDrone = () => {   // 四軸機 + 落點紅圈（子物件，跟住機身垂直投落地面）
-    const g = new THREE.Group(), rot = [];
+    const g = new THREE.Group(), rot = [], pd = lazyProp('drone');
+    if (pd) {   // Meshy 模型：面向 +Z，4 隻槳上面加模糊碟
+      const m = pd(); g.add(m);
+      for (const [ax, az] of [[.42, .4], [-.42, .4], [.42, -.4], [-.42, -.4]]) { const r = new THREE.Mesh(new THREE.CylinderGeometry(.22, .22, .015, 12), rotorMat); r.position.set(ax, .5, az); g.add(r); rot.push(r); }
+    } else {
     const body = new THREE.Mesh(new THREE.BoxGeometry(.42, .16, .6), droneMat); g.add(body);
     const eye = new THREE.Mesh(new THREE.SphereGeometry(.07, 8, 6), new THREE.MeshBasicMaterial({ color: 0xff3b30 })); eye.position.set(0, -.04, .32); g.add(eye);
     for (const [ax, az] of [[1, 1], [-1, 1], [1, -1], [-1, -1]]) {
       const arm = new THREE.Mesh(new THREE.BoxGeometry(.06, .05, .5), droneMat); arm.position.set(ax * .3, 0, az * .3); arm.rotation.y = ax * az * Math.PI / 4; g.add(arm);
       const r = new THREE.Mesh(new THREE.CylinderGeometry(.2, .2, .015, 12), rotorMat); r.position.set(ax * .48, .08, az * .48); g.add(r); rot.push(r);
     }
+    }
     const sh = new THREE.Mesh(new THREE.RingGeometry(1.1, 1.7, 28), warnMat); sh.rotation.x = -Math.PI / 2; sh.visible = false; g.add(sh); g.userData.sh = sh;
     g.userData.anim = (t) => { for (const r of rot) r.rotation.y = t * 40; };
-    g.scale.setScalar(1.3); return g;
+    g.scale.setScalar(pd ? 1.0 : 1.3); return g;
   };
-  const mkBear = () => {   // 啡熊（方塊砌）：面向 +Z，四腳跑動
-    const g = new THREE.Group(), fur = new THREE.MeshLambertMaterial({ color: 0x4a2e18 }), pale = new THREE.MeshLambertMaterial({ color: 0x8a6a44 }), dark = new THREE.MeshLambertMaterial({ color: 0x1c1410 });
+  const mkBear = () => {   // 啡熊：Meshy 靜態模型（冇就方塊砌）：面向 +Z，奔跑郁身
+    const g = new THREE.Group(), pb = lazyProp('bear');
+    if (pb) {
+      const m = pb(); g.add(m);
+      g.userData.anim = (t) => { m.position.y = Math.abs(Math.sin(t * 16)) * .14; m.rotation.x = Math.sin(t * 16) * .06; };   // gallop bob + pitch rock
+      g.scale.setScalar(1.05); return g;
+    }
+    const fur = new THREE.MeshLambertMaterial({ color: 0x4a2e18 }), pale = new THREE.MeshLambertMaterial({ color: 0x8a6a44 }), dark = new THREE.MeshLambertMaterial({ color: 0x1c1410 });
     const add = (geo, mat, x, y, z, par = g) => { const m = new THREE.Mesh(geo, mat); m.position.set(x, y, z); par.add(m); return m; };
     const torso = new THREE.Group(); g.add(torso);
     add(new THREE.BoxGeometry(1.05, .95, 1.7), fur, 0, 1.05, 0, torso); add(new THREE.BoxGeometry(.9, .5, .8), fur, 0, 1.55, .35, torso);
