@@ -1948,6 +1948,9 @@ function validShopPoint(x, z, ox, oz, offset, building) {
 }
 const SHOPF = (() => {
   const T0 = performance.now(), CW = 512, NC = 8;
+  // 3D 鋪頭（hkcity_shop_*.js）：ci → [type id, 模型闊, 2 米以下最深]
+  const S3T = { 9: ['bakery', 5.61, 0.694], 7: ['siumei', 6.0, 1.968], 12: ['store', 5.61, 1.18], 13: ['news', 5.61, 1.214], 6: ['pawn', 5.61, 0.891], 1: ['cafe', 5.61, 1.205], 11: ['hardware', 5.61, 1.108], 24: ['sea', 5.61, 1.085], 26: ['toy', 5.61, 1.065] };
+  const S3OFF = /[?&]shop3d=0/.test(location.search), ELIG3 = new Map();
   const cv = document.createElement('canvas'); cv.width = CW * NC; cv.height = CW; const x = cv.getContext('2d');
   const R = (a) => rnd(a * 7.31 + 1.7);
   const band = 118;   // 上面招牌位
@@ -2042,7 +2045,7 @@ const SHOPF = (() => {
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(P, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(UV, 2)); g.computeVertexNormals();
   const mat = new THREE.MeshLambertMaterial({ map: tex, side: THREE.DoubleSide, emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.2 });
-  const m = new THREE.Mesh(g, mat); m.frustumCulled = false; scene.add(m);
+  const m = new THREE.Mesh(g, mat); m.frustumCulled = false; m.userData.keepCPU = true; scene.add(m);   // keepCPU：3D 鋪要收放鋪頭相 quad（GEOFREE 唔准清）
   if (AP.length) { const ag = new THREE.BufferGeometry(); ag.setAttribute('position', new THREE.Float32BufferAttribute(AP, 3)); ag.setAttribute('color', new THREE.Float32BufferAttribute(AC, 3)); ag.computeVertexNormals();
     const am = new THREE.Mesh(ag, new THREE.MeshLambertMaterial({ vertexColors: true, side: THREE.DoubleSide })); am.frustumCulled = false; scene.add(am); }
   // BG 09-30 揀 B「鋪頭要再精得多啲」：鏡頭 220 米內加立體細節，遠處照用上面嘅平面相（一個 draw call）。
@@ -2079,6 +2082,8 @@ const SHOPF = (() => {
     for (; JOB.i < end; JOB.i++) {
       const B = list[JOB.i], hw = B[6], ci = B[7], last = B[9], hc = B[10]; MX = B[0]; MZ = B[1]; WX = B[2]; WZ = B[3]; OX = B[4]; OZ = B[5];
       const bd = BOARD ? BOARD[ci] : DEFB, yt = Math.min(4.95, 5 * (1 - bd[0])), yb = Math.max(2.9, 5 * (1 - bd[1]));
+      const s3 = elig3B(B);   // 會出真 3D 鋪（非燒臘）嘅檔口唔要燈箱 / 閘箱（否則凸出會篤穿模型）；燒臘模型矮，招牌位照要
+      if (!s3 || s3 === 'siumei') {
       const s0 = -hw + 2 * hw * bd[2], s1 = -hw + 2 * hw * bd[3], uv = cellUV(ci), ua = uv[0] + (uv[2] - uv[0]) * bd[2], ub = uv[0] + (uv[2] - uv[0]) * bd[3], va = uv[1] + (uv[3] - uv[1]) * yb / 5, vb = uv[1] + (uv[3] - uv[1]) * yt / 5;
       // 燈箱：框（深灰）+ 前面招牌（鋪面材質，用返相入面招牌嗰段）
       box(s0, s1, 0.02, 0.3, yb, yt, FRAME, 14);
@@ -2086,6 +2091,7 @@ const SHOPF = (() => {
       else { sv(s0, yb, ua, va); sv(s1, yt, ub, vb); sv(s1, yb, ub, va); sv(s0, yb, ua, va); sv(s0, yt, ua, vb); sv(s1, yt, ub, vb); }
       // 閘箱（招牌下面，鋁色）
       if (yb > 3.1) box(-hw + 0.12, hw - 0.12, 0, 0.2, yb - 0.3, yb - 0.02, SHUT, 11);
+      }
       // 柱：每間左邊一條，牆尾加多一條
       const pc = PIL[Math.floor(hc * PIL.length)];
       box(-hw - 0.26, -hw + 0.06, -0.05, 0.4, 0, 5.02, pc, 7);
@@ -2130,9 +2136,159 @@ const SHOPF = (() => {
   const laneMs = +(performance.now() - laneT0).toFixed(1);   // 包埋砌鋪頭相幾何（兩個情況一樣），窄巷檢查本身 = 同 ?lanecheck=1 嘅差
   laneIds.sort((a, b) => a - b);
   const laneCheck = laneCk ? { data: !!LSET, same: !!LSET && LSET.size === laneIds.length && laneIds.every((v) => LSET.has(v)), computed: laneIds.length, inData: LSET ? LSET.size : 0 } : null;
-  return { list: BAYS, mat, dmat, near, zone, pushOut, clear, laneFix, laneMs, laneData, laneCheck, laneDump: () => ({ cand: candN, sum: candSum, nb: BLD.length, ids: laneIds }), ms: Math.round(performance.now() - T0), count: n, awnings: AP.length / 18, bays: BAYS.length, density: (x, z) => (BGRID.get(Math.floor(x / 50) * 4096 + Math.floor(z / 50)) || []).length };   // density：50 米格入面幾多間鋪（行人密度用）
+  // 3D 鋪：畫一張相入 atlas 某一格（真鋪面相 override 程式畫嘅嗰格）
+  let texCv = null;
+  function paintCell(ci, img) {
+    const go = () => {
+      if (!tex.image || !tex.image.width) return false;
+      if (!texCv) { texCv = document.createElement('canvas'); texCv.width = tex.image.width; texCv.height = tex.image.height; texCv.getContext('2d').drawImage(tex.image, 0, 0); tex.image = texCv; }
+      const cols = (SH && SH.cols) || NC, cw = texCv.width / cols, ch = texCv.height / ((SH && SH.rows) || 1);
+      texCv.getContext('2d').drawImage(img, (ci % cols) * cw, Math.floor(ci / cols) * ch, cw, ch);
+      tex.needsUpdate = true; return true;
+    };
+    if (img.complete && img.width && go()) return;
+    img.onload = () => go();
+    const t0 = performance.now(), tr = setInterval(() => { if (go() || performance.now() - t0 > 30000) clearInterval(tr); }, 250);   // atlas 未載到就重試（最多 30 秒）
+  }
+  // 3D 鋪資格（B = BAYS 記錄）：款啱 + 闊度啱 + 模型前面行人路冇阻 → type id，否則 0
+  function elig3B(B) {
+    if (S3OFF || window.__S3OFF || !B) return 0;
+    if (ELIG3.has(B)) return ELIG3.get(B);
+    const t = S3T[B[7]]; let id = 0;
+    if (t) {
+      const sx = 2 * B[6] / t[1];
+      if (sx >= 0.82 && sx <= 1.25) {
+        const sz = Math.min(sx, 1), lim = t[2] * sz + 0.6; let ok = true;
+        outer: for (const s of [-0.98 * B[6], -0.5 * B[6], 0, 0.5 * B[6], 0.98 * B[6]]) for (let d = 0.35; d <= lim; d += 0.35) {
+          const px = B[0] + B[2] * s + B[4] * d, pz = B[1] + B[3] * s + B[5] * d;
+          if (blocked(px, pz) || onRoad(px, pz) || atStreetExit(px, pz)) { ok = false; break outer; }
+        }
+        if (ok) id = t[0];
+      }
+    }
+    ELIG3.set(B, id); return id;
+  }
+  return { list: BAYS, bgrid: BGRID, mesh: m, paintCell, elig3B, elig3: (i) => elig3B(BAYS[i]), mat, dmat, near, zone, pushOut, clear, laneFix, laneMs, laneData, laneCheck, laneDump: () => ({ cand: candN, sum: candSum, nb: BLD.length, ids: laneIds }), ms: Math.round(performance.now() - T0), count: n, awnings: AP.length / 18, bays: BAYS.length, density: (x, z) => (BGRID.get(Math.floor(x / 50) * 4096 + Math.floor(z / 50)) || []).length };   // density：50 米格入面幾多間鋪（行人密度用）
 })();
 window.SHOPF = SHOPF;
+// 3D 鋪頭（hkcity_shop_<id>.js + hkcity_shop_far.js）：近鏡真模型 / 中距離烘焙面 / 遠處照舊平面相。?shop3d=0 全關
+const SHOP3D = (() => {
+  const OFF = /[?&]shop3d=0/.test(location.search);
+  const BAYS = SHOPF.list, PA = () => SHOPF.mesh.geometry.attributes.position;
+  const TIDS = { 9: 'bakery', 7: 'siumei', 12: 'store', 13: 'news', 6: 'pawn', 1: 'cafe', 11: 'hardware', 24: 'sea', 26: 'toy' };
+  const T = {}; for (const id of Object.values(TIDS)) T[id] = { st: 0, near: [], street: [] };   // st: 0未載 1載緊 2好 -1衰
+  const LV = new Map(), SAVED = new Map();   // 檔口 index → 0 flat / 1 street / 2 near；收埋 quad 嘅原 positions
+  if (!OFF && PA().count / 6 !== BAYS.length) { console.warn('shop3d: quad/BAYS mismatch', PA().count, BAYS.length); window.__S3OFF = 1; }
+  const B64 = (s) => { const bin = atob(s.slice(s.indexOf(':') + 1)), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i); return u8.buffer; };
+  const tex = (uri) => { const t = new THREE.Texture(); const im = new Image(); im.onload = () => { t.image = im; t.needsUpdate = true; }; im.src = uri; t.flipY = false; return t; };
+  function geoOf(grp, q) {
+    const g = new THREE.BufferGeometry();
+    const p16 = new Int16Array(B64(grp.pos)), pos = new Float32Array(p16.length); for (let i = 0; i < p16.length; i++) pos[i] = p16[i] * q;
+    const n8 = new Int8Array(B64(grp.nrm)), nrm = new Float32Array(n8.length); for (let i = 0; i < n8.length; i++) nrm[i] = n8[i] / 127;
+    const u16 = new Uint16Array(B64(grp.uv)), uv = new Float32Array(u16.length); for (let i = 0; i < u16.length; i++) uv[i] = u16[i] / 65535;
+    g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.BufferAttribute(nrm, 3)); g.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+    if (grp.col) g.setAttribute('color', new THREE.BufferAttribute(new Uint8Array(B64(grp.col)), 3, true));
+    g.setIndex(new THREE.BufferAttribute(grp.idx.charCodeAt(0) === 105 && grp.idx[1] === '3' ? new Uint32Array(B64(grp.idx)) : new Uint16Array(B64(grp.idx)), 1));
+    return g;
+  }
+  function matOf(grp) {
+    const m = grp.mat;
+    if (m.blend) return new THREE.MeshLambertMaterial({ color: new THREE.Color(...(m.color || [0.65, 0.83, 0.78])), transparent: true, opacity: m.opacity || 0.15, depthWrite: false, side: THREE.DoubleSide });
+    const mt = { map: m.map ? tex(m.map) : null, vertexColors: !!grp.col, side: m.double ? THREE.DoubleSide : THREE.FrontSide };
+    const lm = new THREE.MeshLambertMaterial(mt);
+    lm.emissive = new THREE.Color(0xffffff); lm.emissiveMap = m.emis ? tex(m.emis) : (m.map ? lm.map : null); lm.emissiveIntensity = m.emis ? 1 : 0.2;
+    return lm;
+  }
+  function buildType(id) {
+    const rec = window.HK_SHOP3D && HK_SHOP3D[id]; if (!rec) return;
+    for (const lv of ['near', 'street']) {
+      const L = rec[lv]; if (!L) continue;
+      const cap = lv === 'near' ? 4 : 24;
+      for (const grp of L.groups) {
+        const im = new THREE.InstancedMesh(geoOf(grp, L.q), matOf(grp), cap); im.frustumCulled = false; im.count = 0; scene.add(im); T[id][lv].push(im);
+      }
+    }
+    T[id].st = 2;
+  }
+  function loadType(id) {
+    const t = T[id]; if (t.st) return; t.st = 1;
+    const s = document.createElement('script'); s.src = 'hkcity_shop_' + id + '.js'; s.async = true;
+    s.onload = () => buildType(id); s.onerror = () => { t.st = -1; }; document.body.appendChild(s);
+  }
+  // LOD 選：近 ≤12 m（4 間，hysteresis 13.5）、中 ≤35 m（24 間，hysteresis 36.5）、第 45 m 內就先載檔
+  let lx = 1e9, lz = 1e9, ly = 1e9, lt = 0, shown = { near: 0, street: 0 };
+  const X = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(), MT = new THREE.Matrix4(), SC = new THREE.Vector3();
+  function select(cx, cz, low, cy) {
+    const dy = Math.max(0, (cy || 0) - 1.7);   // 高度都要計：Fly 100 米直上唔當「近」
+    const cand = [], gx = Math.floor(cx / 50), gz = Math.floor(cz / 50);
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const L = SHOPF.bgrid.get((gx + i) * 4096 + gz + j); if (L) for (const b of L) { const B = BAYS[b], d2 = (B[0] - cx) ** 2 + (B[1] - cz) ** 2; if (d2 < 2025) cand.push([b, B, Math.sqrt(d2 + dy * dy)]); } }
+    for (const [, B, d] of cand) { const id = SHOPF.elig3B(B); if (id && T[id].st === 0 && d <= 45) loadType(id); }
+    const want = [];
+    for (const [b, B, d] of cand) {
+      const id = SHOPF.elig3B(B); if (!id || T[id].st !== 2) { want.push([b, B, d, 0]); continue; }
+      let lv = LV.get(b) || 0;
+      if (low) { if (d <= 12) lv = 2; else if (d > 13.5 && lv === 2) lv = id === 'siumei' ? 0 : 1;
+        if (lv < 2 && id !== 'siumei') { if (d <= 35) lv = Math.max(lv, 1); else if (d > 36.5) lv = 0; } }
+      else lv = 0;
+      want.push([b, B, d, lv, id]);
+    }
+    want.sort((a, b2) => a[2] - b2[2]);
+    let nn = 0, ns = 0;
+    for (const w of want) {
+      let lv = w[3]; const id = w[4];
+      if (lv === 2 && ++nn > 4) lv = id === 'siumei' ? 0 : 1;
+      if (lv === 1 && ++ns > 24) lv = 0;
+      w[3] = lv;
+    }
+    let dirty = false;
+    for (const [b, B, , lv] of want) if ((LV.get(b) || 0) !== lv) { setLevel(b, B, lv); dirty = true; }
+    for (const b of [...LV.keys()]) if (LV.get(b) && !want.some((w) => w[0] === b)) { setLevel(b, BAYS[b], 0); dirty = true; }   // 行開咗：放返平面相
+    if (dirty) PA().needsUpdate = true;
+    shown = { near: nn, street: ns };
+    // 填 instance matrices
+    const slots = {};
+    for (const [b, B, , lv, id] of want) if (lv && id) { const k = id + ':' + (lv === 2 ? 'near' : 'street'); (slots[k] || (slots[k] = [])).push([b, B]); }
+    for (const id in T) for (const lv of ['near', 'street']) {
+      const ims = T[id][lv]; if (!ims.length) continue;
+      const list = (slots[id + ':' + lv] || []), L = rec3(id, lv);
+      for (let gi = 0; gi < ims.length; gi++) { const im = ims[gi]; let c = 0;
+        for (const [b, B] of list) { if (c >= im.instanceMatrix.count) break;
+          const sx = 2 * B[6] / (id === 'siumei' ? 6.0 : 5.61), sy = Math.min(sx, 1);
+          Z.set(B[4], 0, B[5]); X.set(B[5], 0, -B[4]); MT.makeBasis(X, Y, Z);   // X = Y×Z：出面法線 = (−wz, wx)，用 w 砌會左手系（成塊背向鏡頭睇唔到）
+          MT.setPosition(B[0] + B[4] * (id === 'siumei' ? 0.02 : 0.01), 0, B[1] + B[5] * (id === 'siumei' ? 0.02 : 0.01)); SC.set(sx, sy, sy); MT.scale(SC);
+          im.setMatrixAt(c++, MT); }
+        im.count = c; im.instanceMatrix.needsUpdate = true;
+      }
+    }
+  }
+  function rec3(id, lv) { return window.HK_SHOP3D && HK_SHOP3D[id] && HK_SHOP3D[id][lv]; }
+  function setLevel(b, B, lv) {
+    LV.set(b, lv);
+    const pa = PA().array, o = b * 18, id = SHOPF.elig3B(B);
+    if (lv > 0 && id && id !== 'siumei') {   // 收埋平面 quad（燒臘唔收：模型得 3 米高，招牌位照舊）
+      if (!SAVED.has(b)) SAVED.set(b, pa.slice(o, o + 18));
+      for (let k = 3; k < 18; k += 3) { pa[o + k] = pa[o]; pa[o + k + 1] = pa[o + 1]; pa[o + k + 2] = pa[o + 2]; }
+    } else if (SAVED.has(b)) { const s = SAVED.get(b); for (let k = 0; k < 18; k++) pa[o + k] = s[k]; SAVED.delete(b); }
+  }
+  function near(cx, cz, low, cy) {
+    if (OFF || window.__S3OFF) return;
+    const now = performance.now();
+    if (Math.abs(cx - lx) < 1 && Math.abs(cz - lz) < 1 && Math.abs((cy || 0) - ly) < 1 && now - lt < 300) return;
+    lx = cx; lz = cz; ly = cy || 0; lt = now; select(cx, cz, low, cy);
+  }
+  function far() {   // hkcity_shop_far.js onload：真鋪面相入 atlas（冇燒臘：佢冇 street/facade）
+    const F = window.HK_SHOPFAR; if (!F || !window.SHOPS) return;
+    for (const name in F) { const ci = SHOPS.names.indexOf(name); if (ci < 0) continue; const im = new Image(); im.src = F[name]; SHOPF.paintCell(ci, im); }
+  }
+  function stats() {
+    const el = {}, tot = {};
+    for (let i = 0; i < BAYS.length; i++) { const ci = BAYS[i][7], id = TIDS[ci]; if (!id) continue; tot[id] = (tot[id] || 0) + 1; if (SHOPF.elig3(i)) el[id] = (el[id] || 0) + 1; }
+    return { loaded: Object.keys(T).filter((k) => T[k].st === 2), failed: Object.keys(T).filter((k) => T[k].st === -1), eligible: el, total: tot, near: shown.near, street: shown.street };
+  }
+  function list(type) { const out = []; for (let i = 0; i < BAYS.length; i++) if (SHOPF.elig3(i) === type) out.push([i, BAYS[i][0], BAYS[i][1]]); return out; }
+  return { off: OFF, near, far, stats, list };
+})();
+window.SHOP3D = SHOP3D;
 // v40（BG「主角好似入咗建築物入面？咩都睇唔到」）：街面鏡頭（行路 / 隨街打交 / 風暴）用：6 米以下用真樓宇輪廓（每 0.5 米；4 米高度格喺窄巷當成有樓，
 // 鏡頭會硬拉埋主角身邊）、6 米以上照用高度格，加天橋 + 鋪頭相（v39 移出咗最多 3.5 米）→ 0–1
 window.clearFracS = (tx, ty, tz, cx, cy, cz) => {
@@ -3219,6 +3375,7 @@ const GAME = {
     TILES.step(dt, cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z, camera.position.y < 150);
     if (HDMOD) HDMOD.step(cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z);
     SHOPF.near(camera.position.x, camera.position.z, camera.position.y < 150);   // 近鏡立體鋪面
+    SHOP3D.near(camera.position.x, camera.position.z, camera.position.y < 150, camera.position.y);   // 3D 鋪：近真模型 / 中烘焙面 / 遠平面相
     { camera.getWorldDirection(_cmpV); const a = Math.round(-Math.atan2(_cmpV.x, -_cmpV.z) * 180 / Math.PI);   // BG 09-30「北面喺邊」：指南針，N 指住真北（遊戲 −z）
       if (a !== _cmpA) { _cmpA = a; $('compassR').style.transform = `rotate(${a}deg)`; } }
     if (HYDL) HYDL.near(camera.position.x, camera.position.z, camera.position.y < 150); if (HYDP) HYDP.near(camera.position.x, camera.position.z, camera.position.y < 60);   // 路政署街燈 / 街名牌
@@ -3251,7 +3408,7 @@ function autoRes(ms) {   // v45：連續 2 秒慢過 ~26 FPS 就降解像度，�
 // v47 手機：大型靜態幾何（≥ 5 萬頂點）上載咗 GPU 之後放走 JS 嗰份（three.js 預設 CPU / GPU 兩邊都留，≈ 110 MB）。只放走已上載 + 開機 20 秒內冇改過（version 0）嘅 attribute
 const GEOFREE = (() => {   // v50：欄杆嘅 position 要留（撞爛 / 現返要改）
   const L = [], t0 = performance.now(); let done = !TOUCH;
-  if (TOUCH) scene.traverse((o) => { const g = o.geometry; if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || !g || !g.attributes.position || g.attributes.position.count < 50000) return;
+  if (TOUCH) scene.traverse((o) => { const g = o.geometry; if (!o.isMesh || o.isInstancedMesh || o.isSkinnedMesh || o.userData.keepCPU || !g || !g.attributes.position || g.attributes.position.count < 50000) return;
     if (!g.boundingSphere) g.computeBoundingSphere(); if (!g.boundingBox) g.computeBoundingBox();
     for (const at of [...Object.values(g.attributes), g.index]) if (at && !at.isInterleavedBufferAttribute && !(g === RAILS.geo && at === g.attributes.position)) { at.onUpload(function () { this.__up = true; }); L.push(at); } });
   return { list: L, step() { if (done || performance.now() - t0 < 20000) return; done = true; let b = 0; for (const at of L) if (at.__up && at.version === 0) { b += at.array.byteLength; at.array = new at.array.constructor(0); } window.GEOFREE_MB = +(b / 1e6).toFixed(1);
@@ -3264,6 +3421,7 @@ requestAnimationFrame(() => requestAnimationFrame(() => {
   if (b && !window.NOGL) { b.style.opacity = 0; setTimeout(() => b.remove(), 500); window.HKC_EV && HKC_EV('loaded'); }
   const add = (src, onload) => { const s = document.createElement('script'); s.src = src; s.async = true; if (onload) s.onload = onload; document.body.appendChild(s); };
   add('hkcity_people.js', () => PEOPLE.load3d());   // PEOPLE / TRAFFIC 係 top-level const，唔喺 window 上面
+  if (!SHOP3D.off) add('hkcity_shop_far.js', () => SHOP3D.far());   // 8 款真鋪面相入鋪面 atlas
   if (!TOUCH) {
     add('hkcity_lm.js', () => window.attachLandmarks && attachLandmarks());
     add('hkcity_cars.js', () => TRAFFIC.load3d());
