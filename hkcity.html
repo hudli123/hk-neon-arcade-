@@ -2159,7 +2159,7 @@ const SHOPF = (() => {
       const sx = 2 * B[6] / t[1];
       if (sx >= 0.82 && sx <= 1.25) {
         const sz = Math.min(sx, 1), lim = t[2] * sz + 0.6; let ok = true;
-        outer: for (const s of [-0.8 * B[6], 0, 0.8 * B[6]]) for (let d = 0.35; d <= lim; d += 0.35) {
+        outer: for (const s of [-0.98 * B[6], -0.5 * B[6], 0, 0.5 * B[6], 0.98 * B[6]]) for (let d = 0.35; d <= lim; d += 0.35) {
           const px = B[0] + B[2] * s + B[4] * d, pz = B[1] + B[3] * s + B[5] * d;
           if (blocked(px, pz) || onRoad(px, pz) || atStreetExit(px, pz)) { ok = false; break outer; }
         }
