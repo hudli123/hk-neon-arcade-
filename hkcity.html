@@ -2216,11 +2216,12 @@ const SHOP3D = (() => {
     s.onload = () => buildType(id); s.onerror = () => { t.st = -1; }; document.body.appendChild(s);
   }
   // LOD 選：近 ≤12 m（4 間，hysteresis 13.5）、中 ≤35 m（24 間，hysteresis 36.5）、第 45 m 內就先載檔
-  let lx = 1e9, lz = 1e9, lt = 0, shown = { near: 0, street: 0 };
+  let lx = 1e9, lz = 1e9, ly = 1e9, lt = 0, shown = { near: 0, street: 0 };
   const X = new THREE.Vector3(), Y = new THREE.Vector3(0, 1, 0), Z = new THREE.Vector3(), MT = new THREE.Matrix4(), SC = new THREE.Vector3();
-  function select(cx, cz, low) {
+  function select(cx, cz, low, cy) {
+    const dy = Math.max(0, (cy || 0) - 1.7);   // 高度都要計：Fly 100 米直上唔當「近」
     const cand = [], gx = Math.floor(cx / 50), gz = Math.floor(cz / 50);
-    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const L = SHOPF.bgrid.get((gx + i) * 4096 + gz + j); if (L) for (const b of L) { const B = BAYS[b], d2 = (B[0] - cx) ** 2 + (B[1] - cz) ** 2; if (d2 < 2025) cand.push([b, B, Math.sqrt(d2)]); } }
+    for (let i = -1; i <= 1; i++) for (let j = -1; j <= 1; j++) { const L = SHOPF.bgrid.get((gx + i) * 4096 + gz + j); if (L) for (const b of L) { const B = BAYS[b], d2 = (B[0] - cx) ** 2 + (B[1] - cz) ** 2; if (d2 < 2025) cand.push([b, B, Math.sqrt(d2 + dy * dy)]); } }
     for (const [, B, d] of cand) { const id = SHOPF.elig3B(B); if (id && T[id].st === 0 && d <= 45) loadType(id); }
     const want = [];
     for (const [b, B, d] of cand) {
@@ -2269,11 +2270,11 @@ const SHOP3D = (() => {
       for (let k = 3; k < 18; k += 3) { pa[o + k] = pa[o]; pa[o + k + 1] = pa[o + 1]; pa[o + k + 2] = pa[o + 2]; }
     } else if (SAVED.has(b)) { const s = SAVED.get(b); for (let k = 0; k < 18; k++) pa[o + k] = s[k]; SAVED.delete(b); }
   }
-  function near(cx, cz, low) {
+  function near(cx, cz, low, cy) {
     if (OFF || window.__S3OFF) return;
     const now = performance.now();
-    if (Math.abs(cx - lx) < 1 && Math.abs(cz - lz) < 1 && now - lt < 300) return;
-    lx = cx; lz = cz; lt = now; select(cx, cz, low);
+    if (Math.abs(cx - lx) < 1 && Math.abs(cz - lz) < 1 && Math.abs((cy || 0) - ly) < 1 && now - lt < 300) return;
+    lx = cx; lz = cz; ly = cy || 0; lt = now; select(cx, cz, low, cy);
   }
   function far() {   // hkcity_shop_far.js onload：真鋪面相入 atlas（冇燒臘：佢冇 street/facade）
     const F = window.HK_SHOPFAR; if (!F || !window.SHOPS) return;
@@ -3374,7 +3375,7 @@ const GAME = {
     TILES.step(dt, cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z, camera.position.y < 150);
     if (HDMOD) HDMOD.step(cam.mode === 'fly' ? cam.tx : camera.position.x, cam.mode === 'fly' ? cam.tz : camera.position.z);
     SHOPF.near(camera.position.x, camera.position.z, camera.position.y < 150);   // 近鏡立體鋪面
-    SHOP3D.near(camera.position.x, camera.position.z, camera.position.y < 150);   // 3D 鋪：近真模型 / 中烘焙面 / 遠平面相
+    SHOP3D.near(camera.position.x, camera.position.z, camera.position.y < 150, camera.position.y);   // 3D 鋪：近真模型 / 中烘焙面 / 遠平面相
     { camera.getWorldDirection(_cmpV); const a = Math.round(-Math.atan2(_cmpV.x, -_cmpV.z) * 180 / Math.PI);   // BG 09-30「北面喺邊」：指南針，N 指住真北（遊戲 −z）
       if (a !== _cmpA) { _cmpA = a; $('compassR').style.transform = `rotate(${a}deg)`; } }
     if (HYDL) HYDL.near(camera.position.x, camera.position.z, camera.position.y < 150); if (HYDP) HYDP.near(camera.position.x, camera.position.z, camera.position.y < 60);   // 路政署街燈 / 街名牌
