@@ -48,19 +48,36 @@
     tariff: (w) => T(`【突發】關稅大帝敗陣，宣布對${w}加徵 300% 關稅，市場冇反應`, `BREAKING: Tariff Emperor loses and announces a 300% tariff on ${w}. Markets do not react.`),
     chip:   (w) => T(`【突發】晶片教主敗陣，宣布下季推新卡——即日售罄；${w}冇買到`, `BREAKING: Chip Guru loses and announces a new card for next quarter. Sold out the same day. ${w} did not get one.`),
   };
+  // ===== 音效：名人亂鬥冇刀劍。zy_sfx_duel.js（Ho 2026-11-24 揀嘅 OpenGameArt CC0）。未載到就用返原本嘅聲 =====
+  const addSfx = (o) => {
+    if (!o) return; window.SFX = Object.assign(window.SFX || {}, o);
+    const c = SND.ctx; if (!c) return;
+    for (const [name, list] of Object.entries(o)) for (const b64 of list) {
+      const bin = atob(b64), u8 = new Uint8Array(bin.length); for (let i = 0; i < bin.length; i++) u8[i] = bin.charCodeAt(i);
+      c.decodeAudioData(u8.buffer.slice(0), (b) => (SND.buf[name] = SND.buf[name] || []).push(b), () => {});
+    }
+  };
+  const hit0 = SND.hit;
+  SND.swing = function (big) { if (!this.ok('sw', 0.05)) return; if (this.sample('whoosh', big ? 0.8 : 0.55, big ? rand(0.75, 0.85) : rand(0.92, 1.1))) return; this.noise(big ? 0.24 : 0.15, big ? 0.3 : 0.2, big ? 260 : 340, big ? 1100 : 1500, 'bandpass', 0, null, 0.9); };
+  SND.hit = function (n, heavy) {
+    if (!(this.buf && this.buf[heavy ? 'heavyp' : 'punch'])) return hit0.call(this, n, heavy);
+    if (!this.ok('hit', 0.03)) return; this.sample(heavy ? 'heavyp' : 'punch', heavy ? 0.9 : 0.7, rand(0.9, 1.1));
+  };
+  SND.musou = function () { if (!this.ctx) return; if (this.sample('rocket', 0.8)) return; this.tone(60, 1.2, 'sawtooth', 0.2, 2.2); this.noise(1.4, 0.3, 300, 2600, 'lowpass'); };
   // ===== 火箭商人 Meshy 模型：只喺單挑模式額外下載（正常趙雲模式唔會入呢個檔）=====
   const MESH = { rocket: 'musk', tariff: 'trump', chip: 'jensen' };   // 鬥士 → Meshy 模型（冇載到就用返趙雲／張郃）
   const muskReady = (async () => {
     const get = (f) => fetch(f).then((r) => { if (!r.ok) throw new Error(f + ' ' + r.status); return r.arrayBuffer(); });
     const run = (b, f) => { const s = document.createElement('script'); s.text = new TextDecoder().decode(b) + '\n//# sourceURL=' + f; document.head.appendChild(s); };
-    try { run(await get('zy_clips_fist.js'), 'zy_clips_fist.js'); } catch (e) { console.warn('fist clips load failed', e); return; }
-    await Promise.all(Object.values(MESH).map(async (id) => {
+    const sfxP = (async () => { try { run(await get('zy_sfx_duel.js'), 'zy_sfx_duel.js'); addSfx(window.SFX_DUEL); } catch (e) { console.warn('zy_sfx_duel.js', e); } })();
+    try { run(await get('zy_clips_fist.js'), 'zy_clips_fist.js'); } catch (e) { console.warn('fist clips load failed', e); await sfxP; return; }
+    await Promise.all([sfxP, ...Object.values(MESH).map(async (id) => {
       try {
         const [jb, tb] = await Promise.all([get('zy_rig_' + id + '.js'), get('zy_tex_' + id + '.webp')]);
         run(jb, 'zy_rig_' + id + '.js');
         if (window.MRIG && window.MRIG[id]) window.MRIG[id].tex = URL.createObjectURL(new Blob([tb], { type: 'image/webp' }));
       } catch (e) { console.warn(id + ' load failed', e); }
-    }));
+    })]);
   })();
   // ---- 主角模型切換：CHARS.zy 可以掛多個 rig，按 f1 揀邊個現形/動畫；趙雲 mesh + 槍照舊 ----
   const MUSK_SCALE = 1.12;   // musk bbox 高 1.80m（同 zy 1.80 / zhanghe 1.85 同級），用返趙雲嘅 1.12
