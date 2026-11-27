@@ -2146,8 +2146,9 @@ const SHOPF = (() => {
       texCv.getContext('2d').drawImage(img, (ci % cols) * cw, Math.floor(ci / cols) * ch, cw, ch);
       tex.needsUpdate = true; return true;
     };
-    if (img.complete && img.width) return go();
+    if (img.complete && img.width && go()) return;
     img.onload = () => go();
+    const t0 = performance.now(), tr = setInterval(() => { if (go() || performance.now() - t0 > 30000) clearInterval(tr); }, 250);   // atlas 未載到就重試（最多 30 秒）
   }
   // 3D 鋪資格（B = BAYS 記錄）：款啱 + 闊度啱 + 模型前面行人路冇阻 → type id，否則 0
   function elig3B(B) {

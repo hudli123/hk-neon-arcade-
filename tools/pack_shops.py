@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 # Pack HK 3D shop GLBs into hkcity_shop_<id>.js data files for hkcity.html.
-# Sources: HK-3D-City-Shop-Pack (tevy, CC0), Lo-Yau-Store pack, six/Shops pack.
-# Ming Kee near model uses tevy's CC0 shell; facade images are Wikimedia CC0 photos.
+# Models: Ho's HK-3D-City shop packs (Shop-Pack, Lo-Yau-Store, Six-Shops).
+# Ming Kee shell: "Housing Facade Shop Front" by tevy, CC0 1.0 (tevy.dev/models/housing-facade-shop).
+# Pineapple bun crown: "Pineapple bun 01.jpg" by Waydwaid, Wikimedia Commons, CC0 1.0.
+# Roast duck glaze: Shek Tong Tsui siu mei window photo by MONLKDWOEA oilsa, Wikimedia Commons, CC0 1.0.
 # numpy + Pillow only. Usage: python3 tools/pack_shops.py
 import json, struct, base64, os, io
 import numpy as np
@@ -167,7 +169,7 @@ def build_level(j, buf):
         parts.append(o)
     return {'groups': parts, 'bounds': [round(v,4) for v in bounds[0]]+[round(v,4) for v in bounds[1]], 'q': round(Q,8)}
 
-HDR = "// 自動產生（tools/pack_shops.py），唔好手改\n// Sources: HK-3D-City-Shop-Pack by tevy (CC0) · Lo-Yau-Store pack · six-Shops pack · facades: Wikimedia CC0 photos · Ming Kee shell: tevy CC0\n"
+HDR = "// 自動產生（tools/pack_shops.py），唔好手改\n// Shop models: Ho's HK-3D-City shop packs (Shop-Pack, Lo-Yau-Store, Six-Shops). Ming Kee shell: \"Housing Facade Shop Front\" by tevy, CC0 1.0 (tevy.dev/models/housing-facade-shop). Pineapple bun crown: \"Pineapple bun 01.jpg\" by Waydwaid, Wikimedia Commons, CC0 1.0. Roast duck glaze: Shek Tong Tsui siu mei window photo by MONLKDWOEA oilsa, Wikimedia Commons, CC0 1.0.\n"
 def jdump(o):
     return json.dumps(o, separators=(',',':'), ensure_ascii=False)
 
@@ -186,8 +188,9 @@ def main():
         fn = f'hkcity_shop_{tid}.js'
         txt = HDR + f'window.HK_SHOP3D = window.HK_SHOP3D || {{}}; HK_SHOP3D["{tid}"] = {jdump(rec)};\n'
         open(os.path.join(OUT, fn),'w',encoding='utf-8').write(txt)
-        tris = sum(len(g['idx'])//3 for g in rec['near']['groups'])
-        tris_s = sum(len(g['idx'])//3 for g in rec['street']['groups']) if rec['street'] else 0
+        nidx = lambda g: len(base64.b64decode(g['idx'].split(':',1)[1])) // (2 if g['idx'].startswith('i16:') else 4)
+        tris = sum(nidx(g)//3 for g in rec['near']['groups'])
+        tris_s = sum(nidx(g)//3 for g in rec['street']['groups']) if rec['street'] else 0
         stats.append((tid, fn, os.path.getsize(os.path.join(OUT,fn)), tris, tris_s))
         if facade:
             far[name] = 'data:image/jpeg;base64,'+base64.b64encode(open(os.path.join(SRC,facade),'rb').read()).decode()
