@@ -5328,18 +5328,19 @@ body.open #nchat{top:50px}
       R.tag.scale.set(ts * 4, ts, 1);
     }
   }
-  // 大家入開放世界都喺同一個路邊出世：網上模式入去嗰一刻，按自己嘅玩家 id 移開 1.5–3 米（揀冇樓、冇水嘅位）
-  let wasOpen = false;
-  function spreadSpawn() {
-    const H = OPEN.hero, a = (me * 2.39996) % (Math.PI * 2), r = 1.5 + (me % 3) * 0.75;   // 黃金角：唔同 id 散開唔同方向
-    for (let k = 0; k < 8; k++) { const aa = a + k * Math.PI / 4, x = H.x + Math.sin(aa) * r, z = H.z + Math.cos(aa) * r;
-      if (!(OPEN.solid && OPEN.solid(x, z))) { H.x = x; H.z = z; return; } }
+  // 大家入開放世界 / 落街行都喺同一個路邊出世：網上模式入去嗰一刻，按自己嘅玩家 id 移開 1.5–3 米（揀冇樓、冇水嘅位）
+  let wasOpen = false, wasWalk = false;
+  function spreadSpawn(P, kx, kz, solid) {
+    const a = (me * 2.39996) % (Math.PI * 2), r = 1.5 + (me % 3) * 0.75;   // 黃金角：唔同 id 散開唔同方向
+    for (let k = 0; k < 8; k++) { const aa = a + k * Math.PI / 4, x = P[kx] + Math.sin(aa) * r, z = P[kz] + Math.cos(aa) * r;
+      if (!solid(x, z)) { P[kx] = x; P[kz] = z; return; } }
   }
   const step0 = G.step;
   G.step = function (dt) {
     step0.call(this, dt);
     try {
-      const isOpen = !!(window.OPEN && OPEN.active && !OPEN.inCar); if (isOpen && !wasOpen && room && me) spreadSpawn(); wasOpen = isOpen;
+      const isOpen = !!(window.OPEN && OPEN.active && !OPEN.inCar); if (isOpen && !wasOpen && room && me) spreadSpawn(OPEN.hero, 'x', 'z', (x, z) => OPEN.solid && OPEN.solid(x, z)); wasOpen = isOpen;
+      const isWalk = !isOpen && cam.mode === 'walk'; if (isWalk && !wasWalk && room && me) spreadSpawn(cam, 'wx', 'wz', (x, z) => blocked(x, z) || (window.HARB && HARB.block(x, z))); wasWalk = isWalk && !!(room && me);
       step(dt);
     } catch (e) { console.error('net.js', e); }
   };
